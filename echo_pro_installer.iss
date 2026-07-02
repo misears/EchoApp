@@ -10,7 +10,7 @@ PrivilegesRequired=lowest
 WizardStyle=modern
 
 [Files]
-Source: "C:\EchoPro\EchoApp\dist\EchoPro\EchoPro.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\EchoPro\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\Echo Pro"; Filename: "{app}\EchoPro.exe"
