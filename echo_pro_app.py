@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QStatusBar, QPushButton, QFileDialog, QHBoxLayout, QLineEdit,
     QMessageBox, QDialog, QTextEdit, QListWidget, QListWidgetItem
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
 from project_model import Project, Track, Clip, new_empty_project, save_project, load_project
 from audio_info import get_audio_length_ms
@@ -25,6 +25,8 @@ from voice_effects import apply_voice_conversion
 
 from music_generator import generate_music_clip
 from song_planner import generate_song_sections
+from recording_controller import RecordingController
+from recording_ui_components import TrackMeterWidget, TransportBar
 
 class FirstRunDialog(QDialog):
     def __init__(self):
@@ -166,9 +168,16 @@ class EchoProWindow(QMainWindow):
 
         self.current_project: Project = new_empty_project("Untitled")
         self.next_clip_id = 1
+        self.recording_controller = RecordingController("default_session", self.current_project.name)
+        self.recording_meters = {}
 
         self.status = QStatusBar()
         self.setStatusBar(self.status)
+
+        self.recording_timer = QTimer(self)
+        self.recording_timer.setInterval(100)
+        self.recording_timer.timeout.connect(self.refresh_recording_meters)
+        self.recording_timer.start()
 
         layout = QVBoxLayout()
 
@@ -249,6 +258,54 @@ class EchoProWindow(QMainWindow):
         vol_layout.addWidget(play_btn)
 
         layout.addLayout(vol_layout)
+
+        # Recording controls
+        recording_layout = QVBoxLayout()
+
+        transport_row = QHBoxLayout()
+        self.transport_bar = TransportBar()
+        self.transport_bar.record_button.clicked.connect(self.start_recording_session)
+        self.transport_bar.stop_button.clicked.connect(self.stop_recording_session)
+        self.transport_bar.undo_button.clicked.connect(self.undo_last_recording_take)
+        self.transport_bar.redo_button.clicked.connect(self.redo_last_recording_take)
+        self.transport_bar.click_button.clicked.connect(self.toggle_metronome)
+        self.transport_bar.stop_button.setEnabled(False)
+        transport_row.addWidget(self.transport_bar)
+
+        self.record_track_input = QLineEdit()
+        self.record_track_input.setPlaceholderText("Arm track index")
+        transport_row.addWidget(self.record_track_input)
+
+        arm_btn = QPushButton("Arm Track")
+        arm_btn.clicked.connect(self.arm_recording_track)
+        transport_row.addWidget(arm_btn)
+
+        arm_all_btn = QPushButton("Arm All")
+        arm_all_btn.clicked.connect(self.arm_all_recording_tracks)
+        transport_row.addWidget(arm_all_btn)
+
+        clear_armed_btn = QPushButton("Clear Armed")
+        clear_armed_btn.clicked.connect(self.clear_armed_recording_tracks)
+        transport_row.addWidget(clear_armed_btn)
+
+        self.record_tempo_input = QLineEdit()
+        self.record_tempo_input.setPlaceholderText("Tempo BPM")
+        transport_row.addWidget(self.record_tempo_input)
+
+        set_tempo_btn = QPushButton("Set Tempo")
+        set_tempo_btn.clicked.connect(self.set_recording_tempo)
+        transport_row.addWidget(set_tempo_btn)
+
+        recording_layout.addLayout(transport_row)
+
+        self.recording_status_label = QLabel("Recording: idle")
+        recording_layout.addWidget(self.recording_status_label)
+
+        self.meter_container = QVBoxLayout()
+        self._build_recording_meters()
+        recording_layout.addLayout(self.meter_container)
+
+        layout.addLayout(recording_layout)
 
         # Voice effect controls
         voice_layout = QHBoxLayout()
@@ -358,6 +415,137 @@ class EchoProWindow(QMainWindow):
 
         self.update_status("Ready")
 
+    def _build_recording_meters(self):
+        while self.meter_container.count():
+            item = self.meter_container.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        self.recording_meters = {}
+        for track in self.recording_controller.engine.tracks:
+            meter = TrackMeterWidget(f"Track {track.track_id + 1}")
+            self.meter_container.addWidget(meter)
+            self.recording_meters[track.track_id] = meter
+
+    def update_recording_status_label(self):
+        status = self.recording_controller.get_status_snapshot()
+        state = "recording" if status.is_recording else "armed" if status.is_armed else "idle"
+        armed_text = ", ".join(str(track_id) for track_id in status.active_track_ids) or "none"
+        self.recording_status_label.setText(
+            f"Recording: {state} | Tempo: {status.current_tempo_bpm} BPM | Time Sig: {status.time_signature} | Armed: {armed_text}"
+        )
+
+    def refresh_recording_meters(self):
+        levels = self.recording_controller.get_meter_levels()
+        for track_id, meter in self.recording_meters.items():
+            track_levels = levels.get(track_id)
+            if track_levels is not None:
+                meter.update_levels(track_levels["current_db"], track_levels["peak_db"])
+        self.update_recording_status_label()
+
+    def arm_recording_track(self):
+        try:
+            track_index = int(self.record_track_input.text())
+        except ValueError:
+            QMessageBox.warning(self, "Input error", "Track index must be a number.")
+            return
+
+        if self.recording_controller.arm_track(track_index):
+            self.update_status(f"Armed recording track {track_index}")
+            self.update_recording_status_label()
+        else:
+            QMessageBox.warning(self, "Input error", self.recording_controller.status.last_error or "Could not arm track.")
+
+    def arm_all_recording_tracks(self):
+        self.recording_controller.arm_all_tracks()
+        self.update_status("All recording tracks armed")
+        self.update_recording_status_label()
+
+    def clear_armed_recording_tracks(self):
+        self.recording_controller.clear_armed_tracks()
+        self.update_status("Cleared armed recording tracks")
+        self.update_recording_status_label()
+
+    def set_recording_tempo(self):
+        try:
+            tempo = int(self.record_tempo_input.text())
+        except ValueError:
+            QMessageBox.warning(self, "Input error", "Tempo must be a number.")
+            return
+
+        self.recording_controller.set_tempo(tempo)
+        self.update_status(f"Recording tempo set to {tempo} BPM")
+        self.update_recording_status_label()
+
+    def toggle_metronome(self):
+        if self.recording_controller.metronome.is_running:
+            self.recording_controller.metronome.stop()
+            self.transport_bar.click_button.setText("Metronome On")
+            self.update_status("Metronome stopped")
+        else:
+            self.recording_controller.metronome.start()
+            self.transport_bar.click_button.setText("Metronome Off")
+            self.update_status("Metronome started")
+        self.update_recording_status_label()
+
+    def start_recording_session(self):
+        if not self.recording_controller.armed_tracks:
+            QMessageBox.warning(self, "Recording", "Arm at least one track before recording.")
+            return
+
+        self.recording_controller.session.project_name = self.current_project.name
+
+        if not self.recording_controller.start_stream():
+            QMessageBox.critical(
+                self,
+                "Recording error",
+                self.recording_controller.status.last_error or "Could not start the audio stream."
+            )
+            return
+
+        if not self.recording_controller.start_recording():
+            QMessageBox.critical(
+                self,
+                "Recording error",
+                self.recording_controller.status.last_error or "Could not start recording."
+            )
+            self.recording_controller.stop_stream()
+            return
+
+        self.transport_bar.record_button.setEnabled(False)
+        self.transport_bar.stop_button.setEnabled(True)
+        self.update_status("Recording started")
+        self.update_recording_status_label()
+
+    def stop_recording_session(self):
+        if self.recording_controller.status.is_recording:
+            levels = self.recording_controller.get_meter_levels()
+            self.recording_controller.stop_recording(duration_seconds=0.0, level_stats={})
+            self.recording_controller.stop_stream()
+
+        self.transport_bar.record_button.setEnabled(True)
+        self.transport_bar.stop_button.setEnabled(False)
+        self.transport_bar.click_button.setText("Metronome On")
+        self.update_status("Recording stopped")
+        self.update_recording_status_label()
+
+    def undo_last_recording_take(self):
+        take = self.recording_controller.undo_last_take()
+        if take is None:
+            self.update_status("Nothing to undo")
+        else:
+            self.update_status(f"Undid take {take.take_number} on track {take.track_id}")
+        self.update_recording_status_label()
+
+    def redo_last_recording_take(self):
+        take = self.recording_controller.redo_last_take()
+        if take is None:
+            self.update_status("Nothing to redo")
+        else:
+            self.update_status(f"Redid take {take.take_number} on track {take.track_id}")
+        self.update_recording_status_label()
+
     def update_status(self, text: str):
         self.status.showMessage(text)
 
@@ -369,6 +557,9 @@ class EchoProWindow(QMainWindow):
         self.current_project = new_empty_project("Untitled")
         self.project_name_label.setText("Project: Untitled")
         self.next_clip_id = 1
+        self.recording_controller = RecordingController("new_session", self.current_project.name)
+        self._build_recording_meters()
+        self.update_recording_status_label()
         self.refresh_timeline()
         self.update_status("New project created")
 
@@ -390,6 +581,9 @@ class EchoProWindow(QMainWindow):
                 if c.id > max_id:
                     max_id = c.id
             self.next_clip_id = max_id + 1
+            self.recording_controller = RecordingController(f"session_{proj.name.replace(' ', '_')}", proj.name)
+            self._build_recording_meters()
+            self.update_recording_status_label()
             self.refresh_timeline()
             self.update_status(f"Opened project: {filename}")
         except Exception as e:
@@ -428,6 +622,9 @@ class EchoProWindow(QMainWindow):
                     if c.id > max_id:
                         max_id = c.id
                 self.next_clip_id = max_id + 1
+                self.recording_controller = RecordingController(f"session_{proj.name.replace(' ', '_')}", proj.name)
+                self._build_recording_meters()
+                self.update_recording_status_label()
                 self.refresh_timeline()
                 self.update_status(f"Opened project from library: {filename}")
             except Exception as e:
@@ -438,7 +635,9 @@ class EchoProWindow(QMainWindow):
         if not name:
             name = f"Track {len(self.current_project.tracks)}"
         self.current_project.tracks.append(Track(name=name))
+        self.recording_controller.session.ensure_track(len(self.current_project.tracks) - 1)
         self.new_track_name.clear()
+        self._build_recording_meters()
         self.refresh_timeline()
         self.update_status(f"Added track: {name}")
 

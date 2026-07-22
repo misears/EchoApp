@@ -71,6 +71,13 @@ class RecordingSession:
         for track_id in range(num_tracks):
             self.takes[track_id] = []
             self.current_take_number[track_id] = 1
+
+    def ensure_track(self, track_id: int) -> None:
+        """Ensure a track has recording state without clearing existing takes."""
+        if track_id not in self.takes:
+            self.takes[track_id] = []
+        if track_id not in self.current_take_number:
+            self.current_take_number[track_id] = 1
     
     def start_new_take(self, track_id: int) -> RecordingTake:
         """Start a new recording take on a track."""
