@@ -1,5 +1,5 @@
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Literal, Dict, Any
 
@@ -18,7 +18,7 @@ class T2MModelConfig:
     fp16: bool
     batch_size: int
 
-    extra: Dict[str, Any] = None
+    extra: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

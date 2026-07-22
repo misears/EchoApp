@@ -1,5 +1,5 @@
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Any
 
@@ -9,7 +9,7 @@ class VoiceBackendConfig:
     model_path: str
     device: str
     sample_rate: int
-    extra: Dict[str, Any] = None
+    extra: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class VoiceProfileConfig:
@@ -18,7 +18,7 @@ class VoiceProfileConfig:
     source_audio_path: str
     consent_flag: bool
     source_type: str
-    metadata: Dict[str, Any] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class VoiceConvertRequest:
