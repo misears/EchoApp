@@ -8,6 +8,7 @@
 ## 📊 PHASE-BY-PHASE COMPARISON
 
 ### 🎚️ PHASE 1: CORE DAW
+
 **Status:** ✅ **COMPLETE** (100%)
 
 | Deliverable | File | Status | Notes |
@@ -21,6 +22,7 @@
 | Project Save/Load | `project_model.py` | ✅ Done | JSON format `.eproj` files |
 
 **Phase 1 Code Status:**
+
 - ✅ New Project button → works
 - ✅ Add Track button → works
 - ✅ Add Clip from File → works
@@ -29,12 +31,14 @@
 - ✅ File dialogs → working
 
 **Known Issues from Code Review:**
+
 - ⚠️ Duplicate file: `audioinfo.py` should be deleted (has same code as `audio_info.py`)
 - ⚠️ Input validation could be more robust (e.g., file existence checks)
 
 ---
 
 ### 🎛️ PHASE 2: STEMS, PLAYBACK, MIXING, FIRST RUN
+
 **Status:** ✅ **COMPLETE** (95%)
 
 | Deliverable | File | Status | Notes |
@@ -47,6 +51,7 @@
 | Play Button | `echo_pro_app.py` | ✅ Done | Full project playback |
 
 **Phase 2 Code Status:**
+
 - ✅ Split Song into Stems button → UI ready, requires Demucs
 - ✅ Play Project button → functional
 - ✅ Set Track Volume button → functional
@@ -54,6 +59,7 @@
 - ✅ First Run wizard → shows on first launch
 
 **Known Issues from Code Review:**
+
 - ⚠️ No progress bar for Demucs (long operation)
 - ⚠️ Error handling for Demucs not installed could be friendlier
 - 📝 Consider validating audio files exist before playback
@@ -61,6 +67,7 @@
 ---
 
 ### 🎤 PHASE 3: VOICE RECORDING + VOICE CONVERSION
+
 **Status:** ✅ **COMPLETE** (95%)
 
 | Deliverable | File | Status | Notes |
@@ -73,6 +80,7 @@
 | Apply Voice Effect | `echo_pro_app.py` | ✅ Done | Convert clip to target voice |
 
 **Phase 3 Code Status:**
+
 - ✅ Manage Voices button → opens dialog
 - ✅ Record New Voice (10s) → functional
 - ✅ Voice profiles save to `%APPDATA%\EchoPro\voices\` → working
@@ -80,6 +88,7 @@
 - ✅ Consent warnings → mandatory before use
 
 **Known Issues from Code Review:**
+
 - ⚠️ `VoiceBackendConfig.extra` should use `field(default_factory=dict)` instead of `None`
 - ⚠️ `VoiceProfileConfig.metadata` same issue
 - 🔮 Placeholder only adjusts gain — real model integration point documented
@@ -87,6 +96,7 @@
 ---
 
 ### 🎵 PHASE 4: MUSIC GENERATOR + SONG PLANNER
+
 **Status:** ✅ **COMPLETE** (95%)
 
 | Deliverable | File | Status | Notes |
@@ -99,6 +109,7 @@
 | Cloud Toggle | `echo_pro_app.py` | ✅ Done | yes/no cloud backend selection |
 
 **Phase 4 Code Status:**
+
 - ✅ Generate Clip button → functional (outputs silent placeholder)
 - ✅ Generate Full Song button → functional
 - ✅ Lyrics splitting → working for multi-section songs
@@ -107,12 +118,14 @@
 - ✅ Cloud toggle affects config → implemented
 
 **Known Issues from Code Review:**
+
 - ⚠️ `T2MModelConfig.extra` should use `field(default_factory=dict)` instead of `None`
 - 🔮 Placeholder outputs silent WAV files — real model integration point documented
 
 ---
 
 ### 📦 PHASE 5: WINDOWS INSTALLER
+
 **Status:** ⏳ **NOT STARTED** (0%)
 
 | Deliverable | File | Status | Notes |
@@ -123,6 +136,7 @@
 | Build Artifacts | `build/`, `Output/` | ⏳ Pending | Not built yet |
 
 **Phase 5 Status:**
+
 - ❌ EchoPro.exe not built
 - ❌ EchoProInstaller.exe not built
 - ❌ Installer not tested
@@ -133,7 +147,8 @@
 ## 🔧 DETAILED CODE ISSUES FOUND
 
 ### High Priority (Fix Before Release)
-1. **Dataclass Mutable Defaults** 
+
+1. **Dataclass Mutable Defaults**
    - Files: `voice_interface.py`, `t2m_interface.py`
    - Issue: `extra: Dict[str, Any] = None` should use `field(default_factory=dict)`
    - Fix: Import `field` from dataclasses, replace `= None` with `= field(default_factory=dict)`
@@ -146,23 +161,25 @@
    - Impact: Code confusion, potential import errors
 
 ### Medium Priority (Nice to Have)
+
 3. **Audio File Validation**
    - Suggestion: Verify audio files exist before adding clips
    - Location: `echo_pro_app.py::add_clip_from_file()`
    - Current: Only checks after user selects file
    - Suggestion: Add try-catch for missing files
 
-4. **Input Validation Improvement**
+2. **Input Validation Improvement**
    - Suggestion: Helper functions to reduce duplicate validation code
    - Location: Multiple methods in `echo_pro_app.py` repeat int/float conversion
    - Current: 5+ try-except blocks for same pattern
 
-5. **Progress Indicators**
+3. **Progress Indicators**
    - Suggestion: Add progress bar for long operations
    - Operations: Demucs stem separation, audio generation
    - Current: Status bar shows "Running..." but no percentage
 
 ### Low Priority (Future Enhancement)
+
 6. **Error Messages**
    - Suggestion: More specific error messages for Demucs not installed
    - Suggestion: FFmpeg missing detection
@@ -175,6 +192,7 @@
 All Phase 1-4 features are implemented and ready to test:
 
 ### Phase 1 Tests ✅
+
 ```
 ✓ Create new project
 ✓ Add track to project
@@ -186,6 +204,7 @@ All Phase 1-4 features are implemented and ready to test:
 ```
 
 ### Phase 2 Tests ✅
+
 ```
 ✓ Split song into stems (requires Demucs)
 ✓ Stems load as new tracks
@@ -196,6 +215,7 @@ All Phase 1-4 features are implemented and ready to test:
 ```
 
 ### Phase 3 Tests ✅
+
 ```
 ✓ Record voice profile (10s)
 ✓ Save voice profile
@@ -206,6 +226,7 @@ All Phase 1-4 features are implemented and ready to test:
 ```
 
 ### Phase 4 Tests ✅
+
 ```
 ✓ Generate single music clip
 ✓ Generate full song with sections
@@ -220,28 +241,32 @@ All Phase 1-4 features are implemented and ready to test:
 ## 🚀 NEXT STEPS (In Order)
 
 ### Immediate (Before Testing)
+
 1. [ ] **Fix dataclass issues** in `voice_interface.py` and `t2m_interface.py`
 2. [ ] **Delete duplicate file** `audioinfo.py`
 3. [ ] **Run linter** to verify no new errors introduced
 
 ### Phase 5 (Installer)
+
 4. [ ] Review and test `EchoPro.spec` configuration
-5. [ ] Run PyInstaller: `pyinstaller EchoPro.spec`
-6. [ ] Verify `dist/EchoPro.exe` runs standalone
-7. [ ] Review and test `echo_pro_installer.iss`
-8. [ ] Run Inno Setup: Build installer
-9. [ ] Test installer on clean Windows installation
+2. [ ] Run PyInstaller: `pyinstaller EchoPro.spec`
+3. [ ] Verify `dist/EchoPro.exe` runs standalone
+4. [ ] Review and test `echo_pro_installer.iss`
+5. [ ] Run Inno Setup: Build installer
+6. [ ] Test installer on clean Windows installation
 
 ### Testing & QA
+
 10. [ ] Run full workflow test (create → edit → save → load)
-11. [ ] Test all error paths (missing files, corrupted projects)
-12. [ ] Test on Windows 10 and Windows 11
-13. [ ] Test with various audio formats
+2. [ ] Test all error paths (missing files, corrupted projects)
+3. [ ] Test on Windows 10 and Windows 11
+4. [ ] Test with various audio formats
 
 ### Documentation
+
 14. [ ] Update voice_interface.py docstring about model replacement
-15. [ ] Update t2m_interface.py docstring about model replacement
-16. [ ] Create user guide
+2. [ ] Update t2m_interface.py docstring about model replacement
+3. [ ] Create user guide
 
 ---
 
@@ -256,6 +281,7 @@ All Phase 1-4 features are implemented and ready to test:
 | 5 | 3 | ❌ 0% | ❌ Not started | ❌ Pending | ❌ NO |
 
 **Legend:**
+
 - ✅ Complete / Ready
 - 🟡 Good / Acceptable
 - ⚠️ Needs attention
@@ -266,6 +292,7 @@ All Phase 1-4 features are implemented and ready to test:
 ## 🎯 WHAT'S WORKING RIGHT NOW
 
 Echo Pro can **immediately**:
+
 - ✅ Create and manage projects
 - ✅ Import audio files as clips
 - ✅ Edit track volume
@@ -296,13 +323,17 @@ Before proceeding to Phase 5 testing:
 When ready to integrate real AI models:
 
 ### Voice Conversion (Phase 3)
+
 **File:** `voice_interface.py::voice_convert()`
+
 - Current: Adjusts gain only (placeholder)
 - Replace with: Real voice conversion model
 - Examples: RVC, VITS, Resembler
 
 ### Music Generation (Phase 4)
+
 **File:** `t2m_interface.py::t2m_generate_clip()`
+
 - Current: Outputs silent WAV (placeholder)
 - Replace with: Real T2M model
 - Examples: AudioLDM, Stable Audio, MusicGen
@@ -312,17 +343,20 @@ When ready to integrate real AI models:
 ## 📞 SUMMARY
 
 **Current State:**
+
 - Phases 1-4 code: **COMPLETE** ✅
 - Phases 1-4 testing: **READY** ✅
 - Phase 5 (installer): **NOT STARTED** ❌
 - Overall: **80% Complete**
 
 **Blockers for Release:**
+
 1. Dataclass mutable defaults (3 files)
 2. Phase 5 installer testing
 3. Full end-to-end testing
 
 **Time Estimate to Release:**
+
 - Fix issues: **15 minutes**
 - Build Phase 5: **30 minutes**
 - Test installer: **1 hour**
