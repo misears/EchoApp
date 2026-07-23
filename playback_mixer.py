@@ -21,9 +21,16 @@ def mix_project_to_segment(project: Project) -> AudioSegment:
     master = AudioSegment.silent(duration=max_end_ms + 1000)  # extra second
 
     track_volumes = {i: t.volume_db for i, t in enumerate(project.tracks)}
+    any_solo = any(track.soloed for track in project.tracks)
 
     for clip in project.clips:
         try:
+            track = project.tracks[clip.track_index]
+            if track.muted:
+                continue
+            if any_solo and not track.soloed:
+                continue
+
             seg = AudioSegment.from_file(clip.file_path)
             if len(seg) > clip.length_ms:
                 seg = seg[:clip.length_ms]

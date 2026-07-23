@@ -11,6 +11,33 @@ Before starting any phase, ensure you have:
 
 ---
 
+## 🎚️ PHASE 5A/5B RECORDING ROADMAP ADDENDUM
+
+This outline originally grouped recording into earlier implementation sessions and used Phase 5 for installer packaging only. The active roadmap now splits advanced recording into two explicit production phases before installer release work.
+
+### Phase 5A (In Progress): Recording Core Integration
+- Multi-track recording controls in the main app
+- Input/output device selection and test workflow
+- Tempo, time signature, metronome, and count-in controls
+- Live meter feedback with clipping indicators and reset
+- Take metadata capture with undo/redo support
+
+Primary reference: `PHASE_5A_RECORDING_PLAN.md`
+
+### Phase 5B (Planned): Recording Polish and Production Safety
+- Punch-in/out transport and loop recording workflows
+- Take browser and active-take selection
+- Basic non-destructive comping flow
+- Recovery flow for interrupted recording sessions
+- Safety checks (disk/device/clip event guidance)
+
+Primary reference: `PHASE_5B_RECORDING_PLAN.md`
+
+### Phase 6 (Installer)
+Phase 5 in this original document maps to Phase 6 in the active execution plan.
+
+---
+
 ## 🎚️ PHASE 1: BUILD THE CORE DAW
 ### Goal
 Create a functional multitrack digital audio workstation with basic project management.
@@ -211,12 +238,16 @@ Package Echo Pro as a professional Windows application with installer.
 - Desktop shortcut
 - Application registry entries
 - First-run extraction logic
+- Dependency installer flow for ffmpeg and demucs runtime
+- Dependency update flow after initial install
+- Portable mode launcher keeping app + data together on external drive
 
 ### New/Modified Files
 - `EchoPro.spec` — PyInstaller build configuration
 - `echo_pro_installer.iss` — Inno Setup installer script
 - `build_exe.bat` — Batch script for building EXE
-- `install_echo_pro.bat` — Helper for installer creation
+- `install_echo_pro.bat` — Runtime dependency install/update manager
+- `EchoPro_Portable.bat` — Portable launcher and local data bootstrap
 - **.gitignore** — Exclude build/ and Output/ directories
 
 ### Build Artifacts
@@ -236,10 +267,15 @@ Package Echo Pro as a professional Windows application with installer.
 - [ ] Configure installer to extract to `%LOCALAPPDATA%\EchoPro\`
 - [ ] Configure Start Menu shortcuts
 - [ ] Configure Desktop shortcut
+- [ ] Configure dependency install task during setup (`install_echo_pro.bat install`)
+- [ ] Configure dependency update entry point (`install_echo_pro.bat update`)
+- [ ] Configure portable mode task and launcher (`EchoPro_Portable.bat`)
 - [ ] Create uninstall logic
 - [ ] Test installer on clean Windows VM or second machine
 - [ ] Verify first-run wizard triggers on fresh install
 - [ ] Verify projects persist across updates
+- [ ] Verify dependency update works post-install without full reinstall
+- [ ] Verify portable mode works from removable drive with local `data/` folder
 - [ ] Test uninstall removes all files correctly
 - [ ] Create release notes for v0.1
 - [ ] Sign installer (optional, for trust)
@@ -248,6 +284,9 @@ Package Echo Pro as a professional Windows application with installer.
 ✅ EchoPro.exe runs without Python installation
 ✅ Installer creates Start Menu shortcuts
 ✅ Installer creates Desktop shortcut
+✅ Installer can install runtime dependencies
+✅ Installer exposes dependency update workflow after install
+✅ Portable mode keeps app and data together for removable drive usage
 ✅ First-run wizard shows for new users
 ✅ Projects directory persists after uninstall (user choice)
 ✅ Clean uninstall removes all application files
@@ -259,6 +298,10 @@ Package Echo Pro as a professional Windows application with installer.
 - [ ] No missing DLL errors
 - [ ] FFmpeg integration works (if bundled)
 - [ ] Demucs available (or user can install)
+- [ ] Dependency installer succeeds on clean machine
+- [ ] Dependency update path works after install
+- [ ] Portable launcher creates and uses local `data/` root
+- [ ] Portable build runs from external USB path after drive letter change
 - [ ] Microphone access works
 - [ ] File dialogs show correct initial paths
 - [ ] First-run wizard completes
@@ -331,17 +374,29 @@ Package Echo Pro as a professional Windows application with installer.
 - [ ] Consent warnings functional
 - [ ] Placeholder voice effect creates clips
 
-### Phase 4 → Phase 5 Requirements
+### Phase 4 → Phase 5A Requirements
 - [ ] Single clip generation works (placeholder)
 - [ ] Song generation works (placeholder)
 - [ ] All 4 AI interfaces frozen and documented
 - [ ] No critical bugs in main app workflow
 
-### Phase 5 → Release Requirements
+### Phase 5A → Phase 5B Requirements
+- [ ] Stable recording start/stop across supported devices
+- [ ] Count-in and timing controls validated with real recordings
+- [ ] Meter clipping/peak feedback validated during sessions
+- [ ] Track arm/select/mute/solo behavior verified while recording
+
+### Phase 5B → Phase 6 Requirements
+- [ ] Punch and loop workflows stable in real sessions
+- [ ] Take selection/comping saves and reloads reliably
+- [ ] Recovery flow tested on interrupted sessions
+- [ ] No major regressions in Phase 1-5A features
+
+### Phase 6 → Release Requirements
 - [ ] EXE builds and runs standalone
 - [ ] Installer creates shortcuts
 - [ ] Uninstall removes files
-- [ ] All Phase 1-4 features work in installed version
+- [ ] All Phase 1-5B features work in installed version
 - [ ] No import errors or missing modules
 - [ ] User can reinstall and start over
 
@@ -351,12 +406,14 @@ Package Echo Pro as a professional Windows application with installer.
 
 | Phase | Status | Start Date | End Date | Complete % | Notes |
 |-------|--------|-----------|----------|-----------|-------|
-| Setup | ⏳ Pending | - | - | - | Dependencies needed |
-| Phase 1 | ⏳ Pending | - | - | - | Core DAW |
-| Phase 2 | ⏳ Pending | - | - | - | Audio features |
-| Phase 3 | ⏳ Pending | - | - | - | Voice system |
-| Phase 4 | ⏳ Pending | - | - | - | AI generation |
-| Phase 5 | ⏳ Pending | - | - | - | Installer |
+| Setup | ✅ Complete | - | - | 100% | Dependencies and foundation ready |
+| Phase 1 | ✅ Complete | - | - | 100% | Core DAW |
+| Phase 2 | ✅ Complete | - | - | 100% | Audio features |
+| Phase 3 | ✅ Complete | - | - | 100% | Voice system |
+| Phase 4 | ✅ Complete | - | - | 100% | AI generation |
+| Phase 5A | 🚧 In Progress | - | - | 70% | Recording core integration |
+| Phase 5B | ⏳ Planned | - | - | 0% | Recording polish + safety |
+| Phase 6 | ⏳ Pending | - | - | 0% | Installer |
 | Testing | ⏳ Pending | - | - | - | Full QA |
 
 ---
@@ -413,7 +470,7 @@ Both interfaces are frozen (no UI changes required).
 
 The Echo Pro build is **COMPLETE** when:
 
-1. ✅ All 5 phases implemented
+1. ✅ All 6 phases implemented
 2. ✅ No syntax errors (verified by linter)
 3. ✅ All features tested individually
 4. ✅ Full workflow tested end-to-end

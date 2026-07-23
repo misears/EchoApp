@@ -18,11 +18,16 @@ class TimelineWidget(QWidget):
         super().__init__(parent)
         self.project = project
         self.selected_clip_id = None
+        self.selected_track_index = None
         self.setMinimumHeight(300)
         self.setMouseTracking(True)
 
     def set_project(self, project: Project):
         self.project = project
+        self.update()
+
+    def set_selected_track(self, track_index):
+        self.selected_track_index = track_index
         self.update()
 
     def time_to_x(self, ms: int) -> int:
@@ -38,7 +43,10 @@ class TimelineWidget(QWidget):
             top = track_index * (TRACK_HEIGHT + TRACK_GAP)
             # Track background
             track_rect = QRect(0, top, self.width(), TRACK_HEIGHT)
-            painter.fillRect(track_rect, QColor(40, 40, 40))
+            if self.selected_track_index == track_index:
+                painter.fillRect(track_rect, QColor(65, 85, 95))
+            else:
+                painter.fillRect(track_rect, QColor(40, 40, 40))
             painter.setPen(Qt.white)
             painter.drawText(5, top + 20, track.name)
 

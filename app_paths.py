@@ -1,7 +1,27 @@
 import os
+import sys
 from pathlib import Path
 
-ECHO_ROOT = Path(os.environ["APPDATA"]) / "EchoPro"
+def _portable_base_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+def resolve_echo_root() -> Path:
+    override = os.environ.get("ECHO_PRO_HOME", "").strip()
+    if override:
+        return Path(override)
+
+    portable_marker_dir = _portable_base_dir()
+    portable_marker = portable_marker_dir / ".echo_portable"
+    if portable_marker.exists():
+        return portable_marker_dir / "data"
+
+    return Path(os.environ["APPDATA"]) / "EchoPro"
+
+
+ECHO_ROOT = resolve_echo_root()
 PROJECTS_DIR = ECHO_ROOT / "projects"
 VOICES_DIR = ECHO_ROOT / "voices"
 GENERATED_DIR = ECHO_ROOT / "generated"

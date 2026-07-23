@@ -41,6 +41,8 @@ class RecordingController:
         self.armed_tracks: Set[int] = set()
         self.active_take_ids: Dict[int, int] = {}
         self.stream: Optional[sd.Stream] = None
+        self._pending_count_in: Optional[np.ndarray] = None
+        self._count_in_cursor = 0
 
     def configure_preset(self, preset: RecordingPreset) -> None:
         self.session.set_preset(preset)
@@ -81,17 +83,16 @@ class RecordingController:
         self.metronome.set_time_signature(numerator, denominator)
         self.status.time_signature = f"{numerator}/{denominator}"
 
+    def set_count_in_bars(self, bars: int) -> None:
+        self.metronome.config.count_in_bars = max(0, bars)
+
     def start_count_in(self, bars: Optional[int] = None) -> np.ndarray:
         self.status.count_in_active = True
         count_in = self.metronome.count_in_block(bars)
         self.status.count_in_active = False
         return count_in
 
-    def start_recording(self) -> bool:
-        if not self.armed_tracks:
-            self.status.last_error = "No tracks armed for recording"
-            return False
-
+    def _begin_take_capture(self) -> None:
         self.engine.start_recording()
         self.metronome.start()
         self.status.is_recording = True
@@ -100,6 +101,21 @@ class RecordingController:
         for track_id in self.armed_tracks:
             take = self.session.start_new_take(track_id)
             self.active_take_ids[track_id] = take.take_number
+
+    def start_recording(self) -> bool:
+        if not self.armed_tracks:
+            self.status.last_error = "No tracks armed for recording"
+            return False
+
+        count_in_bars = max(0, self.metronome.config.count_in_bars)
+        if count_in_bars > 0:
+            self.status.count_in_active = True
+            self.status.is_recording = False
+            self._pending_count_in = self.metronome.count_in_block(count_in_bars)
+            self._count_in_cursor = 0
+        else:
+            self.status.count_in_active = False
+            self._begin_take_capture()
 
         return True
 
@@ -137,10 +153,28 @@ class RecordingController:
             self.status.last_error = str(status)
 
         input_audio = indata.T.copy()
+        count_in_mix = np.zeros_like(input_audio)
+        if self.status.count_in_active and self._pending_count_in is not None:
+            remaining = self._pending_count_in.shape[1] - self._count_in_cursor
+            copy_frames = min(frames, max(0, remaining))
+            if copy_frames > 0:
+                start = self._count_in_cursor
+                end = start + copy_frames
+                count_in_mix[:, :copy_frames] = self._pending_count_in[:, start:end]
+                self._count_in_cursor = end
+
+            if self._count_in_cursor >= self._pending_count_in.shape[1]:
+                self.status.count_in_active = False
+                self._pending_count_in = None
+                self._count_in_cursor = 0
+                self._begin_take_capture()
+
         click = self.process_recording_block(input_audio)
 
         if self.status.is_recording:
             output = input_audio + click
+        elif self.status.count_in_active:
+            output = count_in_mix
         else:
             output = click
 
@@ -153,6 +187,9 @@ class RecordingController:
         self.engine.stop_recording()
         self.metronome.stop()
         self.status.is_recording = False
+        self.status.count_in_active = False
+        self._pending_count_in = None
+        self._count_in_cursor = 0
 
         level_stats = level_stats or {}
         for track_id in list(self.active_take_ids.keys()):

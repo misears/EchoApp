@@ -80,6 +80,7 @@ class TrackMeterWidget(QFrame):
     def __init__(self, track_name: str, parent=None):
         super().__init__(parent)
         self.setFrameShape(QFrame.StyledPanel)
+        self.clip_hold = False
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 4, 8, 4)
 
@@ -95,9 +96,37 @@ class TrackMeterWidget(QFrame):
         self.peak_label.setMinimumWidth(70)
         layout.addWidget(self.peak_label)
 
-    def update_levels(self, current_db: float, peak_db: float) -> None:
+        self.clip_label = QLabel("OK")
+        self.clip_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.clip_label.setMinimumWidth(40)
+        layout.addWidget(self.clip_label)
+
+        self.reset_button = QPushButton("Reset")
+        self.reset_button.clicked.connect(self.reset_clip_hold)
+        layout.addWidget(self.reset_button)
+
+        self._set_clip_visual(False)
+
+    def _set_clip_visual(self, clipped: bool) -> None:
+        if clipped:
+            self.clip_label.setText("CLIP")
+            self.clip_label.setStyleSheet("color: #ff4d4d; font-weight: bold;")
+            self.setStyleSheet("QFrame { border: 1px solid #ff4d4d; background-color: #3a1f1f; }")
+        else:
+            self.clip_label.setText("OK")
+            self.clip_label.setStyleSheet("color: #9adf9a;")
+            self.setStyleSheet("")
+
+    def reset_clip_hold(self) -> None:
+        self.clip_hold = False
+        self._set_clip_visual(False)
+
+    def update_levels(self, current_db: float, peak_db: float, clipping: bool = False) -> None:
         self.meter.set_db(current_db)
         self.peak_label.setText(f"{peak_db:.1f} dB")
+        if clipping:
+            self.clip_hold = True
+        self._set_clip_visual(self.clip_hold)
 
 
 class TransportBar(QWidget):

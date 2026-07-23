@@ -17,6 +17,8 @@ class Clip:
 class Track:
     name: str
     volume_db: float = 0.0  # 0 = original, negative = quieter, positive = louder
+    muted: bool = False
+    soloed: bool = False
 
 @dataclass
 class Project:

@@ -216,6 +216,17 @@ class Track:
         if self.muted:
             return
         self.recording_buffer.write(audio)
+
+        # Update metering from recorded input so recording meters stay live.
+        rms = np.sqrt(np.mean(audio ** 2))
+        current_db = 20 * np.log10(rms + 1e-10)
+        peak = float(np.max(np.abs(audio)))
+        peak_db = 20 * np.log10(peak + 1e-10)
+
+        with self.lock:
+            self.current_level_db = current_db
+            self.peak_level_db = peak_db
+            self.clipping_detected = peak > 1.0
     
     def get_playback_audio(self, num_samples: int) -> np.ndarray:
         """Get audio for playback."""

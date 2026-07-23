@@ -1,7 +1,7 @@
 # ECHO PRO BUILD STATUS — Code vs. Outline Comparison
 
-**Last Updated:** 2026-07-22  
-**Overall Completion:** 80% (Phases 1-4 Complete, Phase 5 Not Started)
+**Last Updated:** 2026-07-23  
+**Overall Completion:** 88% (Phases 1-4 Complete, Phase 5A In Progress, Phase 5B Planned, Phase 6 Not Started)
 
 ---
 
@@ -124,23 +124,51 @@
 
 ---
 
-### 📦 PHASE 5: WINDOWS INSTALLER
+### 🎙️ PHASE 5A: PROFESSIONAL RECORDING CORE
+
+**Status:** 🚧 **IN PROGRESS** (70%)
+
+| Deliverable | File | Status | Notes |
+|------------|------|--------|-------|
+| Recording Controller | `recording_controller.py` | ✅ Done | Stream routing, armed tracks, status snapshots, count-in flow |
+| Metronome + Timing | `metronome.py` | ✅ Done | BPM/time signature/count-in generation |
+| Recording UI Controls | `echo_pro_app.py` | ✅ Done | Record/stop, arm controls, tempo/time sig/count-in controls |
+| Device Selection + Test | `echo_pro_app.py`, `audio_device.py` | ✅ Done | Input/output selectors + config test and latency summary |
+| Metering Widgets | `recording_ui_components.py` | ✅ Done | Peak display, clipping indicator, clip hold/reset |
+| Track Manipulation for Recording | `echo_pro_app.py`, `project_model.py` | ✅ Done | Select/rename/mute/solo/move/delete wired to recording state |
+| Take History UX | `recording_session.py`, `echo_pro_app.py` | 🟡 Partial | Core take data exists; richer per-track take browser still pending |
+
+**Phase 5A Status:**
+
+- ✅ Device-aware recording startup path implemented
+- ✅ Count-in and time signature UI wired
+- ✅ Live meter clipping feedback with reset controls
+- 🟡 Advanced take review panel still pending
+
+### 🎛️ PHASE 5B: RECORDING POLISH AND PRODUCTION SAFETY
+
+**Status:** ⏳ **PLANNED** (0%)
+
+| Deliverable | Plan File | Status | Notes |
+|------------|-----------|--------|-------|
+| Punch In/Out | `PHASE_5B_RECORDING_PLAN.md` | ⏳ Planned | Precise timed capture windows |
+| Loop Recording | `PHASE_5B_RECORDING_PLAN.md` | ⏳ Planned | Auto-take increment per cycle |
+| Take Browser + Selection | `PHASE_5B_RECORDING_PLAN.md` | ⏳ Planned | Active take selection by track |
+| Basic Comping Workflow | `PHASE_5B_RECORDING_PLAN.md` | ⏳ Planned | Non-destructive region take choices |
+| Recovery + Safety Checks | `PHASE_5B_RECORDING_PLAN.md` | ⏳ Planned | Disk checks and interrupted-session restore |
+
+### 📦 PHASE 6: WINDOWS INSTALLER
 
 **Status:** ⏳ **NOT STARTED** (0%)
 
 | Deliverable | File | Status | Notes |
 |------------|------|--------|-------|
-| PyInstaller Spec | `EchoPro.spec` | ❌ Not Done | Needs to be created |
-| Build Script | `build_exe.bat` | ✅ Exists | Basic script present, may need updates |
-| Installer Script | `echo_pro_installer.iss` | ✅ Exists | Basic script present, needs testing |
-| Build Artifacts | `build/`, `Output/` | ⏳ Pending | Not built yet |
-
-**Phase 5 Status:**
-
-- ❌ EchoPro.exe not built
-- ❌ EchoProInstaller.exe not built
-- ❌ Installer not tested
-- ⚠️ PyInstaller spec may need data folder configuration
+| PyInstaller Spec | `EchoPro.spec` | ✅ Exists | Needs full packaging validation |
+| Build Script | `build_exe.bat` | ✅ Exists | Requires end-to-end build verification |
+| Installer Script | `echo_pro_installer.iss` | 🚧 In Progress | Includes dependency and portable-mode tasks; needs end-to-end validation |
+| Dependency Manager | `install_echo_pro.bat` | 🚧 In Progress | Supports `install` and `update` actions for ffmpeg and demucs runtime |
+| Portable Launcher | `EchoPro_Portable.bat` | 🚧 In Progress | Launches app with local `data/` root and local tools/runtime PATH |
+| Build Artifacts | `build/`, `dist/`, `Output/` | 🟡 Partial | Artifacts present, release validation pending |
 
 ---
 
@@ -246,14 +274,25 @@ All Phase 1-4 features are implemented and ready to test:
 2. [ ] **Delete duplicate file** `audioinfo.py`
 3. [ ] **Run linter** to verify no new errors introduced
 
-### Phase 5 (Installer)
+### Phase 5B (Recording Polish)
 
-4. [ ] Review and test `EchoPro.spec` configuration
-2. [ ] Run PyInstaller: `pyinstaller EchoPro.spec`
-3. [ ] Verify `dist/EchoPro.exe` runs standalone
-4. [ ] Review and test `echo_pro_installer.iss`
-5. [ ] Run Inno Setup: Build installer
-6. [ ] Test installer on clean Windows installation
+4. [ ] Implement punch-in and punch-out transport controls
+5. [ ] Implement loop recording with automatic take incrementing
+6. [ ] Build per-track take browser and active-take selector
+7. [ ] Add basic comping selection workflow
+8. [ ] Add recovery checks and interrupted-session restore flow
+
+### Phase 6 (Installer)
+
+9. [ ] Review and test `EchoPro.spec` configuration
+10. [ ] Run PyInstaller: `pyinstaller EchoPro.spec`
+11. [ ] Verify `dist/EchoPro.exe` runs standalone
+12. [ ] Review and test `echo_pro_installer.iss`
+13. [ ] Verify installer dependency workflow (`install_echo_pro.bat install`) on clean machine
+14. [ ] Verify dependency update workflow (`install_echo_pro.bat update`) after install
+15. [ ] Verify portable-mode install writes and uses local `data/` root on removable drive
+16. [ ] Run Inno Setup: Build installer
+17. [ ] Test installer on clean Windows installation
 
 ### Testing & QA
 
@@ -276,9 +315,11 @@ All Phase 1-4 features are implemented and ready to test:
 |-------|-------|--------|--------------|---------|-------|
 | 1 | 6 | ✅ 100% | 🟡 Good | ✅ Ready | ✅ YES |
 | 2 | 2 | ✅ 100% | 🟡 Good | ✅ Ready | ✅ YES |
-| 3 | 4 | ✅ 100% | 🟡 Good | ✅ Ready | ⚠️ Needs fixes |
-| 4 | 3 | ✅ 100% | 🟡 Good | ✅ Ready | ⚠️ Needs fixes |
-| 5 | 3 | ❌ 0% | ❌ Not started | ❌ Pending | ❌ NO |
+| 3 | 4 | ✅ 100% | 🟡 Good | ✅ Ready | ✅ YES |
+| 4 | 3 | ✅ 100% | 🟡 Good | ✅ Ready | ✅ YES |
+| 5A | 5 | 🚧 70% | 🟡 Good | 🟡 Partial | 🟡 Almost |
+| 5B | 1 (plan) | ⏳ 0% | - | - | ⏳ Planned |
+| 6 | 3 | ❌ 0% | ❌ Not started | ❌ Pending | ❌ NO |
 
 **Legend:**
 
@@ -306,12 +347,12 @@ Echo Pro can **immediately**:
 
 ## 📋 FIX CHECKLIST
 
-Before proceeding to Phase 5 testing:
+Before proceeding to Phase 6 installer testing:
 
-- [ ] Fix `VoiceBackendConfig.extra` mutable default
-- [ ] Fix `VoiceProfileConfig.metadata` mutable default  
-- [ ] Fix `T2MModelConfig.extra` mutable default
-- [ ] Delete `audioinfo.py`
+- [x] Fix `VoiceBackendConfig.extra` mutable default
+- [x] Fix `VoiceProfileConfig.metadata` mutable default  
+- [x] Fix `T2MModelConfig.extra` mutable default
+- [x] Delete `audioinfo.py`
 - [ ] Verify no import errors: `python -m py_compile *.py`
 - [ ] Run linter: `pylint *.py` or use VS Code
 - [ ] Verify all imports resolve correctly
@@ -346,18 +387,20 @@ When ready to integrate real AI models:
 
 - Phases 1-4 code: **COMPLETE** ✅
 - Phases 1-4 testing: **READY** ✅
-- Phase 5 (installer): **NOT STARTED** ❌
-- Overall: **80% Complete**
+- Phase 5A recording core: **IN PROGRESS** 🚧
+- Phase 5B recording polish: **PLANNED** ⏳
+- Phase 6 installer: **NOT STARTED** ❌
+- Overall: **88% Complete**
 
 **Blockers for Release:**
 
 1. Dataclass mutable defaults (3 files)
-2. Phase 5 installer testing
+2. Phase 5B recording polish implementation
 3. Full end-to-end testing
 
 **Time Estimate to Release:**
 
-- Fix issues: **15 minutes**
-- Build Phase 5: **30 minutes**
-- Test installer: **1 hour**
-- **Total: ~2 hours**
+- Complete remaining Phase 5A/5B work: **1-2 weeks**
+- Build and test Phase 6 installer: **1-2 days**
+- End-to-end regression + release QA: **1-2 days**
+- **Total: ~2-3 weeks to production-ready v1.0**

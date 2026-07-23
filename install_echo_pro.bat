@@ -1,62 +1,104 @@
 @echo off
 setlocal
 
-echo === Echo Pro - Environment Setup ===
+echo === Echo Pro Dependency Manager ===
 
 setlocal EnableExtensions EnableDelayedExpansion
 
-set "PY_CMD="
-py -3.10 --version >nul 2>&1
-if not errorlevel 1 (
-    set "PY_CMD=py -3.10"
-) else (
-    python --version >nul 2>&1
-    if errorlevel 1 (
-        echo Python not found. Install from https://www.python.org/downloads/windows/
-        pause
-        exit /b 1
-    )
-    set "PY_CMD=python"
+set "ACTION=%~1"
+if /I "%ACTION%"=="" set "ACTION=install"
+if /I not "%ACTION%"=="install" if /I not "%ACTION%"=="update" (
+    echo Usage: %~nx0 [install^|update]
+    exit /b 1
 )
 
-echo Using interpreter: %PY_CMD%
+set "APP_ROOT=%~dp0"
+if "%APP_ROOT:~-1%"=="\" set "APP_ROOT=%APP_ROOT:~0,-1%"
 
-set ECHO=%APPDATA%\EchoPro
-set TOOLS=%LOCALAPPDATA%\EchoPro\tools
+set "ECHO_HOME=%ECHO_PRO_HOME%"
+if not defined ECHO_HOME set "ECHO_HOME=%APPDATA%\EchoPro"
+
+set "TOOLS=%APP_ROOT%\tools"
+set "VENV_DIR=%APP_ROOT%\runtime\venv"
+
+echo Action: %ACTION%
+echo App root: %APP_ROOT%
+echo Data root: %ECHO_HOME%
 
 echo Creating directories...
-mkdir "%ECHO%\projects" "%ECHO%\voices" "%ECHO%\generated" 2>nul
+mkdir "%ECHO_HOME%\projects" "%ECHO_HOME%\voices" "%ECHO_HOME%\generated" 2>nul
 mkdir "%TOOLS%" 2>nul
 
 call :ensure_ffmpeg
 if errorlevel 1 goto :fail
 
+call :ensure_python
+if errorlevel 1 goto :fail
+
 call :ensure_demucs
 if errorlevel 1 goto :fail
 
-echo Echo Pro data root is at: %ECHO%
-echo Environment setup complete.
+echo.
+echo Dependencies are ready.
+echo ffmpeg: %TOOLS%\ffmpeg\current\bin\ffmpeg.exe
+echo demucs: %VENV_DIR%\Scripts\demucs.exe
+echo.
+echo Tip: Use EchoPro_Portable.bat for portable launches.
 exit /b 0
 
 :fail
-echo Setup failed. See messages above.
+echo Dependency setup failed. See messages above.
 exit /b 1
+
+:ensure_python
+set "PY_CMD="
+if exist "%VENV_DIR%\Scripts\python.exe" (
+    set "PY_CMD=%VENV_DIR%\Scripts\python.exe"
+    echo Using existing runtime Python: %PY_CMD%
+    exit /b 0
+)
+
+set "SYSTEM_PY="
+py -3.10 --version >nul 2>&1
+if not errorlevel 1 (
+    set "SYSTEM_PY=py -3.10"
+) else (
+    python --version >nul 2>&1
+    if not errorlevel 1 set "SYSTEM_PY=python"
+)
+
+if not defined SYSTEM_PY (
+    echo Python 3.10+ not found.
+    echo Install Python, then run this script again.
+    echo Suggested command: winget install Python.Python.3.10
+    exit /b 1
+)
+
+echo Creating local runtime venv...
+%SYSTEM_PY% -m venv "%VENV_DIR%"
+if errorlevel 1 (
+    echo Failed creating virtual environment.
+    exit /b 1
+)
+
+set "PY_CMD=%VENV_DIR%\Scripts\python.exe"
+"%PY_CMD%" -m pip install --upgrade pip
+if errorlevel 1 (
+    echo Failed to upgrade pip in local runtime.
+    exit /b 1
+)
+exit /b 0
 
 :ensure_ffmpeg
 echo.
 echo Checking ffmpeg...
-set "FFMPEG_EXE="
-set "FFMPEG_BIN="
-
-where ffmpeg >nul 2>&1
-if not errorlevel 1 (
-    for /f "delims=" %%I in ('where ffmpeg') do (
-        set "FFMPEG_EXE=%%I"
-        goto :ffmpeg_found
-    )
+set "FFMPEG_EXE=%TOOLS%\ffmpeg\current\bin\ffmpeg.exe"
+if exist "%FFMPEG_EXE%" (
+    echo ffmpeg already available locally.
+    exit /b 0
 )
 
-echo ffmpeg not found. Downloading portable ffmpeg build...
+echo Downloading portable ffmpeg build...
 set "FFMPEG_ROOT=%TOOLS%\ffmpeg"
 set "FFMPEG_ZIP=%TEMP%\ffmpeg-release-essentials.zip"
 
@@ -78,79 +120,31 @@ if not exist "%FFMPEG_BIN%\ffmpeg.exe" (
     exit /b 1
 )
 
-set "FFMPEG_EXE=%FFMPEG_BIN%\ffmpeg.exe"
+if exist "%FFMPEG_ROOT%\current" rmdir /s /q "%FFMPEG_ROOT%\current"
+mklink /D "%FFMPEG_ROOT%\current" "%FFMPEG_BIN%\.." >nul 2>&1
+if errorlevel 1 (
+    xcopy /E /I /Y "%FFMPEG_BIN%\.." "%FFMPEG_ROOT%\current\" >nul
+)
 
-:ffmpeg_found
-for %%I in ("%FFMPEG_EXE%") do set "FFMPEG_BIN=%%~dpI"
-if "%FFMPEG_BIN:~-1%"=="\" set "FFMPEG_BIN=%FFMPEG_BIN:~0,-1%"
-
-call :add_to_path "%FFMPEG_BIN%"
-if errorlevel 1 exit /b 1
-
-echo ffmpeg ready: %FFMPEG_EXE%
+echo ffmpeg ready: %FFMPEG_ROOT%\current\bin\ffmpeg.exe
 exit /b 0
 
 :ensure_demucs
 echo.
-echo Checking demucs...
-set "DEMUCS_EXE="
-set "DEMUCS_DIR="
-
-where demucs >nul 2>&1
-if not errorlevel 1 (
-    for /f "delims=" %%I in ('where demucs') do (
-        set "DEMUCS_EXE=%%I"
-        goto :demucs_found
-    )
+echo Installing/updating demucs in local runtime...
+if /I "%ACTION%"=="update" (
+    "%PY_CMD%" -m pip install --upgrade demucs
+) else (
+    "%PY_CMD%" -m pip install demucs
 )
-
-echo demucs not found. Installing with pip...
-%PY_CMD% -m pip install --upgrade demucs
 if errorlevel 1 (
     echo Failed to install demucs.
     exit /b 1
 )
-
-where demucs >nul 2>&1
-if not errorlevel 1 (
-    for /f "delims=" %%I in ('where demucs') do (
-        set "DEMUCS_EXE=%%I"
-        goto :demucs_found
-    )
-)
-
-for /f "usebackq delims=" %%I in (`%PY_CMD% -m site --user-base`) do set "PY_USER_BASE=%%I"
-if defined PY_USER_BASE if exist "%PY_USER_BASE%\Scripts\demucs.exe" set "DEMUCS_EXE=%PY_USER_BASE%\Scripts\demucs.exe"
-
-if not defined DEMUCS_EXE (
-    echo demucs was installed but executable could not be located.
+if not exist "%VENV_DIR%\Scripts\demucs.exe" (
+    echo demucs executable was not found in local runtime.
     exit /b 1
 )
 
-:demucs_found
-for %%I in ("%DEMUCS_EXE%") do set "DEMUCS_DIR=%%~dpI"
-if "%DEMUCS_DIR:~-1%"=="\" set "DEMUCS_DIR=%DEMUCS_DIR:~0,-1%"
-
-call :add_to_path "%DEMUCS_DIR%"
-if errorlevel 1 exit /b 1
-
-echo demucs ready: %DEMUCS_EXE%
-exit /b 0
-
-:add_to_path
-set "TARGET_DIR=%~1"
-if not exist "%TARGET_DIR%" (
-    echo Cannot add missing directory to PATH: %TARGET_DIR%
-    exit /b 1
-)
-
-echo Adding to current session PATH: %TARGET_DIR%
-set "PATH=%PATH%;%TARGET_DIR%"
-
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $target=$env:TARGET_DIR; $current=[Environment]::GetEnvironmentVariable('Path','User'); $items=@(); if ($current) { $items=$current -split ';' | Where-Object { $_ -and $_.Trim() } }; $normalized=@($items | ForEach-Object { $_.TrimEnd('\') }); if ($normalized -notcontains $target.TrimEnd('\')) { $items += $target }; $newPath=($items | Select-Object -Unique) -join ';'; [Environment]::SetEnvironmentVariable('Path',$newPath,'User')"
-if errorlevel 1 (
-    echo Failed to persist PATH update for: %TARGET_DIR%
-    exit /b 1
-)
-
+echo demucs ready: %VENV_DIR%\Scripts\demucs.exe
 exit /b 0
