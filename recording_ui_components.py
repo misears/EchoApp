@@ -143,3 +143,30 @@ class TransportBar(QWidget):
 
         for button in [self.record_button, self.stop_button, self.undo_button, self.redo_button, self.click_button]:
             layout.addWidget(button)
+
+
+class RecordingDiagnosticsWidget(QFrame):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFrameShape(QFrame.StyledPanel)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 4, 8, 4)
+
+        self.label = QLabel("Diagnostics: waiting")
+        layout.addWidget(self.label)
+
+    def update_diagnostics(self, diagnostics: dict) -> None:
+        loop_cycles = int(diagnostics.get("loop_cycles_completed", 0))
+        punch_starts = int(diagnostics.get("punch_start_hits", 0))
+        punch_stops = int(diagnostics.get("punch_stop_hits", 0))
+        auto_stops = int(diagnostics.get("auto_stop_events", 0))
+        last_stop = int(diagnostics.get("last_auto_stop_sample", 0))
+        last_error = str(diagnostics.get("last_transport_error", "")).strip()
+        error_text = last_error if last_error else "none"
+        self.label.setText(
+            "Diag | "
+            f"Loop cycles: {loop_cycles} | "
+            f"Punch start/stop: {punch_starts}/{punch_stops} | "
+            f"Auto stops: {auto_stops} @ {last_stop} | "
+            f"Err: {error_text}"
+        )

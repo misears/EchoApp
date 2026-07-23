@@ -1,7 +1,9 @@
 # ECHO PRO BUILD OUTLINE — Complete Phase Breakdown
 
 ## 📋 PREREQUISITES & SETUP
+
 Before starting any phase, ensure you have:
+
 - Python 3.10+ installed with PATH configured
 - Visual Studio Code with Python extension
 - All required packages installed: `pip install pyside6 pydub simpleaudio sounddevice soundfile demucs`
@@ -16,6 +18,7 @@ Before starting any phase, ensure you have:
 This outline originally grouped recording into earlier implementation sessions and used Phase 5 for installer packaging only. The active roadmap now splits advanced recording into two explicit production phases before installer release work.
 
 ### Phase 5A (In Progress): Recording Core Integration
+
 - Multi-track recording controls in the main app
 - Input/output device selection and test workflow
 - Tempo, time signature, metronome, and count-in controls
@@ -25,6 +28,7 @@ This outline originally grouped recording into earlier implementation sessions a
 Primary reference: `PHASE_5A_RECORDING_PLAN.md`
 
 ### Phase 5B (Planned): Recording Polish and Production Safety
+
 - Punch-in/out transport and loop recording workflows
 - Take browser and active-take selection
 - Basic non-destructive comping flow
@@ -34,15 +38,19 @@ Primary reference: `PHASE_5A_RECORDING_PLAN.md`
 Primary reference: `PHASE_5B_RECORDING_PLAN.md`
 
 ### Phase 6 (Installer)
+
 Phase 5 in this original document maps to Phase 6 in the active execution plan.
 
 ---
 
 ## 🎚️ PHASE 1: BUILD THE CORE DAW
+
 ### Goal
+
 Create a functional multitrack digital audio workstation with basic project management.
 
 ### What Gets Built
+
 - Project data model (tracks, clips, timeline)
 - Audio file info extraction
 - Visual timeline display
@@ -50,6 +58,7 @@ Create a functional multitrack digital audio workstation with basic project mana
 - File I/O for projects
 
 ### Deliverables
+
 - `project_model.py` — Data structures for Project, Track, Clip
 - `audio_info.py` — Audio file metadata extraction
 - `timeline_widget.py` — Visual timeline rendering
@@ -59,6 +68,7 @@ Create a functional multitrack digital audio workstation with basic project mana
 - `.eproj` file format (JSON-based project files)
 
 ### Next Steps
+
 - [ ] Create all Phase 1 Python files
 - [ ] Test project creation (New Project → works?)
 - [ ] Test track addition (Add Track → timeline updates?)
@@ -71,6 +81,7 @@ Create a functional multitrack digital audio workstation with basic project mana
 - [ ] Document any issues or UX improvements
 
 ### Success Criteria
+
 ✅ Can create empty projects
 ✅ Can add multiple tracks
 ✅ Can add audio clips to tracks
@@ -81,10 +92,13 @@ Create a functional multitrack digital audio workstation with basic project mana
 ---
 
 ## 🎛️ PHASE 2: ADD STEMS, PLAYBACK, MIXING, FIRST RUN WIZARD
+
 ### Goal
+
 Add professional audio processing: stem separation, playback mixing, and welcoming new users.
 
 ### What Gets Built
+
 - Demucs integration for stem separation
 - Real-time audio mixing engine
 - Volume control system
@@ -92,12 +106,14 @@ Add professional audio processing: stem separation, playback mixing, and welcomi
 - Project browser/library view
 
 ### New/Modified Files
+
 - `stems_engine.py` — Demucs integration and stem import
 - `playback_mixer.py` — Audio mixing and playback
 - **Modified `echo_pro_app.py`** — Add stems UI, playback controls, volume sliders, project browser
 - **Modified `project_model.py`** — Add track volume_db field (already present)
 
 ### Next Steps
+
 - [ ] Create `stems_engine.py` with Demucs wrapper
 - [ ] Create `playback_mixer.py` with pydub mixing logic
 - [ ] Test stem separation on sample audio file
@@ -112,6 +128,7 @@ Add professional audio processing: stem separation, playback mixing, and welcomi
 - [ ] Verify demucs error messages are user-friendly
 
 ### Success Criteria
+
 ✅ Can split songs into stems using Demucs
 ✅ Stems automatically added as tracks
 ✅ Can play entire project mix
@@ -123,10 +140,13 @@ Add professional audio processing: stem separation, playback mixing, and welcomi
 ---
 
 ## 🎤 PHASE 3: VOICE RECORDING + VOICE CONVERSION HOOKS
+
 ### Goal
+
 Add voice profile storage and placeholder voice conversion system.
 
 ### What Gets Built
+
 - Voice profile storage with consent flags
 - Microphone recording interface
 - Voice Manager dialog
@@ -134,6 +154,7 @@ Add voice profile storage and placeholder voice conversion system.
 - Ethical consent warnings
 
 ### New/Modified Files
+
 - `voice_store.py` — Voice profile persistence (JSON index)
 - `voice_recorder.py` — Microphone recording via sounddevice
 - `voice_interface.py` — Future-proof voice conversion interfaces
@@ -141,6 +162,7 @@ Add voice profile storage and placeholder voice conversion system.
 - **Modified `echo_pro_app.py`** — Add voice UI, manager dialog, apply voice effects button
 
 ### Next Steps
+
 - [ ] Create `voice_store.py` with profile persistence
 - [ ] Create `voice_recorder.py` with 10s recording
 - [ ] Create `voice_interface.py` with frozen dataclass interfaces
@@ -156,6 +178,7 @@ Add voice profile storage and placeholder voice conversion system.
 - [ ] Document the voice_interface.py frozen interface for future model replacement
 
 ### Success Criteria
+
 ✅ Can record voice profiles (10s minimum)
 ✅ Voice profiles stored with consent metadata
 ✅ Can list all recorded voices
@@ -165,7 +188,9 @@ Add voice profile storage and placeholder voice conversion system.
 ✅ Interface allows easy future model replacement
 
 ### Future Integration Point
+
 Replace `voice_interface.voice_convert()` function body with:
+
 ```python
 # Real voice conversion model integration here
 # Input: request.source_wav, request.target_profile
@@ -175,10 +200,13 @@ Replace `voice_interface.voice_convert()` function body with:
 ---
 
 ## 🎵 PHASE 4: MUSIC GENERATOR + SONG PLANNER
+
 ### Goal
+
 Add AI music generation capabilities with flexible backend selection.
 
 ### What Gets Built
+
 - Text-to-music (T2M) interface with offline/cloud backends
 - Single clip generation UI
 - Full song planning and generation
@@ -187,12 +215,14 @@ Add AI music generation capabilities with flexible backend selection.
 - Cloud toggle for backend selection
 
 ### New/Modified Files
+
 - `t2m_interface.py` — Frozen T2M generation interfaces
 - `music_generator.py` — T2M wrapper and clip generation
 - `song_planner.py` — Song structure planning and multi-clip generation
 - **Modified `echo_pro_app.py`** — Add generator UI, song planner UI, cloud toggle
 
 ### Next Steps
+
 - [ ] Create `t2m_interface.py` with frozen dataclass interfaces
 - [ ] Create `music_generator.py` with placeholder (silent clips for now)
 - [ ] Create `song_planner.py` with lyrics splitting and duration planning
@@ -208,6 +238,7 @@ Add AI music generation capabilities with flexible backend selection.
 - [ ] Document the t2m_interface.py frozen interface
 
 ### Success Criteria
+
 ✅ Can generate single music clips (placeholder audio)
 ✅ Can generate full songs with multiple sections
 ✅ Lyrics properly split and assigned to sections
@@ -217,7 +248,9 @@ Add AI music generation capabilities with flexible backend selection.
 ✅ Interface supports future model replacement
 
 ### Future Integration Point
+
 Replace `t2m_interface.t2m_generate_clip()` function body with:
+
 ```python
 # Real T2M model integration here
 # Can be: Stable Audio, AudioLDM, custom model
@@ -228,10 +261,13 @@ Replace `t2m_interface.t2m_generate_clip()` function body with:
 ---
 
 ## 📦 PHASE 5: BUILD THE WINDOWS INSTALLER
+
 ### Goal
+
 Package Echo Pro as a professional Windows application with installer.
 
 ### What Gets Built
+
 - PyInstaller executable (EchoPro.exe)
 - Inno Setup installer script (EchoProInstaller.exe)
 - Start Menu shortcuts
@@ -243,6 +279,7 @@ Package Echo Pro as a professional Windows application with installer.
 - Portable mode launcher keeping app + data together on external drive
 
 ### New/Modified Files
+
 - `EchoPro.spec` — PyInstaller build configuration
 - `echo_pro_installer.iss` — Inno Setup installer script
 - `build_exe.bat` — Batch script for building EXE
@@ -251,11 +288,13 @@ Package Echo Pro as a professional Windows application with installer.
 - **.gitignore** — Exclude build/ and Output/ directories
 
 ### Build Artifacts
+
 - `build/` — PyInstaller intermediate files
 - `dist/EchoPro.exe` — Final executable
 - `Output/EchoProInstaller.exe` — Final installer
 
 ### Next Steps
+
 - [ ] Create `EchoPro.spec` PyInstaller configuration
 - [ ] Configure PyInstaller to include all Python files
 - [ ] Configure PyInstaller to include data directories
@@ -281,6 +320,7 @@ Package Echo Pro as a professional Windows application with installer.
 - [ ] Sign installer (optional, for trust)
 
 ### Success Criteria
+
 ✅ EchoPro.exe runs without Python installation
 ✅ Installer creates Start Menu shortcuts
 ✅ Installer creates Desktop shortcut
@@ -294,6 +334,7 @@ Package Echo Pro as a professional Windows application with installer.
 ✅ All audio features work in EXE version
 
 ### Installation Verification Checklist
+
 - [ ] Installer runs without admin (if possible)
 - [ ] No missing DLL errors
 - [ ] FFmpeg integration works (if bundled)
@@ -320,6 +361,7 @@ Package Echo Pro as a professional Windows application with installer.
 ## ✅ POST-BUILD TASKS
 
 ### Documentation
+
 - [ ] Create user guide (Getting Started)
 - [ ] Document voice conversion interface for developers
 - [ ] Document T2M interface for developers
@@ -327,6 +369,7 @@ Package Echo Pro as a professional Windows application with installer.
 - [ ] Add video tutorial links (if creating them)
 
 ### Quality Assurance
+
 - [ ] Run full test suite (5+ complete workflows)
 - [ ] Test on Windows 10 and Windows 11
 - [ ] Test with various audio formats (MP3, WAV, FLAC, OGG)
@@ -336,6 +379,7 @@ Package Echo Pro as a professional Windows application with installer.
 - [ ] Performance test (profile large projects)
 
 ### Optimization
+
 - [ ] Profile memory usage
 - [ ] Optimize timeline rendering for many clips
 - [ ] Add progress bars for long operations (Demucs, generation)
@@ -343,6 +387,7 @@ Package Echo Pro as a professional Windows application with installer.
 - [ ] Consider multithreading for playback
 
 ### Optional Enhancements
+
 - [ ] Undo/Redo system
 - [ ] Keyboard shortcuts documentation
 - [ ] Dark/Light theme toggle
@@ -357,42 +402,49 @@ Package Echo Pro as a professional Windows application with installer.
 ## 🔄 PHASE TRANSITION CHECKLIST
 
 ### Phase 1 → Phase 2 Requirements
+
 - [ ] All Phase 1 files created and tested
 - [ ] No crashes on basic operations
 - [ ] Project save/load verified working
 - [ ] Timeline renders correctly
 
 ### Phase 2 → Phase 3 Requirements
+
 - [ ] Demucs integrated and tested
 - [ ] Playback working (test with 2+ tracks)
 - [ ] Volume controls working
 - [ ] First Run wizard functional
 
 ### Phase 3 → Phase 4 Requirements
+
 - [ ] Voice recording works
 - [ ] Voice profiles persist
 - [ ] Consent warnings functional
 - [ ] Placeholder voice effect creates clips
 
 ### Phase 4 → Phase 5A Requirements
+
 - [ ] Single clip generation works (placeholder)
 - [ ] Song generation works (placeholder)
 - [ ] All 4 AI interfaces frozen and documented
 - [ ] No critical bugs in main app workflow
 
 ### Phase 5A → Phase 5B Requirements
+
 - [ ] Stable recording start/stop across supported devices
 - [ ] Count-in and timing controls validated with real recordings
 - [ ] Meter clipping/peak feedback validated during sessions
 - [ ] Track arm/select/mute/solo behavior verified while recording
 
 ### Phase 5B → Phase 6 Requirements
+
 - [ ] Punch and loop workflows stable in real sessions
 - [ ] Take selection/comping saves and reloads reliably
 - [ ] Recovery flow tested on interrupted sessions
 - [ ] No major regressions in Phase 1-5A features
 
 ### Phase 6 → Release Requirements
+
 - [ ] EXE builds and runs standalone
 - [ ] Installer creates shortcuts
 - [ ] Uninstall removes files
@@ -421,11 +473,13 @@ Package Echo Pro as a professional Windows application with installer.
 ## 🚨 KNOWN LIMITATIONS & FUTURE WORK
 
 ### Placeholder Systems (To Be Replaced)
+
 - Voice conversion currently only adjusts gain (dB)
 - Music generation outputs silent clips
 - No real AI model integration yet
 
 ### Not Included in v0.1
+
 - Undo/Redo system
 - Clip editing (trim, split, fade)
 - VST plugin support
@@ -435,6 +489,7 @@ Package Echo Pro as a professional Windows application with installer.
 - Bouncing/rendering to single file
 
 ### Performance Assumptions
+
 - Assumes projects < 100 clips
 - Assumes < 20 tracks per project
 - Assumes audio files on local disk (not network)
@@ -445,7 +500,9 @@ Package Echo Pro as a professional Windows application with installer.
 ## 🔗 INTEGRATION POINTS FOR AI MODELS
 
 ### Voice Conversion Model
+
 **File:** `voice_interface.py::voice_convert()`
+
 ```
 Replace placeholder implementation with:
 - Model loading: `model = load_voice_model(...)`
@@ -454,7 +511,9 @@ Replace placeholder implementation with:
 ```
 
 ### Text-to-Music Model
+
 **File:** `t2m_interface.py::t2m_generate_clip()`
+
 ```
 Replace placeholder implementation with:
 - Model loading: `model = load_t2m_model(...)`

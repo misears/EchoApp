@@ -5,12 +5,15 @@ Scope: Recording reliability, take comping workflow, punch/loop capture, and ses
 Placement: Phase 5B in the V1.0 roadmap (after Phase 5A)
 
 ## Objective
+
 Turn the Phase 5A recording foundation into a dependable production workflow by adding polish features that reduce mistakes, speed up iteration, and improve take decisions.
 
 ## Why This Phase Matters
+
 Phase 5A delivers core capture. Phase 5B makes capture practical in repeated daily use: better punch-ins, cleaner take review, safer session recovery, and stronger confidence before export/mix.
 
 ## Deliverables
+
 - Punch-in and punch-out controls with bar/time positioning
 - Loop recording mode with automatic take incrementing
 - Take review panel with active-take selection per track
@@ -22,41 +25,52 @@ Phase 5A delivers core capture. Phase 5B makes capture practical in repeated dai
 ## Build Order
 
 ### 1. Transport and Capture Modes
+
 Extend recording transport with pro capture modes.
+
 - Add punch-in and punch-out start/stop boundaries
 - Add loop-record mode with cycle restart
 - Add pre-roll and post-roll options
 - Ensure timing works with metronome and count-in
 
 ### 2. Take Organization and Selection
+
 Improve take visibility and decision speed.
+
 - Show takes grouped by track
 - Display take metadata (timestamp, duration, peak/clipping)
 - Let user mark takes as keeper or muted
 - Let user choose active take per track
 
 ### 3. Comping Workflow (V1)
+
 Provide first comping pass without heavy DAW complexity.
+
 - Split selected timeline range into comp regions
 - Assign preferred take per region
 - Rebuild playback from selected comp map
 - Preserve non-destructive source takes
 
 ### 4. Safety and Recovery
+
 Reduce loss risk and improve failure behavior.
+
 - Validate available disk space before recording
 - Add recording interrupt recovery prompt
 - Auto-save session metadata on state changes
 - Show clear errors for failed I/O or bad device state
 
 ### 5. UI Integration and Usability
+
 Integrate with current Echo Pro main window cleanly.
+
 - Add punch/loop controls in recording panel
 - Add take browser and active-take selector
 - Add comping action buttons
 - Add compact diagnostics panel (latency, clip events, recovery status)
 
 ## Proposed Files
+
 - recording_controller.py - punch/loop capture orchestration
 - recording_session.py - active-take and comp metadata structures
 - recording_ui_components.py - take list widgets and comping controls
@@ -65,6 +79,7 @@ Integrate with current Echo Pro main window cleanly.
 - new: recording_recovery.py - crash/interruption recovery helpers
 
 ## Existing Files to Reuse
+
 - metronome.py - timing and count-in synchronization
 - audio_device.py - latency and device validation
 - audio_engine.py - real-time callbacks and level telemetry
@@ -72,6 +87,7 @@ Integrate with current Echo Pro main window cleanly.
 - app_paths.py - session and metadata storage paths
 
 ## User Flow
+
 1. User arms one or more tracks and enables loop or punch mode.
 2. User records multiple takes through cycles.
 3. Echo Pro creates and tags takes per cycle automatically.
@@ -81,6 +97,7 @@ Integrate with current Echo Pro main window cleanly.
 7. User saves and can recover state if app/device interruption occurs.
 
 ## Acceptance Criteria
+
 - Punch-in/out recording starts and stops on expected timeline positions
 - Loop recording creates multiple takes without overwriting old takes
 - User can select active take per track quickly from UI
@@ -90,6 +107,7 @@ Integrate with current Echo Pro main window cleanly.
 - Existing Phase 1-5A features continue to work
 
 ## Validation Plan
+
 - Run module import checks for all touched files
 - Run recording loop test with at least 4 automatic takes
 - Verify punch-in/out timing against set bar markers
@@ -99,12 +117,14 @@ Integrate with current Echo Pro main window cleanly.
 - Verify no regressions in save/load and timeline drawing
 
 ## Risks and Constraints
+
 - Punch/loop timing can drift if callback work is heavy
 - Comping logic can become complex if clip boundaries are not normalized
 - Recovery system must avoid corrupting valid sessions
 - UI complexity can increase quickly if take/comp controls are overextended
 
 ## Recommended Implementation Sequence
+
 1. Add punch/loop state model in recording_controller.py.
 2. Add take metadata extensions in recording_session.py.
 3. Build take browser UI and active-take selection.
@@ -113,4 +133,5 @@ Integrate with current Echo Pro main window cleanly.
 6. Run integration QA across recording, playback, and save/load.
 
 ## Definition of Done
+
 Phase 5B is complete when users can record repeated takes using loop or punch workflows, select preferred takes quickly, build a basic comp without destructive edits, and recover from interrupted sessions with stable project state.

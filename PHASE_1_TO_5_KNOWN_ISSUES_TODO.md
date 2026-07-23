@@ -6,7 +6,7 @@ Purpose: single source of truth for active issues, errors, and fix tasks across 
 ## Current Error Snapshot
 
 - Active diagnostics errors:
-  - Markdown lint errors (MD060 table style) in BUILD_STATUS.md only.
+  - None currently reported in planning docs.
 - No active diagnostics errors found in core code modules for Phases 1-5.
 
 ## Important Status Notes
@@ -14,7 +14,7 @@ Purpose: single source of truth for active issues, errors, and fix tasks across 
 - The following prior issues are already fixed in code:
   - Mutable dataclass defaults in voice_interface.py and t2m_interface.py.
   - Duplicate audioinfo.py removal.
-- BUILD_STATUS.md still lists some of those as unresolved in older sections, so documentation is partially stale.
+- BUILD_STATUS.md stale entries and markdown table lint issues were cleaned on 2026-07-23.
 
 ---
 
@@ -138,14 +138,16 @@ Purpose: single source of truth for active issues, errors, and fix tasks across 
 
 ### P5A-1 Take review UX incomplete
 
-- Status: Open
+- Status: Closed (resolved 2026-07-23)
 - File targets: recording_session.py, echo_pro_app.py, recording_ui_components.py
 - Problem:
-  - Core take data exists but richer per-track take browser/selection workflow is still partial.
+  - Core take data previously lacked full browsing/selection and timeline-linked active state controls.
 - TODO:
-  - [ ] Add per-track take browser widget.
-  - [ ] Add active take selector and quick audition actions.
-  - [ ] Show take metadata (duration, clipping, timestamp) in UI.
+  - [x] Add per-track take browser widget.
+  - [x] Add active take selector and quick audition actions.
+  - [x] Show take metadata (duration, clipping, timestamp) in UI.
+  - [x] Add timeline badges for active/alternative takes and bulk hide inactive clips.
+  - [x] Persist take-review preferences (filter/sort/loop/hide) per session.
 
 ### P5A-2 Recording robustness regression suite
 
@@ -154,9 +156,10 @@ Purpose: single source of truth for active issues, errors, and fix tasks across 
 - Problem:
   - Major features are integrated, but dedicated regression matrix is still needed.
 - TODO:
-  - [ ] Add scripted checks for count-in transition to record state.
-  - [ ] Add checks for stop during count-in.
-  - [ ] Add checks for device swap/error paths.
+  - [x] Add scripted checks for count-in transition to record state (`p5a_regression_runner.py`).
+  - [x] Add checks for stop during count-in (`p5a_regression_runner.py`).
+  - [x] Add checks for device swap/error paths (`p5a_regression_runner.py`).
+  - [x] Run scripted checks and capture pass/fail report in QA notes (latest: 3 passed, 0 failed).
 
 ### P5A-3 Meter semantics tuning
 
@@ -174,43 +177,40 @@ Purpose: single source of truth for active issues, errors, and fix tasks across 
 
 ### DOC-1 BUILD_STATUS.md stale issue entries
 
-- Status: Open
+- Status: Closed (resolved 2026-07-23)
 - File targets: BUILD_STATUS.md
 - Problem:
-  - Document still contains already-fixed issues in legacy sections.
+  - Document previously contained already-fixed issues in legacy sections.
 - TODO:
-  - [ ] Remove or mark resolved: mutable dataclass defaults items.
-  - [ ] Remove or mark resolved: duplicate audioinfo.py item.
-  - [ ] Keep active issues only in Known Issues section.
+  - [x] Remove or mark resolved: mutable dataclass defaults items.
+  - [x] Remove or mark resolved: duplicate audioinfo.py item.
+  - [x] Keep active issues only in Known Issues section.
 
 ### DOC-2 Markdown lint cleanup
 
-- Status: Open
+- Status: Closed (resolved 2026-07-23)
 - File targets: BUILD_STATUS.md
 - Problem:
-  - MD060 table style warnings are currently active.
+  - MD060 table style warnings were previously active.
 - TODO:
-  - [ ] Normalize markdown table style consistently in the file.
-  - [ ] Re-run diagnostics and confirm zero markdown lint errors.
+  - [x] Normalize markdown table style consistently in the file.
+  - [x] Re-run diagnostics and confirm zero markdown lint errors.
 
 ---
 
 ## Prioritized Execution Order
 
-1. DOC-2 markdown lint cleanup (fast, removes active diagnostics noise)
-2. DOC-1 stale issue cleanup (ensures planning truth)
-3. P5A-1 take review UX completion
-4. P5A-2 recording regression suite
-5. P2-1 stems progress UX + P2-2 dependency error guidance
-6. P4-2 section-alteration persistence
-7. P1-1 input validation consolidation
-8. Remaining enhancement items
+1. P5A-2 recording regression suite
+2. P2-1 stems progress UX + P2-2 dependency error guidance
+3. P4-2 section-alteration persistence
+4. P1-1 input validation consolidation
+5. Remaining enhancement items
 
 ---
 
 ## Definition of Done for this TODO
 
-- [ ] No active diagnostics/lint errors in planning docs.
-- [ ] BUILD_STATUS.md reflects only currently active issues.
-- [ ] Phase 5A take review UX completed and validated.
+- [x] No active diagnostics/lint errors in planning docs.
+- [x] BUILD_STATUS.md reflects only currently active issues.
+- [x] Phase 5A take review UX completed and validated.
 - [ ] Core phase workflows (1-5A) pass regression checks.

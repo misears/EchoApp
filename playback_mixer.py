@@ -25,6 +25,10 @@ def mix_project_to_segment(project: Project) -> AudioSegment:
 
     for clip in project.clips:
         try:
+            metadata = getattr(clip, "metadata", {}) or {}
+            if metadata.get("source") == "recording_take" and not metadata.get("is_active_take", True):
+                continue
+
             track = project.tracks[clip.track_index]
             if track.muted:
                 continue

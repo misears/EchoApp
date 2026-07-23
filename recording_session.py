@@ -18,9 +18,15 @@ class RecordingTake:
     timestamp: str  # ISO format
     track_id: int
     duration_seconds: float
+    start_sample: int = 0
+    end_sample: int = 0
     level_stats: Dict[str, float] = field(default_factory=dict)  # min, max, rms
     notes: str = ""
     used: bool = True  # Is this take active?
+    is_keeper: bool = False
+    is_muted: bool = False
+    rating: int = 0
+    clip_events: int = 0
 
 @dataclass
 class RecordingPreset:
@@ -39,6 +45,17 @@ class RecordingPreset:
     auto_punch_start_bars: int = 0
     auto_punch_duration_bars: int = 4
 
+
+@dataclass
+class CompRegion:
+    """Non-destructive comp region mapping to a source take."""
+    region_id: int
+    track_id: int
+    start_ms: int
+    end_ms: int
+    source_take_number: int
+    enabled: bool = True
+
 class RecordingSession:
     """Manages a recording session with multiple takes per track."""
     
@@ -53,6 +70,14 @@ class RecordingSession:
         
         # Settings
         self.preset = RecordingPreset(name="Default", num_tracks=4)
+        self.ui_preferences: Dict[str, object] = {
+            "take_filter": "all",
+            "take_sort": "newest",
+            "take_loop": False,
+            "hide_inactive_take_clips": False,
+        }
+        self.comp_regions: Dict[int, List[CompRegion]] = {}
+        self.next_comp_region_id: int = 1
         
         # Undo/Redo
         self.undo_stack: List[RecordingTake] = []
@@ -78,6 +103,126 @@ class RecordingSession:
             self.takes[track_id] = []
         if track_id not in self.current_take_number:
             self.current_take_number[track_id] = 1
+        if track_id not in self.comp_regions:
+            self.comp_regions[track_id] = []
+
+    def get_comp_regions_for_track(self, track_id: int) -> List[CompRegion]:
+        """Get non-destructive comp regions for one track."""
+        return sorted(self.comp_regions.get(int(track_id), []), key=lambda r: (r.start_ms, r.region_id))
+
+    def create_comp_region(self, track_id: int, start_ms: int, end_ms: int, source_take_number: int) -> Optional[CompRegion]:
+        """Create a comp region pointing at a source take."""
+        track_id = int(track_id)
+        start_ms = int(start_ms)
+        end_ms = int(end_ms)
+        source_take_number = int(source_take_number)
+        if end_ms <= start_ms:
+            return None
+        if self.get_take(track_id, source_take_number) is None:
+            return None
+
+        self.ensure_track(track_id)
+        region = CompRegion(
+            region_id=self.next_comp_region_id,
+            track_id=track_id,
+            start_ms=start_ms,
+            end_ms=end_ms,
+            source_take_number=source_take_number,
+            enabled=True,
+        )
+        self.next_comp_region_id += 1
+        self.comp_regions[track_id].append(region)
+        return region
+
+    def assign_comp_region_take(self, track_id: int, region_id: int, source_take_number: int) -> bool:
+        """Re-assign an existing comp region to another take."""
+        track_id = int(track_id)
+        region_id = int(region_id)
+        source_take_number = int(source_take_number)
+        if self.get_take(track_id, source_take_number) is None:
+            return False
+
+        for region in self.comp_regions.get(track_id, []):
+            if int(region.region_id) == region_id:
+                region.source_take_number = source_take_number
+                region.enabled = True
+                return True
+        return False
+
+    def clear_comp_region(self, track_id: int, region_id: int) -> bool:
+        """Disable one comp region without deleting source takes."""
+        track_id = int(track_id)
+        region_id = int(region_id)
+        for region in self.comp_regions.get(track_id, []):
+            if int(region.region_id) == region_id:
+                region.enabled = False
+                return True
+        return False
+
+    def export_snapshot_payload(self) -> Dict[str, object]:
+        """Export session state used by recovery snapshots."""
+        payload: Dict[str, object] = {
+            "session_id": self.session_id,
+            "project_name": self.project_name,
+            "created_at": self.created_at,
+            "total_takes": int(self.total_takes),
+            "total_recording_time_seconds": float(self.total_recording_time_seconds),
+            "current_take_number": {str(track_id): int(next_take) for track_id, next_take in self.current_take_number.items()},
+            "ui_preferences": dict(self.ui_preferences),
+            "takes": {},
+            "comp_regions": {},
+            "next_comp_region_id": int(self.next_comp_region_id),
+        }
+
+        for track_id, takes in self.takes.items():
+            payload["takes"][str(track_id)] = [asdict(take) for take in takes]
+
+        for track_id, regions in self.comp_regions.items():
+            payload["comp_regions"][str(track_id)] = [asdict(region) for region in regions]
+
+        return payload
+
+    def restore_from_snapshot_payload(self, payload: Dict[str, object]) -> bool:
+        """Restore session state from a validated recovery snapshot payload."""
+        try:
+            self.project_name = str(payload.get("project_name", self.project_name))
+            self.total_takes = int(payload.get("total_takes", 0))
+            self.total_recording_time_seconds = float(payload.get("total_recording_time_seconds", 0.0))
+
+            self.ui_preferences = dict(payload.get("ui_preferences", self.ui_preferences))
+
+            takes: Dict[int, List[RecordingTake]] = {}
+            for track_id_str, takes_data in dict(payload.get("takes", {})).items():
+                track_id = int(track_id_str)
+                takes[track_id] = [RecordingTake(**take_data) for take_data in takes_data]
+            self.takes = takes
+
+            restored_next_take: Dict[int, int] = {}
+            for track_id_str, next_take_number in dict(payload.get("current_take_number", {})).items():
+                restored_next_take[int(track_id_str)] = int(next_take_number)
+
+            for track_id, take_list in self.takes.items():
+                if track_id not in restored_next_take:
+                    max_take = max((int(t.take_number) for t in take_list), default=0)
+                    restored_next_take[track_id] = max_take + 1
+            self.current_take_number = restored_next_take
+
+            self.comp_regions = {}
+            for track_id_str, regions_data in dict(payload.get("comp_regions", {})).items():
+                track_id = int(track_id_str)
+                self.comp_regions[track_id] = [CompRegion(**region_data) for region_data in regions_data]
+
+            self.next_comp_region_id = int(payload.get("next_comp_region_id", 1))
+            if self.next_comp_region_id < 1:
+                self.next_comp_region_id = 1
+
+            for track_id in set(self.takes.keys()) | set(self.current_take_number.keys()) | set(self.comp_regions.keys()):
+                self.ensure_track(track_id)
+
+            return True
+        except Exception as exc:
+            print(f"Error restoring session snapshot payload: {exc}")
+            return False
     
     def start_new_take(self, track_id: int) -> RecordingTake:
         """Start a new recording take on a track."""
@@ -100,14 +245,25 @@ class RecordingSession:
         
         return take
     
-    def finish_take(self, track_id: int, duration_seconds: float, 
-                   level_stats: Dict[str, float], notes: str = "") -> Optional[RecordingTake]:
+    def finish_take(
+        self,
+        track_id: int,
+        duration_seconds: float,
+        level_stats: Dict[str, float],
+        notes: str = "",
+        start_sample: Optional[int] = None,
+        end_sample: Optional[int] = None,
+    ) -> Optional[RecordingTake]:
         """Finish current take, record stats."""
         if track_id not in self.takes or not self.takes[track_id]:
             return None
         
         take = self.takes[track_id][-1]
         take.duration_seconds = duration_seconds
+        if start_sample is not None:
+            take.start_sample = int(start_sample)
+        if end_sample is not None:
+            take.end_sample = int(end_sample)
         take.level_stats = level_stats
         take.notes = notes
         
@@ -164,14 +320,66 @@ class RecordingSession:
         if track_id not in self.takes:
             return []
         return sorted(self.takes[track_id], key=lambda t: t.take_number)
+
+    def get_take(self, track_id: int, take_number: int) -> Optional[RecordingTake]:
+        """Get one take by track and take number."""
+        for take in self.get_all_takes_for_track(track_id):
+            if take.take_number == take_number:
+                return take
+        return None
+
+    def set_active_take(self, track_id: int, take_number: int) -> bool:
+        """Mark one take active for a track and deactivate all others."""
+        track_takes = self.get_all_takes_for_track(track_id)
+        if not track_takes:
+            return False
+
+        found = False
+        for take in track_takes:
+            is_selected = take.take_number == take_number
+            take.used = is_selected
+            found = found or is_selected
+
+        return found
+
+    def set_take_keeper(self, track_id: int, take_number: int, is_keeper: bool) -> bool:
+        take = self.get_take(track_id, take_number)
+        if take is None:
+            return False
+        take.is_keeper = bool(is_keeper)
+        return True
+
+    def set_take_muted(self, track_id: int, take_number: int, is_muted: bool) -> bool:
+        take = self.get_take(track_id, take_number)
+        if take is None:
+            return False
+        take.is_muted = bool(is_muted)
+        return True
+
+    def set_take_rating(self, track_id: int, take_number: int, rating: int) -> bool:
+        take = self.get_take(track_id, take_number)
+        if take is None:
+            return False
+        take.rating = max(0, min(5, int(rating)))
+        return True
     
     def delete_take(self, track_id: int, take_number: int) -> bool:
         """Delete a specific take."""
         if track_id not in self.takes:
             return False
-        
-        self.takes[track_id] = [t for t in self.takes[track_id] 
-                                if t.take_number != take_number]
+
+        previous_count = len(self.takes[track_id])
+        self.takes[track_id] = [
+            t for t in self.takes[track_id]
+            if t.take_number != take_number
+        ]
+        if len(self.takes[track_id]) == previous_count:
+            return False
+
+        # Ensure one active take remains when takes still exist.
+        if self.takes[track_id] and not any(t.used for t in self.takes[track_id]):
+            self.takes[track_id][-1].used = True
+
         return True
     
     def set_preset(self, preset: RecordingPreset) -> None:
@@ -186,14 +394,20 @@ class RecordingSession:
                 "project_name": self.project_name,
                 "created_at": self.created_at,
                 "preset": asdict(self.preset),
+                "ui_preferences": self.ui_preferences,
                 "total_takes": self.total_takes,
                 "total_recording_time_seconds": self.total_recording_time_seconds,
-                "takes": {}
+                "takes": {},
+                "current_take_number": {str(track_id): int(next_take) for track_id, next_take in self.current_take_number.items()},
+                "comp_regions": {},
+                "next_comp_region_id": int(self.next_comp_region_id),
             }
             
             # Serialize takes
             for track_id, takes in self.takes.items():
                 metadata["takes"][str(track_id)] = [asdict(t) for t in takes]
+            for track_id, regions in self.comp_regions.items():
+                metadata["comp_regions"][str(track_id)] = [asdict(region) for region in regions]
             
             session_file = self._recording_sessions_dir / f"{self.session_id}_metadata.json"
             
@@ -225,11 +439,33 @@ class RecordingSession:
             # Deserialize preset
             preset_data = metadata.get("preset", {})
             session.preset = RecordingPreset(**preset_data)
+            session.ui_preferences = dict(metadata.get("ui_preferences", session.ui_preferences))
             
             # Deserialize takes
             for track_id_str, takes_data in metadata.get("takes", {}).items():
                 track_id = int(track_id_str)
                 session.takes[track_id] = [RecordingTake(**t) for t in takes_data]
+
+            session.current_take_number = {
+                int(track_id_str): int(next_take)
+                for track_id_str, next_take in metadata.get("current_take_number", {}).items()
+            }
+            for track_id, takes in session.takes.items():
+                if track_id not in session.current_take_number:
+                    max_take = max((int(take.take_number) for take in takes), default=0)
+                    session.current_take_number[track_id] = max_take + 1
+
+            session.comp_regions = {}
+            for track_id_str, regions_data in metadata.get("comp_regions", {}).items():
+                track_id = int(track_id_str)
+                session.comp_regions[track_id] = [CompRegion(**region_data) for region_data in regions_data]
+
+            session.next_comp_region_id = int(metadata.get("next_comp_region_id", 1))
+            if session.next_comp_region_id < 1:
+                session.next_comp_region_id = 1
+
+            for track_id in set(session.takes.keys()) | set(session.current_take_number.keys()) | set(session.comp_regions.keys()):
+                session.ensure_track(track_id)
             
             return session
         except Exception as e:

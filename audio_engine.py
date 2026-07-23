@@ -70,6 +70,31 @@ class AudioBuffer:
                 result[:, i] = self.buffer[:, pos]
             
             return result
+
+    def read_range(self, start_position: int, num_samples: int) -> np.ndarray:
+        """Read from an absolute ring-buffer position.
+
+        Args:
+            start_position: Absolute index in ring buffer.
+            num_samples: Number of samples to read.
+
+        Returns:
+            Array of shape (channels, num_samples)
+        """
+        if num_samples <= 0:
+            return np.zeros((self.channels, 0), dtype=np.float32)
+
+        with self.lock:
+            result = np.zeros((self.channels, num_samples), dtype=np.float32)
+            start = start_position % self.size
+            first_chunk = min(num_samples, self.size - start)
+            result[:, :first_chunk] = self.buffer[:, start:start + first_chunk]
+
+            remainder = num_samples - first_chunk
+            if remainder > 0:
+                result[:, first_chunk:] = self.buffer[:, :remainder]
+
+            return result
     
     def get_current_position(self) -> int:
         """Get current write position in samples."""
@@ -264,6 +289,20 @@ class Track:
     def get_volume_db(self) -> float:
         """Get track volume in dB."""
         return self.volume_db
+
+    def get_recorded_audio_segment(self, start_sample: int, end_sample: int) -> np.ndarray:
+        """Read one contiguous take segment from the recording ring buffer."""
+        start = int(start_sample)
+        end = int(end_sample)
+        if start == end:
+            return np.zeros((self.channels, 0), dtype=np.float32)
+
+        if end > start:
+            sample_count = end - start
+        else:
+            sample_count = (self.recording_buffer.size - start) + end
+
+        return self.recording_buffer.read_range(start, sample_count)
 
 
 class AudioEngine:

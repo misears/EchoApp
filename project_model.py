@@ -1,7 +1,7 @@
 ## project_model.py
 
-from dataclasses import dataclass, asdict
-from typing import List
+from dataclasses import dataclass, asdict, field
+from typing import Any, Dict, List
 import json
 from pathlib import Path
 
@@ -12,6 +12,7 @@ class Clip:
     file_path: str
     start_ms: int   # where clip starts on timeline
     length_ms: int  # how long the clip is
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class Track:
@@ -40,5 +41,9 @@ def save_project(project: Project, path: Path):
 def load_project(path: Path) -> Project:
     data = json.loads(path.read_text(encoding="utf-8"))
     tracks = [Track(**t) for t in data.get("tracks", [])]
-    clips = [Clip(**c) for c in data.get("clips", [])]
+    clips = []
+    for clip_data in data.get("clips", []):
+        clip_copy = dict(clip_data)
+        clip_copy.setdefault("metadata", {})
+        clips.append(Clip(**clip_copy))
     return Project(name=data.get("name", "Untitled"), tracks=tracks, clips=clips)

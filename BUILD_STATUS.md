@@ -12,7 +12,7 @@
 **Status:** ✅ **COMPLETE** (100%)
 
 | Deliverable | File | Status | Notes |
-|------------|------|--------|-------|
+| ------------ | ------ | -------- | ------- |
 | Project Model | `project_model.py` | ✅ Done | All dataclasses defined (Clip, Track, Project) |
 | Audio Info | `audio_info.py` | ✅ Done | `get_audio_length_ms()` implemented |
 | Timeline Widget | `timeline_widget.py` | ✅ Done | Visual rendering works, no interactivity yet |
@@ -32,7 +32,6 @@
 
 **Known Issues from Code Review:**
 
-- ⚠️ Duplicate file: `audioinfo.py` should be deleted (has same code as `audio_info.py`)
 - ⚠️ Input validation could be more robust (e.g., file existence checks)
 
 ---
@@ -42,7 +41,7 @@
 **Status:** ✅ **COMPLETE** (95%)
 
 | Deliverable | File | Status | Notes |
-|------------|------|--------|-------|
+| ------------ | ------ | -------- | ------- |
 | Stems Engine | `stems_engine.py` | ✅ Done | Demucs wrapper + stem-to-track import |
 | Playback Mixer | `playback_mixer.py` | ✅ Done | Audio mixing with volume control |
 | First Run Dialog | `echo_pro_app.py` | ✅ Done | Welcome screen functional |
@@ -71,7 +70,7 @@
 **Status:** ✅ **COMPLETE** (95%)
 
 | Deliverable | File | Status | Notes |
-|------------|------|--------|-------|
+| ------------ | ------ | -------- | ------- |
 | Voice Profiles | `voice_store.py` | ✅ Done | JSON persistence with consent flags |
 | Microphone Recording | `voice_recorder.py` | ✅ Done | 10-second recording via sounddevice |
 | Voice Interface | `voice_interface.py` | ✅ Done | Frozen dataclass interfaces |
@@ -89,8 +88,6 @@
 
 **Known Issues from Code Review:**
 
-- ⚠️ `VoiceBackendConfig.extra` should use `field(default_factory=dict)` instead of `None`
-- ⚠️ `VoiceProfileConfig.metadata` same issue
 - 🔮 Placeholder only adjusts gain — real model integration point documented
 
 ---
@@ -100,7 +97,7 @@
 **Status:** ✅ **COMPLETE** (95%)
 
 | Deliverable | File | Status | Notes |
-|------------|------|--------|-------|
+| ------------ | ------ | -------- | ------- |
 | T2M Interface | `t2m_interface.py` | ✅ Done | Frozen dataclass interfaces |
 | Music Generator | `music_generator.py` | ✅ Done | Wrapper with config and style validation |
 | Song Planner | `song_planner.py` | ✅ Done | Lyrics splitting + duration planning |
@@ -119,38 +116,37 @@
 
 **Known Issues from Code Review:**
 
-- ⚠️ `T2MModelConfig.extra` should use `field(default_factory=dict)` instead of `None`
 - 🔮 Placeholder outputs silent WAV files — real model integration point documented
 
 ---
 
 ### 🎙️ PHASE 5A: PROFESSIONAL RECORDING CORE
 
-**Status:** 🚧 **IN PROGRESS** (70%)
+**Status:** 🚧 **IN PROGRESS** (85%)
 
 | Deliverable | File | Status | Notes |
-|------------|------|--------|-------|
+| ------------ | ------ | -------- | ------- |
 | Recording Controller | `recording_controller.py` | ✅ Done | Stream routing, armed tracks, status snapshots, count-in flow |
 | Metronome + Timing | `metronome.py` | ✅ Done | BPM/time signature/count-in generation |
 | Recording UI Controls | `echo_pro_app.py` | ✅ Done | Record/stop, arm controls, tempo/time sig/count-in controls |
 | Device Selection + Test | `echo_pro_app.py`, `audio_device.py` | ✅ Done | Input/output selectors + config test and latency summary |
 | Metering Widgets | `recording_ui_components.py` | ✅ Done | Peak display, clipping indicator, clip hold/reset |
 | Track Manipulation for Recording | `echo_pro_app.py`, `project_model.py` | ✅ Done | Select/rename/mute/solo/move/delete wired to recording state |
-| Take History UX | `recording_session.py`, `echo_pro_app.py` | 🟡 Partial | Core take data exists; richer per-track take browser still pending |
+| Take History UX | `recording_session.py`, `echo_pro_app.py`, `timeline_widget.py` | ✅ Done | Per-track take browser, active-take switching, audition stop/loop, filters, timeline badges, and inactive-take hide toggle |
 
 **Phase 5A Status:**
 
 - ✅ Device-aware recording startup path implemented
 - ✅ Count-in and time signature UI wired
 - ✅ Live meter clipping feedback with reset controls
-- 🟡 Advanced take review panel still pending
+- ✅ Advanced take review panel implemented with timeline-linked active/alt take states
 
 ### 🎛️ PHASE 5B: RECORDING POLISH AND PRODUCTION SAFETY
 
 **Status:** ⏳ **PLANNED** (0%)
 
 | Deliverable | Plan File | Status | Notes |
-|------------|-----------|--------|-------|
+| ------------ | ----------- | -------- | ------- |
 | Punch In/Out | `PHASE_5B_RECORDING_PLAN.md` | ⏳ Planned | Precise timed capture windows |
 | Loop Recording | `PHASE_5B_RECORDING_PLAN.md` | ⏳ Planned | Auto-take increment per cycle |
 | Take Browser + Selection | `PHASE_5B_RECORDING_PLAN.md` | ⏳ Planned | Active take selection by track |
@@ -162,7 +158,7 @@
 **Status:** ⏳ **NOT STARTED** (0%)
 
 | Deliverable | File | Status | Notes |
-|------------|------|--------|-------|
+| ------------ | ------ | -------- | ------- |
 | PyInstaller Spec | `EchoPro.spec` | ✅ Exists | Needs full packaging validation |
 | Build Script | `build_exe.bat` | ✅ Exists | Requires end-to-end build verification |
 | Installer Script | `echo_pro_installer.iss` | 🚧 In Progress | Includes dependency and portable-mode tasks; needs end-to-end validation |
@@ -176,21 +172,19 @@
 
 ### High Priority (Fix Before Release)
 
-1. **Dataclass Mutable Defaults**
-   - Files: `voice_interface.py`, `t2m_interface.py`
-   - Issue: `extra: Dict[str, Any] = None` should use `field(default_factory=dict)`
-   - Fix: Import `field` from dataclasses, replace `= None` with `= field(default_factory=dict)`
-   - Impact: Prevents shared mutable default between instances
+1. **Phase 5A Recording Regression Suite Not Yet Formalized**
+   - Files: `recording_controller.py`, `audio_engine.py`, `echo_pro_app.py`
+   - Issue: Feature coverage expanded, but scripted regression checks are still pending
+   - Impact: Higher risk of transport edge-case regressions between sessions
 
-2. **Duplicate Audio Info File**
-   - Files: `audio_info.py` vs `audioinfo.py`
-   - Issue: Both files contain identical code
-   - Fix: Delete `audioinfo.py`, keep only `audio_info.py`
-   - Impact: Code confusion, potential import errors
+2. **Phase 5B Recording Safety and Recovery Not Implemented**
+   - Files: planned in `PHASE_5B_RECORDING_PLAN.md`
+   - Issue: Punch/loop/comping/recovery flows are still pending
+   - Impact: Release workflow is missing production-safe recording behavior
 
 ### Medium Priority (Nice to Have)
 
-3. **Audio File Validation**
+1. **Audio File Validation**
    - Suggestion: Verify audio files exist before adding clips
    - Location: `echo_pro_app.py::add_clip_from_file()`
    - Current: Only checks after user selects file
@@ -208,7 +202,7 @@
 
 ### Low Priority (Future Enhancement)
 
-6. **Error Messages**
+1. **Error Messages**
    - Suggestion: More specific error messages for Demucs not installed
    - Suggestion: FFmpeg missing detection
    - Current: Generic exception messages
@@ -221,7 +215,7 @@ All Phase 1-4 features are implemented and ready to test:
 
 ### Phase 1 Tests ✅
 
-```
+```text
 ✓ Create new project
 ✓ Add track to project
 ✓ Add audio clip to track
@@ -233,7 +227,7 @@ All Phase 1-4 features are implemented and ready to test:
 
 ### Phase 2 Tests ✅
 
-```
+```text
 ✓ Split song into stems (requires Demucs)
 ✓ Stems load as new tracks
 ✓ Play entire project
@@ -244,7 +238,7 @@ All Phase 1-4 features are implemented and ready to test:
 
 ### Phase 3 Tests ✅
 
-```
+```text
 ✓ Record voice profile (10s)
 ✓ Save voice profile
 ✓ List all voice profiles
@@ -255,7 +249,7 @@ All Phase 1-4 features are implemented and ready to test:
 
 ### Phase 4 Tests ✅
 
-```
+```text
 ✓ Generate single music clip
 ✓ Generate full song with sections
 ✓ Lyrics split across sections
@@ -270,40 +264,44 @@ All Phase 1-4 features are implemented and ready to test:
 
 ### Immediate (Before Testing)
 
-1. [ ] **Fix dataclass issues** in `voice_interface.py` and `t2m_interface.py`
-2. [ ] **Delete duplicate file** `audioinfo.py`
-3. [ ] **Run linter** to verify no new errors introduced
+1. [ ] **Run linter** to verify no new errors introduced
+2. [ ] **Clean stale entries** in this status document when issues are resolved
+3. [ ] **Verify no import errors** with `python -m py_compile *.py`
+4. [x] **Run P5A regression runner**: `python p5a_regression_runner.py` (latest: 3 passed, 0 failed)
+5. [x] **One-command shortcut added**: `run_p5a_checks.bat` (also available as VS Code task `Run P5A Regression Checks`)
 
 ### Phase 5B (Recording Polish)
 
-4. [ ] Implement punch-in and punch-out transport controls
-5. [ ] Implement loop recording with automatic take incrementing
-6. [ ] Build per-track take browser and active-take selector
-7. [ ] Add basic comping selection workflow
-8. [ ] Add recovery checks and interrupted-session restore flow
+1. [x] Implement punch-in and punch-out transport controls (bar-based UI + pre/post-roll)
+2. [x] Implement loop recording with automatic take incrementing
+3. [x] Add compact transport diagnostics panel and structured diagnostics API
+4. [x] Build per-track take browser and active-take selector (keeper/mute/rating actions)
+5. [x] Add basic comping selection workflow
+6. [x] Add recovery checks and interrupted-session restore flow
 
 ### Phase 6 (Installer)
 
-9. [ ] Review and test `EchoPro.spec` configuration
-10. [ ] Run PyInstaller: `pyinstaller EchoPro.spec`
-11. [ ] Verify `dist/EchoPro.exe` runs standalone
-12. [ ] Review and test `echo_pro_installer.iss`
-13. [ ] Verify installer dependency workflow (`install_echo_pro.bat install`) on clean machine
-14. [ ] Verify dependency update workflow (`install_echo_pro.bat update`) after install
-15. [ ] Verify portable-mode install writes and uses local `data/` root on removable drive
-16. [ ] Run Inno Setup: Build installer
-17. [ ] Test installer on clean Windows installation
+1. [ ] Review and test `EchoPro.spec` configuration
+2. [ ] Run PyInstaller: `pyinstaller EchoPro.spec`
+3. [ ] Verify `dist/EchoPro.exe` runs standalone
+4. [ ] Review and test `echo_pro_installer.iss`
+5. [ ] Verify installer dependency workflow (`install_echo_pro.bat install`) on clean machine
+6. [ ] Verify dependency update workflow (`install_echo_pro.bat update`) after install
+7. [ ] Verify portable-mode install writes and uses local `data/` root on removable drive
+8. [ ] Run Inno Setup: Build installer
+9. [ ] Test installer on clean Windows installation
 
 ### Testing & QA
 
-10. [ ] Run full workflow test (create → edit → save → load)
-2. [ ] Test all error paths (missing files, corrupted projects)
-3. [ ] Test on Windows 10 and Windows 11
-4. [ ] Test with various audio formats
+1. [ ] Run full workflow test (create → edit → save → load)
+2. [x] Run scripted P5A checks (count-in transition, stop-during-count-in, device error path)
+3. [ ] Test all error paths (missing files, corrupted projects)
+4. [ ] Test on Windows 10 and Windows 11
+5. [ ] Test with various audio formats
 
 ### Documentation
 
-14. [ ] Update voice_interface.py docstring about model replacement
+1. [ ] Update voice_interface.py docstring about model replacement
 2. [ ] Update t2m_interface.py docstring about model replacement
 3. [ ] Create user guide
 
@@ -312,12 +310,12 @@ All Phase 1-4 features are implemented and ready to test:
 ## 📈 COMPLETION MATRIX
 
 | Phase | Files | Status | Code Quality | Testing | Ready |
-|-------|-------|--------|--------------|---------|-------|
+| ------- | ------- | -------- | -------------- | --------- | ------- |
 | 1 | 6 | ✅ 100% | 🟡 Good | ✅ Ready | ✅ YES |
 | 2 | 2 | ✅ 100% | 🟡 Good | ✅ Ready | ✅ YES |
 | 3 | 4 | ✅ 100% | 🟡 Good | ✅ Ready | ✅ YES |
 | 4 | 3 | ✅ 100% | 🟡 Good | ✅ Ready | ✅ YES |
-| 5A | 5 | 🚧 70% | 🟡 Good | 🟡 Partial | 🟡 Almost |
+| 5A | 5 | 🚧 85% | 🟡 Good | 🟡 Partial | 🟡 Almost |
 | 5B | 1 (plan) | ⏳ 0% | - | - | ⏳ Planned |
 | 6 | 3 | ❌ 0% | ❌ Not started | ❌ Pending | ❌ NO |
 
@@ -394,9 +392,10 @@ When ready to integrate real AI models:
 
 **Blockers for Release:**
 
-1. Dataclass mutable defaults (3 files)
-2. Phase 5B recording polish implementation
-3. Full end-to-end testing
+1. Phase 5A recording regression suite and edge-case validation
+2. Phase 5B recording polish and safety implementation
+3. Phase 6 installer end-to-end validation (dependency install/update + portable mode)
+4. Full end-to-end testing
 
 **Time Estimate to Release:**
 

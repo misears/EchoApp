@@ -3,6 +3,16 @@
 Status: Ready for implementation  
 Scope: Punch/loop workflows, take browser, comping v1, recovery, and safety checks
 
+## Progress Update
+
+- 2026-07-23: Initial P5B-1 punch/loop transport plus pre/post-roll scheduling landed.
+  - `recording_controller.py`: added punch and loop state, range setters (samples/seconds/bars), pre/post-roll windows, punch auto-stop, and loop cycle take rollover.
+  - `echo_pro_app.py`: added bar-based punch controls, pre/post-roll controls, and loop controls in recording panel with live cycle/status display.
+  - `recording_controller.py` + `recording_ui_components.py`: added structured transport diagnostics API and compact diagnostics panel wiring in the recording UI.
+  - `recording_session.py` + `echo_pro_app.py`: added take quality markers and browser actions (keeper/mute/rating) with metadata persistence and clip sync.
+  - `recording_session.py` + `echo_pro_app.py` + `recording_recovery.py`: added comp-region actions (create/assign/clear) plus interrupted-session snapshot validation and restore/discard prompt flow.
+  - Remaining: reusable comp/take widgets and advanced recovery history UX.
+
 ## Usage
 
 - Priority levels:
@@ -21,19 +31,19 @@ Scope: Punch/loop workflows, take browser, comping v1, recovery, and safety chec
 
 ### recording_controller.py
 
-- [ ] P0-RC-001 Add punch mode state model
+- [x] P0-RC-001 Add punch mode state model
   - Add fields: `punch_enabled`, `punch_in_samples`, `punch_out_samples`
   - Add setters for punch in/out from bars/time
   - Accept when recording starts/stops at expected punch boundaries
-- [ ] P0-RC-002 Add loop recording transport state
+- [x] P0-RC-002 Add loop recording transport state
   - Add fields: `loop_enabled`, `loop_start_samples`, `loop_end_samples`, `loop_cycle_index`
   - Ensure cycle restart does not drop callback frames
   - Accept when each loop cycle creates a new take
-- [ ] P0-RC-003 Add pre-roll/post-roll scheduling support
+- [x] P0-RC-003 Add pre-roll/post-roll scheduling support
   - Add pre-roll and post-roll sample windows around punch capture
   - Keep metronome timing aligned through transitions
   - Accept when capture starts/stops musically around punch points
-- [ ] P0-RC-004 Emit structured recording diagnostics
+- [x] P0-RC-004 Emit structured recording diagnostics
   - Expose cycle count, punch hit events, clip events, and last transport error
   - Accept when UI can display diagnostics without parsing raw strings
 
@@ -43,7 +53,7 @@ Scope: Punch/loop workflows, take browser, comping v1, recovery, and safety chec
   - Store `active_take_number` for each track
   - Add methods to set/get active take safely
   - Accept when switching active take changes playback selection source
-- [ ] P0-RS-002 Add take tags and quality markers
+- [x] P0-RS-002 Add take tags and quality markers
   - Support `is_keeper`, `is_muted`, `rating`, `clip_events`
   - Accept when tags persist through save/load
 - [ ] P0-RS-003 Add comp region model (non-destructive)
@@ -55,22 +65,22 @@ Scope: Punch/loop workflows, take browser, comping v1, recovery, and safety chec
 
 ### echo_pro_app.py
 
-- [ ] P0-APP-001 Add punch controls in recording panel
+- [x] P0-APP-001 Add punch controls in recording panel
   - Inputs/buttons for punch enable, punch in, punch out
   - Validate format and ranges before applying
   - Accept when bad values show readable errors
-- [ ] P0-APP-002 Add loop recording controls
+- [x] P0-APP-002 Add loop recording controls
   - Loop enable plus start/end controls
   - Cycle counter and status text updates in real time
   - Accept when UI clearly indicates active loop cycle
-- [ ] P0-APP-003 Add take browser panel
+- [x] P0-APP-003 Add take browser panel
   - Per-track list of takes with metadata columns
   - Actions: set active take, keeper toggle, mute toggle
   - Accept when user can switch active take in under 2 clicks
-- [ ] P0-APP-004 Add comping actions (v1)
+- [x] P0-APP-004 Add comping actions (v1)
   - Actions: create region from timeline selection, assign take, clear region
   - Accept when comp region mapping updates playback preview state
-- [ ] P0-APP-005 Add recovery prompt flow
+- [x] P0-APP-005 Add recovery prompt flow
   - On startup, detect interrupted recording metadata and offer restore/discard
   - Accept when restore path is user-safe and explicit
 
@@ -82,7 +92,7 @@ Scope: Punch/loop workflows, take browser, comping v1, recovery, and safety chec
 - [ ] P0-UI-002 Add TransportPunchLoopWidget
   - Encapsulate punch/loop controls for maintainable app wiring
   - Accept when state updates can be pushed/pulled from controller cleanly
-- [ ] P0-UI-003 Add compact diagnostics widget
+- [x] P0-UI-003 Add compact diagnostics widget
   - Show latency, clip events, punch/loop state, and recovery status
   - Accept when values update without blocking UI
 
