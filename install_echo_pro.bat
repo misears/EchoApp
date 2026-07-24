@@ -16,7 +16,7 @@ set "APP_ROOT=%~dp0"
 if "%APP_ROOT:~-1%"=="\" set "APP_ROOT=%APP_ROOT:~0,-1%"
 
 set "ECHO_HOME=%ECHO_PRO_HOME%"
-if not defined ECHO_HOME set "ECHO_HOME=%APPDATA%\EchoPro"
+if not defined ECHO_HOME set "ECHO_HOME=%APP_ROOT%"
 
 set "TOOLS=%APP_ROOT%\tools"
 set "VENV_DIR=%APP_ROOT%\runtime\venv"
@@ -25,10 +25,14 @@ set "MODELS_DIR=%APP_ROOT%\models"
 set "SEEDS_DIR=%APP_ROOT%\seeds"
 if defined ECHO_SEEDS_DIR set "SEEDS_DIR=%ECHO_SEEDS_DIR%"
 
-set "RVC_SOURCE=%SEEDS_DIR%\rvc"
-set "DEMUCS_SOURCE=%SEEDS_DIR%\demucs"
-set "FFMPEG_SOURCE=%SEEDS_DIR%\ffmpeg"
-set "ACE_SOURCE=%SEEDS_DIR%\ace_step_1_5"
+set "RVC_SOURCE=%SEEDS_DIR%\Retrieval-based-Voice-Conversion-WebUI-main"
+if not exist "%RVC_SOURCE%" set "RVC_SOURCE=%SEEDS_DIR%\rvc"
+set "DEMUCS_SOURCE=%SEEDS_DIR%\demucs-main"
+if not exist "%DEMUCS_SOURCE%" set "DEMUCS_SOURCE=%SEEDS_DIR%\demucs"
+set "FFMPEG_SOURCE=%SEEDS_DIR%\FFmpeg-master"
+if not exist "%FFMPEG_SOURCE%" set "FFMPEG_SOURCE=%SEEDS_DIR%\ffmpeg"
+set "ACE_SOURCE=%SEEDS_DIR%\ACE-Step-1.5-main"
+if not exist "%ACE_SOURCE%" set "ACE_SOURCE=%SEEDS_DIR%\ace_step_1_5"
 
 if defined ECHO_RVC_SEED_PATH set "RVC_SOURCE=%ECHO_RVC_SEED_PATH%"
 if defined ECHO_DEMUCS_SEED_PATH set "DEMUCS_SOURCE=%ECHO_DEMUCS_SEED_PATH%"
@@ -145,12 +149,14 @@ if exist "%FFMPEG_SOURCE%" (
             exit /b 0
         )
         echo Copied ffmpeg seed assets, but ffmpeg.exe was not found under bin.
-        exit /b 1
+        echo Falling back to the bundled download path.
+        goto download_ffmpeg
     )
     echo ffmpeg seed folder was found but no ffmpeg.exe could be discovered.
-    exit /b 1
+    echo Falling back to the bundled download path.
 )
 
+:download_ffmpeg
 echo Downloading portable ffmpeg build...
 set "FFMPEG_ZIP=%TEMP%\ffmpeg-release-essentials.zip"
 
@@ -225,10 +231,28 @@ exit /b 0
 echo.
 echo Installing RVC reference model...
 if not exist "%RVC_SOURCE%" (
-    echo Required RVC reference model folder not found: %RVC_SOURCE%
-    echo Expected layout: %SEEDS_DIR%\rvc
-    echo Please place model assets there, then re-run this script.
-    exit /b 1
+    echo RVC seed folder not found locally, downloading upstream source...
+    set "RVC_ZIP=%TEMP%\rvc-webui.zip"
+    set "RVC_MODEL_URL=%RVC_MODEL_URL%"
+    if "%RVC_MODEL_URL%"=="" set "RVC_MODEL_URL=https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI/archive/refs/heads/main.zip"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $url=$env:RVC_MODEL_URL; $zip=$env:RVC_ZIP; $target=$env:MODELS_DIR + '\rvc'; Invoke-WebRequest -Uri $url -OutFile $zip; Expand-Archive -Path $zip -DestinationPath $target -Force;"
+    if errorlevel 1 (
+        echo Could not download RVC source from %RVC_MODEL_URL%.
+        echo Set RVC_MODEL_URL to a valid downloadable ZIP and rerun install.
+        exit /b 1
+    )
+    for /f "usebackq delims=" %%I in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$target=Join-Path $env:MODELS_DIR 'rvc'; $folder=Get-ChildItem -Path $target -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if ($folder) { $folder.FullName }"`) do set "RVC_LATEST=%%I"
+    if not defined RVC_LATEST (
+        echo RVC assets extracted but no folder was found.
+        exit /b 1
+    )
+    if exist "%MODELS_DIR%\rvc\current" rmdir /s /q "%MODELS_DIR%\rvc\current"
+    mklink /D "%MODELS_DIR%\rvc\current" "%RVC_LATEST%" >nul 2>&1
+    if errorlevel 1 (
+        xcopy /E /I /Y "%RVC_LATEST%" "%MODELS_DIR%\rvc\current\" >nul
+    )
+    echo RVC ready from download: %MODELS_DIR%\rvc\current
+    exit /b 0
 )
 
 set "RVC_TARGET=%MODELS_DIR%\rvc"

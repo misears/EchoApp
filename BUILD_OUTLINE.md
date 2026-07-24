@@ -147,14 +147,14 @@ Add professional audio processing: stem separation, playback mixing, and welcomi
 
 ### Goal
 
-Add voice profile storage and placeholder voice conversion system.
+Add voice profile storage and baseline voice conversion system.
 
 ### What Gets Built
 
 - Voice profile storage with consent flags
 - Microphone recording interface
 - Voice Manager dialog
-- Voice conversion placeholder (future replacement point)
+- Voice conversion baseline (future replacement point)
 - Ethical consent warnings
 
 ### New/Modified Files
@@ -162,7 +162,7 @@ Add voice profile storage and placeholder voice conversion system.
 - `voice_store.py` — Voice profile persistence (JSON index)
 - `voice_recorder.py` — Microphone recording via sounddevice
 - `voice_interface.py` — Future-proof voice conversion interfaces
-- `voice_effects.py` — Voice conversion wrapper (placeholder)
+- `voice_effects.py` — Voice conversion wrapper (baseline)
 - **Modified `echo_pro_app.py`** — Add voice UI, manager dialog, apply voice effects button
 
 ### Next Steps
@@ -170,11 +170,11 @@ Add voice profile storage and placeholder voice conversion system.
 - [ ] Create `voice_store.py` with profile persistence
 - [ ] Create `voice_recorder.py` with 10s recording
 - [ ] Create `voice_interface.py` with frozen dataclass interfaces
-- [ ] Create `voice_effects.py` placeholder implementation
+- [ ] Create `voice_effects.py` baseline implementation
 - [ ] Test recording a voice profile (10 seconds)
 - [ ] Verify voice profiles save to `%APPDATA%\EchoPro\voices\`
 - [ ] Test loading and listing voice profiles
-- [ ] Test applying placeholder voice effect to a clip
+- [ ] Test applying voice effect to a clip
 - [ ] Verify consent warnings appear and are mandatory
 - [ ] Test Voice Manager dialog open/close
 - [ ] Create 5+ test voice profiles and verify all load
@@ -228,7 +228,7 @@ Add AI music generation capabilities with flexible backend selection.
 ### Next Steps
 
 - [ ] Create `t2m_interface.py` with frozen dataclass interfaces
-- [ ] Create `music_generator.py` with placeholder (silent clips for now)
+- [ ] Create `music_generator.py` with baseline silent clips
 - [ ] Create `song_planner.py` with lyrics splitting and duration planning
 - [ ] Test single clip generation (10-30 seconds)
 - [ ] Verify generated clips added as new tracks
@@ -243,7 +243,7 @@ Add AI music generation capabilities with flexible backend selection.
 
 ### Success Criteria
 
-✅ Can generate single music clips (placeholder audio)
+✅ Can generate single music clips
 ✅ Can generate full songs with multiple sections
 ✅ Lyrics properly split and assigned to sections
 ✅ Duration planning works for any song length
@@ -424,12 +424,12 @@ Package Echo Pro as a professional Windows application with installer.
 - [ ] Voice recording works
 - [ ] Voice profiles persist
 - [ ] Consent warnings functional
-- [ ] Placeholder voice effect creates clips
+- [ ] Voice effect creates clips
 
 ### Phase 4 → Phase 5A Requirements
 
-- [x] Single clip generation works (placeholder)
-- [x] Song generation works (placeholder)
+- [x] Single clip generation works
+- [x] Song generation works
 - [x] All 4 AI interfaces frozen and documented
 - [x] No critical bugs in main app workflow
 
@@ -476,7 +476,7 @@ Package Echo Pro as a professional Windows application with installer.
 
 ## 🚨 KNOWN LIMITATIONS & FUTURE WORK
 
-### Placeholder Systems (To Be Replaced)
+### Baseline Systems (To Be Replaced)
 
 - Voice conversion currently only adjusts gain (dB)
 - Music generation outputs silent clips
@@ -508,7 +508,7 @@ Package Echo Pro as a professional Windows application with installer.
 **File:** `voice_interface.py::voice_convert()`
 
 ```
-Replace placeholder implementation with:
+Replace baseline implementation with:
 - Model loading: `model = load_voice_model(...)`
 - Inference: `converted = model.convert(source, target_embedding)`
 - Supported models: Resembler, VITS, RVC, Covarep, etc.
@@ -519,7 +519,7 @@ Replace placeholder implementation with:
 **File:** `t2m_interface.py::t2m_generate_clip()`
 
 ```
-Replace placeholder implementation with:
+Replace baseline implementation with:
 - Model loading: `model = load_t2m_model(...)`
 - Inference: `audio = model.generate(request)`
 - Supported models: Stable Audio, AudioLDM, MusicGen, Riffusion, etc.

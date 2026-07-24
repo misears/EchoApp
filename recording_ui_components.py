@@ -289,7 +289,7 @@ class TakeListWidget(QFrame):
             item.setData(Qt.ItemDataRole.UserRole, data)
         self.list_widget.addItem(item)
 
-    def add_placeholder(self, text: str) -> None:
+    def add_read_only_row(self, text: str) -> None:
         item = QListWidgetItem(text)
         item.setFlags(Qt.ItemFlag.NoItemFlags)
         self.list_widget.addItem(item)

@@ -79,7 +79,7 @@
  [],
  False,
  False,
- 1784763299,
+ 1784930964,
  [('runw.exe',
    'C:\\Users\\misea\\AppData\\Roaming\\Python\\Python310\\site-packages\\PyInstaller\\bootloader\\Windows-64bit-intel\\runw.exe',
    'EXECUTABLE')],

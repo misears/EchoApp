@@ -18,6 +18,9 @@ def resolve_echo_root() -> Path:
     if portable_marker.exists():
         return portable_marker_dir / "data"
 
+    if getattr(sys, "frozen", False):
+        return portable_marker_dir
+
     return Path(os.environ["APPDATA"]) / "EchoPro"
 
 

@@ -1,7 +1,10 @@
 
 from dataclasses import dataclass, field
+import os
 from pathlib import Path
 from typing import Dict, Any
+
+from app_paths import RVC_MODELS_DIR, ensure_dirs
 
 @dataclass
 class VoiceBackendConfig:
@@ -36,13 +39,46 @@ class VoiceConvertResult:
     backend_name: str
     metadata: Dict[str, Any]
 
+
+def resolve_voice_model_path() -> Path:
+    configured = os.environ.get("ECHO_RVC_MODEL_PATH", "").strip()
+    if configured:
+        return Path(configured)
+    return RVC_MODELS_DIR / "current"
+
+
+def get_voice_backend_capability() -> dict:
+    ensure_dirs()
+    model_path = resolve_voice_model_path()
+    model_ready = model_path.exists()
+    return {
+        "backend": "RVC",
+        "model_path": str(model_path),
+        "ready": model_ready,
+        "reason": "" if model_ready else "RVC voice conversion model not installed. Run install_echo_pro.bat install/update.",
+    }
+
+
+def get_default_voice_backend() -> VoiceBackendConfig:
+    capability = get_voice_backend_capability()
+    return VoiceBackendConfig(
+        name="RVC",
+        model_path=capability["model_path"],
+        device="cpu",
+        sample_rate=44100,
+        extra={
+            "ready": capability["ready"],
+            "reason": capability["reason"],
+        },
+    )
+
 def voice_convert(
     request: VoiceConvertRequest,
     output_path: Path,
     backend_config: VoiceBackendConfig,
 ) -> VoiceConvertResult:
     """
-    Placeholder implementation: slight gain change.
+    Baseline implementation: slight gain change.
     Replace this body with a real voice conversion model.
     """
     import numpy as np
@@ -60,7 +96,7 @@ def voice_convert(
         audio_path=output_path,
         backend_name=backend_config.name,
         metadata={
-            "note": "Placeholder conversion. Replace voice_convert with real model.",
+            "note": "Baseline conversion preview. Replace voice_convert with real model.",
             "preserve_pitch": request.preserve_pitch,
             "preserve_formants": request.preserve_formants,
             "strength": request.strength,

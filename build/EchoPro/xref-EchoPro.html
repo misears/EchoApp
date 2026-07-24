@@ -24,6 +24,7 @@ imports:
  &#8226;   <a href="#_weakrefset">_weakrefset</a>
  &#8226;   <a href="#abc">abc</a>
  &#8226;   <a href="#app_paths">app_paths</a>
+ &#8226;   <a href="#audio_device">audio_device</a>
  &#8226;   <a href="#audio_info">audio_info</a>
  &#8226;   <a href="#codecs">codecs</a>
  &#8226;   <a href="#collections">collections</a>
@@ -156,6 +157,7 @@ imports:
  &#8226;   <a href="#functools">functools</a>
  &#8226;   <a href="#genericpath">genericpath</a>
  &#8226;   <a href="#heapq">heapq</a>
+ &#8226;   <a href="#input_validation">input_validation</a>
  &#8226;   <a href="#io">io</a>
  &#8226;   <a href="#keyword">keyword</a>
  &#8226;   <a href="#linecache">linecache</a>
@@ -164,6 +166,8 @@ imports:
  &#8226;   <a href="#ntpath">ntpath</a>
  &#8226;   <a href="#operator">operator</a>
  &#8226;   <a href="#os">os</a>
+ &#8226;   <a href="#p5a_regression_runner">p5a_regression_runner</a>
+ &#8226;   <a href="#p5b_regression_runner">p5b_regression_runner</a>
  &#8226;   <a href="#pathlib">pathlib</a>
  &#8226;   <a href="#playback_mixer">playback_mixer</a>
  &#8226;   <a href="#posixpath">posixpath</a>
@@ -174,6 +178,7 @@ imports:
  &#8226;   <a href="#pyi_rth_pyside6.py">pyi_rth_pyside6.py</a>
  &#8226;   <a href="#re">re</a>
  &#8226;   <a href="#recording_controller">recording_controller</a>
+ &#8226;   <a href="#recording_recovery">recording_recovery</a>
  &#8226;   <a href="#recording_ui_components">recording_ui_components</a>
  &#8226;   <a href="#reprlib">reprlib</a>
  &#8226;   <a href="#song_planner">song_planner</a>
@@ -182,10 +187,12 @@ imports:
  &#8226;   <a href="#sre_parse">sre_parse</a>
  &#8226;   <a href="#stat">stat</a>
  &#8226;   <a href="#stems_engine">stems_engine</a>
+ &#8226;   <a href="#subprocess">subprocess</a>
  &#8226;   <a href="#sys">sys</a>
  &#8226;   <a href="#timeline_widget">timeline_widget</a>
  &#8226;   <a href="#traceback">traceback</a>
  &#8226;   <a href="#types">types</a>
+ &#8226;   <a href="#typing">typing</a>
  &#8226;   <a href="#voice_effects">voice_effects</a>
  &#8226;   <a href="#voice_interface">voice_interface</a>
  &#8226;   <a href="#voice_recorder">voice_recorder</a>
@@ -476,17 +483,6 @@ imported by:
 </div>
 
 <div class="node">
-  <a name="StringIO"></a>
-  <a target="code" href="" type="text/plain"><tt>StringIO</tt></a>
-<span class="moduletype">MissingModule</span>  <div class="import">
-imported by:
-    <a href="#pydub.audio_segment">pydub.audio_segment</a>
-
-  </div>
-
-</div>
-
-<div class="node">
   <a name="System"></a>
   <a target="code" href="" type="text/plain"><tt>System</tt></a>
 <span class="moduletype">MissingModule</span>  <div class="import">
@@ -526,8 +522,6 @@ imported by:
  &#8226;   <a href="#numpy.array_api._utility_functions">numpy.array_api._utility_functions</a>
  &#8226;   <a href="#numpy.array_api.linalg">numpy.array_api.linalg</a>
  &#8226;   <a href="#numpy.version">numpy.version</a>
- &#8226;   <a href="#pydub.audio_segment">pydub.audio_segment</a>
- &#8226;   <a href="#pydub.utils">pydub.utils</a>
  &#8226;   <a href="#shiboken6.Shiboken">shiboken6.Shiboken</a>
 
   </div>
@@ -946,6 +940,7 @@ imported by:
 imported by:
     <a href="#importlib._bootstrap_external">importlib._bootstrap_external</a>
  &#8226;   <a href="#io">io</a>
+ &#8226;   <a href="#unittest.mock">unittest.mock</a>
  &#8226;   <a href="#zipimport">zipimport</a>
 
   </div>
@@ -1606,15 +1601,22 @@ imported by:
 imports:
     <a href="#os">os</a>
  &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#sys">sys</a>
 
   </div>
   <div class="import">
 imported by:
-    <a href="#echo_pro_app.py">echo_pro_app.py</a>
+    <a href="#audio_device">audio_device</a>
+ &#8226;   <a href="#echo_pro_app.py">echo_pro_app.py</a>
  &#8226;   <a href="#first_run">first_run</a>
  &#8226;   <a href="#music_generator">music_generator</a>
+ &#8226;   <a href="#p5a_regression_runner">p5a_regression_runner</a>
+ &#8226;   <a href="#p5b_regression_runner">p5b_regression_runner</a>
+ &#8226;   <a href="#recording_controller">recording_controller</a>
+ &#8226;   <a href="#recording_recovery">recording_recovery</a>
  &#8226;   <a href="#recording_session">recording_session</a>
  &#8226;   <a href="#song_planner">song_planner</a>
+ &#8226;   <a href="#voice_effects">voice_effects</a>
  &#8226;   <a href="#voice_store">voice_store</a>
 
   </div>
@@ -1663,8 +1665,6 @@ imported by:
     <a href="#multiprocessing.dummy">multiprocessing.dummy</a>
  &#8226;   <a href="#multiprocessing.managers">multiprocessing.managers</a>
  &#8226;   <a href="#multiprocessing.reduction">multiprocessing.reduction</a>
- &#8226;   <a href="#pydub.audio_segment">pydub.audio_segment</a>
- &#8226;   <a href="#pydub.effects">pydub.effects</a>
  &#8226;   <a href="#socket">socket</a>
 
   </div>
@@ -1768,6 +1768,7 @@ imported by:
  &#8226;   <a href="#asyncio.windows_events">asyncio.windows_events</a>
  &#8226;   <a href="#asyncio.windows_utils">asyncio.windows_utils</a>
  &#8226;   <a href="#unittest.async_case">unittest.async_case</a>
+ &#8226;   <a href="#unittest.mock">unittest.mock</a>
 
   </div>
 
@@ -2594,6 +2595,27 @@ imported by:
 </div>
 
 <div class="node">
+  <a name="audio_device"></a>
+  <a target="code" href="///C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/audio_device.py" type="text/plain"><tt>audio_device</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#app_paths">app_paths</a>
+ &#8226;   <a href="#dataclasses">dataclasses</a>
+ &#8226;   <a href="#shutil">shutil</a>
+ &#8226;   <a href="#sounddevice">sounddevice</a>
+ &#8226;   <a href="#typing">typing</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#echo_pro_app.py">echo_pro_app.py</a>
+ &#8226;   <a href="#p5b_regression_runner">p5b_regression_runner</a>
+
+  </div>
+
+</div>
+
+<div class="node">
   <a name="audio_engine"></a>
   <a target="code" href="///C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/audio_engine.py" type="text/plain"><tt>audio_engine</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
@@ -2607,7 +2629,8 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#recording_controller">recording_controller</a>
+    <a href="#p5b_regression_runner">p5b_regression_runner</a>
+ &#8226;   <a href="#recording_controller">recording_controller</a>
  &#8226;   <a href="#recording_session">recording_session</a>
 
   </div>
@@ -2619,7 +2642,10 @@ imported by:
   <a target="code" href="///C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/audio_info.py" type="text/plain"><tt>audio_info</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
-    <a href="#pydub">pydub</a>
+    <a href="#json">json</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#soundfile">soundfile</a>
+ &#8226;   <a href="#subprocess">subprocess</a>
 
   </div>
   <div class="import">
@@ -2635,8 +2661,7 @@ imported by:
   <a name="audioop"></a>
   <tt>audioop</tt> <span class="moduletype"><i>(builtin module)</i></span>  <div class="import">
 imported by:
-    <a href="#pydub.utils">pydub.utils</a>
- &#8226;   <a href="#wave">wave</a>
+    <a href="#wave">wave</a>
 
   </div>
 
@@ -2662,7 +2687,6 @@ imported by:
  &#8226;   <a href="#encodings.base64_codec">encodings.base64_codec</a>
  &#8226;   <a href="#http.server">http.server</a>
  &#8226;   <a href="#logging.handlers">logging.handlers</a>
- &#8226;   <a href="#pydub.audio_segment">pydub.audio_segment</a>
  &#8226;   <a href="#secrets">secrets</a>
  &#8226;   <a href="#shiboken6">shiboken6</a>
  &#8226;   <a href="#smtplib">smtplib</a>
@@ -2758,6 +2782,7 @@ imported by:
  &#8226;   <a href="#subprocess">subprocess</a>
  &#8226;   <a href="#tarfile">tarfile</a>
  &#8226;   <a href="#tokenize">tokenize</a>
+ &#8226;   <a href="#unittest.mock">unittest.mock</a>
  &#8226;   <a href="#warnings">warnings</a>
  &#8226;   <a href="#wave">wave</a>
 
@@ -3097,7 +3122,6 @@ imported by:
  &#8226;   <a href="#psutil._common">psutil._common</a>
  &#8226;   <a href="#psutil._ntuples">psutil._ntuples</a>
  &#8226;   <a href="#pydoc">pydoc</a>
- &#8226;   <a href="#pydub.audio_segment">pydub.audio_segment</a>
  &#8226;   <a href="#queue">queue</a>
  &#8226;   <a href="#selectors">selectors</a>
  &#8226;   <a href="#shlex">shlex</a>
@@ -3318,6 +3342,7 @@ imported by:
  &#8226;   <a href="#subprocess">subprocess</a>
  &#8226;   <a href="#typing">typing</a>
  &#8226;   <a href="#unittest.case">unittest.case</a>
+ &#8226;   <a href="#unittest.mock">unittest.mock</a>
  &#8226;   <a href="#urllib.request">urllib.request</a>
  &#8226;   <a href="#zipfile">zipfile</a>
 
@@ -3627,8 +3652,11 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#metronome">metronome</a>
+    <a href="#audio_device">audio_device</a>
+ &#8226;   <a href="#metronome">metronome</a>
  &#8226;   <a href="#numpy.array_api._data_type_functions">numpy.array_api._data_type_functions</a>
+ &#8226;   <a href="#p5a_regression_runner">p5a_regression_runner</a>
+ &#8226;   <a href="#p5b_regression_runner">p5b_regression_runner</a>
  &#8226;   <a href="#pprint">pprint</a>
  &#8226;   <a href="#project_model">project_model</a>
  &#8226;   <a href="#recording_controller">recording_controller</a>
@@ -3663,6 +3691,7 @@ imported by:
  &#8226;   <a href="#http.cookiejar">http.cookiejar</a>
  &#8226;   <a href="#http.server">http.server</a>
  &#8226;   <a href="#psutil">psutil</a>
+ &#8226;   <a href="#recording_recovery">recording_recovery</a>
  &#8226;   <a href="#recording_session">recording_session</a>
  &#8226;   <a href="#smtplib">smtplib</a>
  &#8226;   <a href="#voice_store">voice_store</a>
@@ -6978,7 +7007,6 @@ imported by:
  &#8226;   <a href="#psutil">psutil</a>
  &#8226;   <a href="#psutil._common">psutil._common</a>
  &#8226;   <a href="#psutil._pswindows">psutil._pswindows</a>
- &#8226;   <a href="#pydub.utils">pydub.utils</a>
  &#8226;   <a href="#re">re</a>
  &#8226;   <a href="#shiboken6">shiboken6</a>
  &#8226;   <a href="#tempfile">tempfile</a>
@@ -6989,6 +7017,7 @@ imported by:
  &#8226;   <a href="#typing">typing</a>
  &#8226;   <a href="#unittest.case">unittest.case</a>
  &#8226;   <a href="#unittest.loader">unittest.loader</a>
+ &#8226;   <a href="#unittest.mock">unittest.mock</a>
  &#8226;   <a href="#unittest.result">unittest.result</a>
  &#8226;   <a href="#unittest.signals">unittest.signals</a>
 
@@ -7192,6 +7221,7 @@ imports:
 imported by:
     <a href="#hmac">hmac</a>
  &#8226;   <a href="#random">random</a>
+ &#8226;   <a href="#recording_recovery">recording_recovery</a>
  &#8226;   <a href="#urllib.request">urllib.request</a>
 
   </div>
@@ -7762,6 +7792,23 @@ imported by:
 </div>
 
 <div class="node">
+  <a name="input_validation"></a>
+  <a target="code" href="///C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/input_validation.py" type="text/plain"><tt>input_validation</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#re">re</a>
+ &#8226;   <a href="#typing">typing</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#echo_pro_app.py">echo_pro_app.py</a>
+
+  </div>
+
+</div>
+
+<div class="node">
   <a name="inspect"></a>
   <a target="code" href="///C:/Program%20Files/Python310/lib/inspect.py" type="text/plain"><tt>inspect</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
@@ -7810,6 +7857,7 @@ imported by:
  &#8226;   <a href="#pydoc">pydoc</a>
  &#8226;   <a href="#pyi_rth_inspect.py">pyi_rth_inspect.py</a>
  &#8226;   <a href="#unittest.async_case">unittest.async_case</a>
+ &#8226;   <a href="#unittest.mock">unittest.mock</a>
 
   </div>
 
@@ -7865,7 +7913,6 @@ imported by:
  &#8226;   <a href="#pickle">pickle</a>
  &#8226;   <a href="#pprint">pprint</a>
  &#8226;   <a href="#pydoc">pydoc</a>
- &#8226;   <a href="#pydub.audio_segment">pydub.audio_segment</a>
  &#8226;   <a href="#pyreadline3.lineeditor.history">pyreadline3.lineeditor.history</a>
  &#8226;   <a href="#quopri">quopri</a>
  &#8226;   <a href="#runpy">runpy</a>
@@ -7878,6 +7925,7 @@ imported by:
  &#8226;   <a href="#tarfile">tarfile</a>
  &#8226;   <a href="#tempfile">tempfile</a>
  &#8226;   <a href="#tokenize">tokenize</a>
+ &#8226;   <a href="#unittest.mock">unittest.mock</a>
  &#8226;   <a href="#unittest.result">unittest.result</a>
  &#8226;   <a href="#urllib.error">urllib.error</a>
  &#8226;   <a href="#urllib.request">urllib.request</a>
@@ -7939,8 +7987,6 @@ imported by:
  &#8226;   <a href="#numpy.ma.extras">numpy.ma.extras</a>
  &#8226;   <a href="#pickle">pickle</a>
  &#8226;   <a href="#platform">platform</a>
- &#8226;   <a href="#pydub.audio_segment">pydub.audio_segment</a>
- &#8226;   <a href="#pydub.silence">pydub.silence</a>
  &#8226;   <a href="#random">random</a>
  &#8226;   <a href="#reprlib">reprlib</a>
  &#8226;   <a href="#statistics">statistics</a>
@@ -7978,12 +8024,13 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#json.decoder">json.decoder</a>
+    <a href="#audio_info">audio_info</a>
+ &#8226;   <a href="#json.decoder">json.decoder</a>
  &#8226;   <a href="#json.encoder">json.encoder</a>
  &#8226;   <a href="#json.scanner">json.scanner</a>
  &#8226;   <a href="#numpy._version">numpy._version</a>
  &#8226;   <a href="#project_model">project_model</a>
- &#8226;   <a href="#pydub.utils">pydub.utils</a>
+ &#8226;   <a href="#recording_recovery">recording_recovery</a>
  &#8226;   <a href="#recording_session">recording_session</a>
  &#8226;   <a href="#voice_store">voice_store</a>
 
@@ -8148,7 +8195,6 @@ imported by:
  &#8226;   <a href="#http.cookiejar">http.cookiejar</a>
  &#8226;   <a href="#logging.handlers">logging.handlers</a>
  &#8226;   <a href="#multiprocessing.util">multiprocessing.util</a>
- &#8226;   <a href="#pydub.logging_utils">pydub.logging_utils</a>
  &#8226;   <a href="#pyreadline3.logger.control">pyreadline3.logger.control</a>
  &#8226;   <a href="#pyreadline3.logger.logger">pyreadline3.logger.logger</a>
  &#8226;   <a href="#pyreadline3.logger.null_handler">pyreadline3.logger.null_handler</a>
@@ -8240,8 +8286,7 @@ imported by:
  &#8226;   <a href="#numpy.core._machar">numpy.core._machar</a>
  &#8226;   <a href="#numpy.lib">numpy.lib</a>
  &#8226;   <a href="#numpy.lib.index_tricks">numpy.lib.index_tricks</a>
- &#8226;   <a href="#pydub.effects">pydub.effects</a>
- &#8226;   <a href="#pydub.utils">pydub.utils</a>
+ &#8226;   <a href="#playback_mixer">playback_mixer</a>
  &#8226;   <a href="#pyreadline3.modes.basemode">pyreadline3.modes.basemode</a>
  &#8226;   <a href="#random">random</a>
  &#8226;   <a href="#selectors">selectors</a>
@@ -9122,6 +9167,7 @@ imported by:
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
     <a href="#app_paths">app_paths</a>
+ &#8226;   <a href="#os">os</a>
  &#8226;   <a href="#pathlib">pathlib</a>
  &#8226;   <a href="#t2m_interface">t2m_interface</a>
  &#8226;   <a href="#typing">typing</a>
@@ -9383,9 +9429,13 @@ imported by:
  &#8226;   <a href="#numpy.testing._private.utils">numpy.testing._private.utils</a>
  &#8226;   <a href="#numpy.typing">numpy.typing</a>
  &#8226;   <a href="#numpy.version">numpy.version</a>
+ &#8226;   <a href="#p5a_regression_runner">p5a_regression_runner</a>
+ &#8226;   <a href="#p5b_regression_runner">p5b_regression_runner</a>
+ &#8226;   <a href="#playback_mixer">playback_mixer</a>
  &#8226;   <a href="#recording_controller">recording_controller</a>
  &#8226;   <a href="#sounddevice">sounddevice</a>
  &#8226;   <a href="#soundfile">soundfile</a>
+ &#8226;   <a href="#voice_interface">voice_interface</a>
 
   </div>
 
@@ -14351,6 +14401,7 @@ imported by:
  &#8226;   <a href="#multiprocessing.shared_memory">multiprocessing.shared_memory</a>
  &#8226;   <a href="#multiprocessing.spawn">multiprocessing.spawn</a>
  &#8226;   <a href="#multiprocessing.util">multiprocessing.util</a>
+ &#8226;   <a href="#music_generator">music_generator</a>
  &#8226;   <a href="#netrc">netrc</a>
  &#8226;   <a href="#ntpath">ntpath</a>
  &#8226;   <a href="#numpy">numpy</a>
@@ -14381,8 +14432,6 @@ imported by:
  &#8226;   <a href="#psutil._pswindows">psutil._pswindows</a>
  &#8226;   <a href="#py_compile">py_compile</a>
  &#8226;   <a href="#pydoc">pydoc</a>
- &#8226;   <a href="#pydub.audio_segment">pydub.audio_segment</a>
- &#8226;   <a href="#pydub.utils">pydub.utils</a>
  &#8226;   <a href="#pyi_rth_inspect.py">pyi_rth_inspect.py</a>
  &#8226;   <a href="#pyi_rth_pyside6.py">pyi_rth_pyside6.py</a>
  &#8226;   <a href="#pyreadline3.console.ansi">pyreadline3.console.ansi</a>
@@ -14396,6 +14445,7 @@ imported by:
  &#8226;   <a href="#pyreadline3.modes.vi">pyreadline3.modes.vi</a>
  &#8226;   <a href="#pyreadline3.rlmain">pyreadline3.rlmain</a>
  &#8226;   <a href="#random">random</a>
+ &#8226;   <a href="#recording_ui_components">recording_ui_components</a>
  &#8226;   <a href="#runpy">runpy</a>
  &#8226;   <a href="#shiboken6">shiboken6</a>
  &#8226;   <a href="#shlex">shlex</a>
@@ -14415,6 +14465,7 @@ imported by:
  &#8226;   <a href="#unittest.main">unittest.main</a>
  &#8226;   <a href="#urllib.request">urllib.request</a>
  &#8226;   <a href="#uu">uu</a>
+ &#8226;   <a href="#voice_effects">voice_effects</a>
  &#8226;   <a href="#webbrowser">webbrowser</a>
  &#8226;   <a href="#xml.sax">xml.sax</a>
  &#8226;   <a href="#xml.sax.saxutils">xml.sax.saxutils</a>
@@ -14450,6 +14501,56 @@ imported by:
 </div>
 
 <div class="node">
+  <a name="p5a_regression_runner"></a>
+  <a target="code" href="///C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/p5a_regression_runner.py" type="text/plain"><tt>p5a_regression_runner</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#app_paths">app_paths</a>
+ &#8226;   <a href="#dataclasses">dataclasses</a>
+ &#8226;   <a href="#numpy">numpy</a>
+ &#8226;   <a href="#recording_controller">recording_controller</a>
+ &#8226;   <a href="#typing">typing</a>
+ &#8226;   <a href="#unittest.mock">unittest.mock</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#echo_pro_app.py">echo_pro_app.py</a>
+ &#8226;   <a href="#p5b_regression_runner">p5b_regression_runner</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="p5b_regression_runner"></a>
+  <a target="code" href="///C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/p5b_regression_runner.py" type="text/plain"><tt>p5b_regression_runner</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#app_paths">app_paths</a>
+ &#8226;   <a href="#audio_device">audio_device</a>
+ &#8226;   <a href="#audio_engine">audio_engine</a>
+ &#8226;   <a href="#dataclasses">dataclasses</a>
+ &#8226;   <a href="#numpy">numpy</a>
+ &#8226;   <a href="#p5a_regression_runner">p5a_regression_runner</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#recording_controller">recording_controller</a>
+ &#8226;   <a href="#recording_recovery">recording_recovery</a>
+ &#8226;   <a href="#recording_session">recording_session</a>
+ &#8226;   <a href="#tempfile">tempfile</a>
+ &#8226;   <a href="#time">time</a>
+ &#8226;   <a href="#typing">typing</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#echo_pro_app.py">echo_pro_app.py</a>
+
+  </div>
+
+</div>
+
+<div class="node">
   <a name="pathlib"></a>
   <a target="code" href="///C:/Program%20Files/Python310/lib/pathlib.py" type="text/plain"><tt>pathlib</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
@@ -14476,6 +14577,7 @@ imports:
 imported by:
     <a href="#PySide6">PySide6</a>
  &#8226;   <a href="#app_paths">app_paths</a>
+ &#8226;   <a href="#audio_info">audio_info</a>
  &#8226;   <a href="#echo_pro_app.py">echo_pro_app.py</a>
  &#8226;   <a href="#first_run">first_run</a>
  &#8226;   <a href="#importlib.metadata">importlib.metadata</a>
@@ -14484,8 +14586,10 @@ imported by:
  &#8226;   <a href="#numpy">numpy</a>
  &#8226;   <a href="#numpy.compat.py3k">numpy.compat.py3k</a>
  &#8226;   <a href="#numpy.testing._private.extbuild">numpy.testing._private.extbuild</a>
- &#8226;   <a href="#playback_mixer">playback_mixer</a>
+ &#8226;   <a href="#p5b_regression_runner">p5b_regression_runner</a>
  &#8226;   <a href="#project_model">project_model</a>
+ &#8226;   <a href="#recording_controller">recording_controller</a>
+ &#8226;   <a href="#recording_recovery">recording_recovery</a>
  &#8226;   <a href="#recording_session">recording_session</a>
  &#8226;   <a href="#song_planner">song_planner</a>
  &#8226;   <a href="#stems_engine">stems_engine</a>
@@ -14662,10 +14766,11 @@ imported by:
   <a target="code" href="///C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/playback_mixer.py" type="text/plain"><tt>playback_mixer</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
-    <a href="#pathlib">pathlib</a>
+    <a href="#math">math</a>
+ &#8226;   <a href="#numpy">numpy</a>
  &#8226;   <a href="#project_model">project_model</a>
- &#8226;   <a href="#pydub">pydub</a>
- &#8226;   <a href="#pydub.playback">pydub.playback</a>
+ &#8226;   <a href="#sounddevice">sounddevice</a>
+ &#8226;   <a href="#soundfile">soundfile</a>
 
   </div>
   <div class="import">
@@ -14745,6 +14850,7 @@ imported by:
  &#8226;   <a href="#pyreadline3.console.ansi">pyreadline3.console.ansi</a>
  &#8226;   <a href="#sysconfig">sysconfig</a>
  &#8226;   <a href="#unittest.case">unittest.case</a>
+ &#8226;   <a href="#unittest.mock">unittest.mock</a>
 
   </div>
 
@@ -14948,28 +15054,6 @@ imported by:
 </div>
 
 <div class="node">
-  <a name="pyaudio"></a>
-  <a target="code" href="" type="text/plain"><tt>pyaudio</tt></a>
-<span class="moduletype">MissingModule</span>  <div class="import">
-imported by:
-    <a href="#pydub.playback">pydub.playback</a>
-
-  </div>
-
-</div>
-
-<div class="node">
-  <a name="pyaudioop"></a>
-  <a target="code" href="" type="text/plain"><tt>pyaudioop</tt></a>
-<span class="moduletype">MissingModule</span>  <div class="import">
-imported by:
-    <a href="#pydub.utils">pydub.utils</a>
-
-  </div>
-
-</div>
-
-<div class="node">
   <a name="pydoc"></a>
   <a target="code" href="///C:/Program%20Files/Python310/lib/pydoc.py" type="text/plain"><tt>pydoc</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
@@ -15039,197 +15123,6 @@ imports:
   <div class="import">
 imported by:
     <a href="#pydoc">pydoc</a>
-
-  </div>
-
-</div>
-
-<div class="node">
-  <a name="pydub"></a>
-  <a target="code" href="///C:/Users/misea/AppData/Roaming/Python/Python310/site-packages/pydub/__init__.py" type="text/plain"><tt>pydub</tt></a>
-<span class="moduletype">Package</span>  <div class="import">
-imports:
-    <a href="#pydub">pydub</a>
- &#8226;   <a href="#pydub.audio_segment">pydub.audio_segment</a>
- &#8226;   <a href="#pydub.effects">pydub.effects</a>
-
-  </div>
-  <div class="import">
-imported by:
-    <a href="#audio_info">audio_info</a>
- &#8226;   <a href="#playback_mixer">playback_mixer</a>
- &#8226;   <a href="#pydub">pydub</a>
- &#8226;   <a href="#pydub.audio_segment">pydub.audio_segment</a>
- &#8226;   <a href="#pydub.effects">pydub.effects</a>
- &#8226;   <a href="#pydub.exceptions">pydub.exceptions</a>
- &#8226;   <a href="#pydub.logging_utils">pydub.logging_utils</a>
- &#8226;   <a href="#pydub.playback">pydub.playback</a>
- &#8226;   <a href="#pydub.silence">pydub.silence</a>
- &#8226;   <a href="#pydub.utils">pydub.utils</a>
- &#8226;   <a href="#t2m_interface">t2m_interface</a>
- &#8226;   <a href="#voice_interface">voice_interface</a>
-
-  </div>
-
-</div>
-
-<div class="node">
-  <a name="pydub.audio_segment"></a>
-  <a target="code" href="///C:/Users/misea/AppData/Roaming/Python/Python310/site-packages/pydub/audio_segment.py" type="text/plain"><tt>pydub.audio_segment</tt></a>
-<span class="moduletype">SourceModule</span>  <div class="import">
-imports:
-    <a href="#StringIO">StringIO</a>
- &#8226;   <a href="#__future__">__future__</a>
- &#8226;   <a href="#array">array</a>
- &#8226;   <a href="#base64">base64</a>
- &#8226;   <a href="#collections">collections</a>
- &#8226;   <a href="#io">io</a>
- &#8226;   <a href="#itertools">itertools</a>
- &#8226;   <a href="#os">os</a>
- &#8226;   <a href="#pydub">pydub</a>
- &#8226;   <a href="#pydub.effects">pydub.effects</a>
- &#8226;   <a href="#pydub.exceptions">pydub.exceptions</a>
- &#8226;   <a href="#pydub.logging_utils">pydub.logging_utils</a>
- &#8226;   <a href="#pydub.utils">pydub.utils</a>
- &#8226;   <a href="#struct">struct</a>
- &#8226;   <a href="#subprocess">subprocess</a>
- &#8226;   <a href="#sys">sys</a>
- &#8226;   <a href="#tempfile">tempfile</a>
- &#8226;   <a href="#wave">wave</a>
-
-  </div>
-  <div class="import">
-imported by:
-    <a href="#pydub">pydub</a>
- &#8226;   <a href="#pydub.utils">pydub.utils</a>
-
-  </div>
-
-</div>
-
-<div class="node">
-  <a name="pydub.effects"></a>
-  <a target="code" href="///C:/Users/misea/AppData/Roaming/Python/Python310/site-packages/pydub/effects.py" type="text/plain"><tt>pydub.effects</tt></a>
-<span class="moduletype">SourceModule</span>  <div class="import">
-imports:
-    <a href="#array">array</a>
- &#8226;   <a href="#math">math</a>
- &#8226;   <a href="#pydub">pydub</a>
- &#8226;   <a href="#pydub.exceptions">pydub.exceptions</a>
- &#8226;   <a href="#pydub.silence">pydub.silence</a>
- &#8226;   <a href="#pydub.utils">pydub.utils</a>
- &#8226;   <a href="#sys">sys</a>
-
-  </div>
-  <div class="import">
-imported by:
-    <a href="#pydub">pydub</a>
- &#8226;   <a href="#pydub.audio_segment">pydub.audio_segment</a>
-
-  </div>
-
-</div>
-
-<div class="node">
-  <a name="pydub.exceptions"></a>
-  <a target="code" href="///C:/Users/misea/AppData/Roaming/Python/Python310/site-packages/pydub/exceptions.py" type="text/plain"><tt>pydub.exceptions</tt></a>
-<span class="moduletype">SourceModule</span>  <div class="import">
-imports:
-    <a href="#pydub">pydub</a>
-
-  </div>
-  <div class="import">
-imported by:
-    <a href="#pydub.audio_segment">pydub.audio_segment</a>
- &#8226;   <a href="#pydub.effects">pydub.effects</a>
-
-  </div>
-
-</div>
-
-<div class="node">
-  <a name="pydub.logging_utils"></a>
-  <a target="code" href="///C:/Users/misea/AppData/Roaming/Python/Python310/site-packages/pydub/logging_utils.py" type="text/plain"><tt>pydub.logging_utils</tt></a>
-<span class="moduletype">SourceModule</span>  <div class="import">
-imports:
-    <a href="#logging">logging</a>
- &#8226;   <a href="#pydub">pydub</a>
-
-  </div>
-  <div class="import">
-imported by:
-    <a href="#pydub.audio_segment">pydub.audio_segment</a>
-
-  </div>
-
-</div>
-
-<div class="node">
-  <a name="pydub.playback"></a>
-  <a target="code" href="///C:/Users/misea/AppData/Roaming/Python/Python310/site-packages/pydub/playback.py" type="text/plain"><tt>pydub.playback</tt></a>
-<span class="moduletype">SourceModule</span>  <div class="import">
-imports:
-    <a href="#pyaudio">pyaudio</a>
- &#8226;   <a href="#pydub">pydub</a>
- &#8226;   <a href="#pydub.utils">pydub.utils</a>
- &#8226;   <a href="#simpleaudio">simpleaudio</a>
- &#8226;   <a href="#subprocess">subprocess</a>
- &#8226;   <a href="#tempfile">tempfile</a>
-
-  </div>
-  <div class="import">
-imported by:
-    <a href="#playback_mixer">playback_mixer</a>
-
-  </div>
-
-</div>
-
-<div class="node">
-  <a name="pydub.silence"></a>
-  <a target="code" href="///C:/Users/misea/AppData/Roaming/Python/Python310/site-packages/pydub/silence.py" type="text/plain"><tt>pydub.silence</tt></a>
-<span class="moduletype">SourceModule</span>  <div class="import">
-imports:
-    <a href="#itertools">itertools</a>
- &#8226;   <a href="#pydub">pydub</a>
- &#8226;   <a href="#pydub.utils">pydub.utils</a>
-
-  </div>
-  <div class="import">
-imported by:
-    <a href="#pydub.effects">pydub.effects</a>
-
-  </div>
-
-</div>
-
-<div class="node">
-  <a name="pydub.utils"></a>
-  <a target="code" href="///C:/Users/misea/AppData/Roaming/Python/Python310/site-packages/pydub/utils.py" type="text/plain"><tt>pydub.utils</tt></a>
-<span class="moduletype">SourceModule</span>  <div class="import">
-imports:
-    <a href="#__future__">__future__</a>
- &#8226;   <a href="#audioop">audioop</a>
- &#8226;   <a href="#functools">functools</a>
- &#8226;   <a href="#json">json</a>
- &#8226;   <a href="#math">math</a>
- &#8226;   <a href="#os">os</a>
- &#8226;   <a href="#pyaudioop">pyaudioop</a>
- &#8226;   <a href="#pydub">pydub</a>
- &#8226;   <a href="#pydub.audio_segment">pydub.audio_segment</a>
- &#8226;   <a href="#re">re</a>
- &#8226;   <a href="#subprocess">subprocess</a>
- &#8226;   <a href="#sys">sys</a>
- &#8226;   <a href="#tempfile">tempfile</a>
- &#8226;   <a href="#warnings">warnings</a>
-
-  </div>
-  <div class="import">
-imported by:
-    <a href="#pydub.audio_segment">pydub.audio_segment</a>
- &#8226;   <a href="#pydub.effects">pydub.effects</a>
- &#8226;   <a href="#pydub.playback">pydub.playback</a>
- &#8226;   <a href="#pydub.silence">pydub.silence</a>
 
   </div>
 
@@ -16225,6 +16118,7 @@ imported by:
  &#8226;   <a href="#importlib.metadata">importlib.metadata</a>
  &#8226;   <a href="#importlib.metadata._adapters">importlib.metadata._adapters</a>
  &#8226;   <a href="#importlib.metadata._text">importlib.metadata._text</a>
+ &#8226;   <a href="#input_validation">input_validation</a>
  &#8226;   <a href="#inspect">inspect</a>
  &#8226;   <a href="#ipaddress">ipaddress</a>
  &#8226;   <a href="#json.decoder">json.decoder</a>
@@ -16252,7 +16146,6 @@ imported by:
  &#8226;   <a href="#posixpath">posixpath</a>
  &#8226;   <a href="#pprint">pprint</a>
  &#8226;   <a href="#pydoc">pydoc</a>
- &#8226;   <a href="#pydub.utils">pydub.utils</a>
  &#8226;   <a href="#pyreadline3.console.ansi">pyreadline3.console.ansi</a>
  &#8226;   <a href="#pyreadline3.console.console">pyreadline3.console.console</a>
  &#8226;   <a href="#pyreadline3.console.ironpython_console">pyreadline3.console.ironpython_console</a>
@@ -16303,12 +16196,16 @@ imported by:
   <a target="code" href="///C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/recording_controller.py" type="text/plain"><tt>recording_controller</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
-    <a href="#audio_engine">audio_engine</a>
+    <a href="#app_paths">app_paths</a>
+ &#8226;   <a href="#audio_engine">audio_engine</a>
  &#8226;   <a href="#dataclasses">dataclasses</a>
  &#8226;   <a href="#metronome">metronome</a>
  &#8226;   <a href="#numpy">numpy</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
  &#8226;   <a href="#recording_session">recording_session</a>
  &#8226;   <a href="#sounddevice">sounddevice</a>
+ &#8226;   <a href="#soundfile">soundfile</a>
+ &#8226;   <a href="#time">time</a>
  &#8226;   <a href="#typing">typing</a>
  &#8226;   <a href="#undo_manager">undo_manager</a>
 
@@ -16316,6 +16213,30 @@ imports:
   <div class="import">
 imported by:
     <a href="#echo_pro_app.py">echo_pro_app.py</a>
+ &#8226;   <a href="#p5a_regression_runner">p5a_regression_runner</a>
+ &#8226;   <a href="#p5b_regression_runner">p5b_regression_runner</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="recording_recovery"></a>
+  <a target="code" href="///C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/recording_recovery.py" type="text/plain"><tt>recording_recovery</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#app_paths">app_paths</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#hashlib">hashlib</a>
+ &#8226;   <a href="#json">json</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#typing">typing</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#echo_pro_app.py">echo_pro_app.py</a>
+ &#8226;   <a href="#p5b_regression_runner">p5b_regression_runner</a>
 
   </div>
 
@@ -16337,7 +16258,8 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#recording_controller">recording_controller</a>
+    <a href="#p5b_regression_runner">p5b_regression_runner</a>
+ &#8226;   <a href="#recording_controller">recording_controller</a>
 
   </div>
 
@@ -16350,6 +16272,9 @@ imported by:
 imports:
     <a href="#PySide6.QtCore">PySide6.QtCore</a>
  &#8226;   <a href="#PySide6.QtWidgets">PySide6.QtWidgets</a>
+ &#8226;   <a href="#os">os</a>
+ &#8226;   <a href="#time">time</a>
+ &#8226;   <a href="#typing">typing</a>
 
   </div>
   <div class="import">
@@ -16598,6 +16523,7 @@ imports:
   <div class="import">
 imported by:
     <a href="#argparse">argparse</a>
+ &#8226;   <a href="#audio_device">audio_device</a>
  &#8226;   <a href="#ctypes.util">ctypes.util</a>
  &#8226;   <a href="#http.server">http.server</a>
  &#8226;   <a href="#multiprocessing.util">multiprocessing.util</a>
@@ -16638,58 +16564,6 @@ imported by:
  &#8226;   <a href="#psutil._pswindows">psutil._pswindows</a>
  &#8226;   <a href="#subprocess">subprocess</a>
  &#8226;   <a href="#unittest.signals">unittest.signals</a>
-
-  </div>
-
-</div>
-
-<div class="node">
-  <a name="simpleaudio"></a>
-  <a target="code" href="///C:/Users/misea/AppData/Roaming/Python/Python310/site-packages/simpleaudio/__init__.py" type="text/plain"><tt>simpleaudio</tt></a>
-<span class="moduletype">Package</span>  <div class="import">
-imports:
-    <a href="#simpleaudio.shiny">simpleaudio.shiny</a>
-
-  </div>
-  <div class="import">
-imported by:
-    <a href="#pydub.playback">pydub.playback</a>
- &#8226;   <a href="#simpleaudio._simpleaudio">simpleaudio._simpleaudio</a>
- &#8226;   <a href="#simpleaudio.shiny">simpleaudio.shiny</a>
-
-  </div>
-
-</div>
-
-<div class="node">
-  <a name="simpleaudio._simpleaudio"></a>
-  <tt>simpleaudio._simpleaudio</tt> <span class="moduletype"><tt>C:\Users\misea\AppData\Roaming\Python\Python310\site-packages\simpleaudio\_simpleaudio.cp310-win_amd64.pyd</tt></span>  <div class="import">
-imports:
-    <a href="#simpleaudio">simpleaudio</a>
-
-  </div>
-  <div class="import">
-imported by:
-    <a href="#simpleaudio.shiny">simpleaudio.shiny</a>
-
-  </div>
-
-</div>
-
-<div class="node">
-  <a name="simpleaudio.shiny"></a>
-  <a target="code" href="///C:/Users/misea/AppData/Roaming/Python/Python310/site-packages/simpleaudio/shiny.py" type="text/plain"><tt>simpleaudio.shiny</tt></a>
-<span class="moduletype">SourceModule</span>  <div class="import">
-imports:
-    <a href="#simpleaudio">simpleaudio</a>
- &#8226;   <a href="#simpleaudio._simpleaudio">simpleaudio._simpleaudio</a>
- &#8226;   <a href="#time">time</a>
- &#8226;   <a href="#wave">wave</a>
-
-  </div>
-  <div class="import">
-imported by:
-    <a href="#simpleaudio">simpleaudio</a>
 
   </div>
 
@@ -16836,7 +16710,9 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#audio_engine">audio_engine</a>
+    <a href="#audio_device">audio_device</a>
+ &#8226;   <a href="#audio_engine">audio_engine</a>
+ &#8226;   <a href="#playback_mixer">playback_mixer</a>
  &#8226;   <a href="#recording_controller">recording_controller</a>
  &#8226;   <a href="#voice_recorder">voice_recorder</a>
 
@@ -16860,7 +16736,11 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#voice_recorder">voice_recorder</a>
+    <a href="#audio_info">audio_info</a>
+ &#8226;   <a href="#playback_mixer">playback_mixer</a>
+ &#8226;   <a href="#recording_controller">recording_controller</a>
+ &#8226;   <a href="#voice_interface">voice_interface</a>
+ &#8226;   <a href="#voice_recorder">voice_recorder</a>
 
   </div>
 
@@ -17035,6 +16915,8 @@ imports:
  &#8226;   <a href="#project_model">project_model</a>
  &#8226;   <a href="#shutil">shutil</a>
  &#8226;   <a href="#subprocess">subprocess</a>
+ &#8226;   <a href="#time">time</a>
+ &#8226;   <a href="#typing">typing</a>
 
   </div>
   <div class="import">
@@ -17112,7 +16994,6 @@ imported by:
  &#8226;   <a href="#numpy.lib.format">numpy.lib.format</a>
  &#8226;   <a href="#pickle">pickle</a>
  &#8226;   <a href="#platform">platform</a>
- &#8226;   <a href="#pydub.audio_segment">pydub.audio_segment</a>
  &#8226;   <a href="#shiboken6">shiboken6</a>
  &#8226;   <a href="#tarfile">tarfile</a>
  &#8226;   <a href="#wave">wave</a>
@@ -17157,17 +17038,16 @@ imported by:
  &#8226;   <a href="#asyncio.subprocess">asyncio.subprocess</a>
  &#8226;   <a href="#asyncio.unix_events">asyncio.unix_events</a>
  &#8226;   <a href="#asyncio.windows_utils">asyncio.windows_utils</a>
+ &#8226;   <a href="#audio_info">audio_info</a>
  &#8226;   <a href="#ctypes._aix">ctypes._aix</a>
  &#8226;   <a href="#ctypes.util">ctypes.util</a>
+ &#8226;   <a href="#echo_pro_app.py">echo_pro_app.py</a>
  &#8226;   <a href="#http.server">http.server</a>
  &#8226;   <a href="#multiprocessing.util">multiprocessing.util</a>
  &#8226;   <a href="#os">os</a>
  &#8226;   <a href="#platform">platform</a>
  &#8226;   <a href="#psutil">psutil</a>
  &#8226;   <a href="#pydoc">pydoc</a>
- &#8226;   <a href="#pydub.audio_segment">pydub.audio_segment</a>
- &#8226;   <a href="#pydub.playback">pydub.playback</a>
- &#8226;   <a href="#pydub.utils">pydub.utils</a>
  &#8226;   <a href="#pyi_rth_multiprocessing.py">pyi_rth_multiprocessing.py</a>
  &#8226;   <a href="#stems_engine">stems_engine</a>
  &#8226;   <a href="#webbrowser">webbrowser</a>
@@ -17186,6 +17066,7 @@ imported by:
  &#8226;   <a href="#_compression">_compression</a>
  &#8226;   <a href="#_pydecimal">_pydecimal</a>
  &#8226;   <a href="#_pyi_rth_utils">_pyi_rth_utils</a>
+ &#8226;   <a href="#app_paths">app_paths</a>
  &#8226;   <a href="#argparse">argparse</a>
  &#8226;   <a href="#ast">ast</a>
  &#8226;   <a href="#asyncio">asyncio</a>
@@ -17292,9 +17173,6 @@ imported by:
  &#8226;   <a href="#psutil._pswindows">psutil._pswindows</a>
  &#8226;   <a href="#py_compile">py_compile</a>
  &#8226;   <a href="#pydoc">pydoc</a>
- &#8226;   <a href="#pydub.audio_segment">pydub.audio_segment</a>
- &#8226;   <a href="#pydub.effects">pydub.effects</a>
- &#8226;   <a href="#pydub.utils">pydub.utils</a>
  &#8226;   <a href="#pyi_rth_inspect.py">pyi_rth_inspect.py</a>
  &#8226;   <a href="#pyi_rth_multiprocessing.py">pyi_rth_multiprocessing.py</a>
  &#8226;   <a href="#pyi_rth_pyside6.py">pyi_rth_pyside6.py</a>
@@ -17331,6 +17209,7 @@ imported by:
  &#8226;   <a href="#unittest.case">unittest.case</a>
  &#8226;   <a href="#unittest.loader">unittest.loader</a>
  &#8226;   <a href="#unittest.main">unittest.main</a>
+ &#8226;   <a href="#unittest.mock">unittest.mock</a>
  &#8226;   <a href="#unittest.result">unittest.result</a>
  &#8226;   <a href="#unittest.runner">unittest.runner</a>
  &#8226;   <a href="#unittest.suite">unittest.suite</a>
@@ -17387,8 +17266,8 @@ imported by:
 imports:
     <a href="#dataclasses">dataclasses</a>
  &#8226;   <a href="#pathlib">pathlib</a>
- &#8226;   <a href="#pydub">pydub</a>
  &#8226;   <a href="#typing">typing</a>
+ &#8226;   <a href="#wave">wave</a>
 
   </div>
   <div class="import">
@@ -17459,10 +17338,8 @@ imported by:
  &#8226;   <a href="#multiprocessing.util">multiprocessing.util</a>
  &#8226;   <a href="#numpy.lib._datasource">numpy.lib._datasource</a>
  &#8226;   <a href="#numpy.testing._private.utils">numpy.testing._private.utils</a>
+ &#8226;   <a href="#p5b_regression_runner">p5b_regression_runner</a>
  &#8226;   <a href="#pydoc">pydoc</a>
- &#8226;   <a href="#pydub.audio_segment">pydub.audio_segment</a>
- &#8226;   <a href="#pydub.playback">pydub.playback</a>
- &#8226;   <a href="#pydub.utils">pydub.utils</a>
  &#8226;   <a href="#pyreadline3.modes.vi">pyreadline3.modes.vi</a>
  &#8226;   <a href="#shiboken6">shiboken6</a>
  &#8226;   <a href="#urllib.request">urllib.request</a>
@@ -17564,6 +17441,7 @@ imported by:
  &#8226;   <a href="#socketserver">socketserver</a>
  &#8226;   <a href="#sounddevice">sounddevice</a>
  &#8226;   <a href="#subprocess">subprocess</a>
+ &#8226;   <a href="#unittest.mock">unittest.mock</a>
  &#8226;   <a href="#webbrowser">webbrowser</a>
  &#8226;   <a href="#zipfile">zipfile</a>
 
@@ -17601,6 +17479,7 @@ imported by:
  &#8226;   <a href="#multiprocessing.queues">multiprocessing.queues</a>
  &#8226;   <a href="#multiprocessing.synchronize">multiprocessing.synchronize</a>
  &#8226;   <a href="#numpy.testing._private.utils">numpy.testing._private.utils</a>
+ &#8226;   <a href="#p5b_regression_runner">p5b_regression_runner</a>
  &#8226;   <a href="#pprint">pprint</a>
  &#8226;   <a href="#psutil">psutil</a>
  &#8226;   <a href="#psutil._pswindows">psutil._pswindows</a>
@@ -17610,9 +17489,11 @@ imported by:
  &#8226;   <a href="#pyreadline3.rlmain">pyreadline3.rlmain</a>
  &#8226;   <a href="#queue">queue</a>
  &#8226;   <a href="#random">random</a>
- &#8226;   <a href="#simpleaudio.shiny">simpleaudio.shiny</a>
+ &#8226;   <a href="#recording_controller">recording_controller</a>
+ &#8226;   <a href="#recording_ui_components">recording_ui_components</a>
  &#8226;   <a href="#socketserver">socketserver</a>
  &#8226;   <a href="#ssl">ssl</a>
+ &#8226;   <a href="#stems_engine">stems_engine</a>
  &#8226;   <a href="#subprocess">subprocess</a>
  &#8226;   <a href="#tarfile">tarfile</a>
  &#8226;   <a href="#threading">threading</a>
@@ -17635,6 +17516,7 @@ imports:
  &#8226;   <a href="#PySide6.QtGui">PySide6.QtGui</a>
  &#8226;   <a href="#PySide6.QtWidgets">PySide6.QtWidgets</a>
  &#8226;   <a href="#project_model">project_model</a>
+ &#8226;   <a href="#typing">typing</a>
 
   </div>
   <div class="import">
@@ -17830,6 +17712,7 @@ imported by:
  &#8226;   <a href="#typing">typing</a>
  &#8226;   <a href="#unittest.case">unittest.case</a>
  &#8226;   <a href="#unittest.loader">unittest.loader</a>
+ &#8226;   <a href="#unittest.mock">unittest.mock</a>
  &#8226;   <a href="#urllib.parse">urllib.parse</a>
 
   </div>
@@ -17859,11 +17742,14 @@ imported by:
  &#8226;   <a href="#PySide6.QtNetwork">PySide6.QtNetwork</a>
  &#8226;   <a href="#PySide6.QtWidgets">PySide6.QtWidgets</a>
  &#8226;   <a href="#asyncio.staggered">asyncio.staggered</a>
+ &#8226;   <a href="#audio_device">audio_device</a>
  &#8226;   <a href="#audio_engine">audio_engine</a>
+ &#8226;   <a href="#echo_pro_app.py">echo_pro_app.py</a>
  &#8226;   <a href="#functools">functools</a>
  &#8226;   <a href="#importlib.abc">importlib.abc</a>
  &#8226;   <a href="#importlib.metadata">importlib.metadata</a>
  &#8226;   <a href="#importlib.metadata._meta">importlib.metadata._meta</a>
+ &#8226;   <a href="#input_validation">input_validation</a>
  &#8226;   <a href="#metronome">metronome</a>
  &#8226;   <a href="#music_generator">music_generator</a>
  &#8226;   <a href="#numpy._typing">numpy._typing</a>
@@ -17892,6 +17778,8 @@ imported by:
  &#8226;   <a href="#numpy.random._sfc64">numpy.random._sfc64</a>
  &#8226;   <a href="#numpy.random.bit_generator">numpy.random.bit_generator</a>
  &#8226;   <a href="#numpy.random.mtrand">numpy.random.mtrand</a>
+ &#8226;   <a href="#p5a_regression_runner">p5a_regression_runner</a>
+ &#8226;   <a href="#p5b_regression_runner">p5b_regression_runner</a>
  &#8226;   <a href="#project_model">project_model</a>
  &#8226;   <a href="#pyreadline3.clipboard.get_clipboard_text_and_convert">pyreadline3.clipboard.get_clipboard_text_and_convert</a>
  &#8226;   <a href="#pyreadline3.clipboard.win32_clipboard">pyreadline3.clipboard.win32_clipboard</a>
@@ -17899,10 +17787,14 @@ imported by:
  &#8226;   <a href="#pyreadline3.py3k_compat">pyreadline3.py3k_compat</a>
  &#8226;   <a href="#pyreadline3.unicode_helper">pyreadline3.unicode_helper</a>
  &#8226;   <a href="#recording_controller">recording_controller</a>
+ &#8226;   <a href="#recording_recovery">recording_recovery</a>
  &#8226;   <a href="#recording_session">recording_session</a>
+ &#8226;   <a href="#recording_ui_components">recording_ui_components</a>
  &#8226;   <a href="#shiboken6">shiboken6</a>
  &#8226;   <a href="#song_planner">song_planner</a>
+ &#8226;   <a href="#stems_engine">stems_engine</a>
  &#8226;   <a href="#t2m_interface">t2m_interface</a>
+ &#8226;   <a href="#timeline_widget">timeline_widget</a>
  &#8226;   <a href="#undo_manager">undo_manager</a>
  &#8226;   <a href="#voice_interface">voice_interface</a>
  &#8226;   <a href="#voice_store">voice_store</a>
@@ -17971,6 +17863,7 @@ imported by:
  &#8226;   <a href="#unittest.case">unittest.case</a>
  &#8226;   <a href="#unittest.loader">unittest.loader</a>
  &#8226;   <a href="#unittest.main">unittest.main</a>
+ &#8226;   <a href="#unittest.mock">unittest.mock</a>
  &#8226;   <a href="#unittest.result">unittest.result</a>
  &#8226;   <a href="#unittest.runner">unittest.runner</a>
  &#8226;   <a href="#unittest.signals">unittest.signals</a>
@@ -18104,6 +17997,34 @@ imported by:
 </div>
 
 <div class="node">
+  <a name="unittest.mock"></a>
+  <a target="code" href="///C:/Program%20Files/Python310/lib/unittest/mock.py" type="text/plain"><tt>unittest.mock</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#_io">_io</a>
+ &#8226;   <a href="#asyncio">asyncio</a>
+ &#8226;   <a href="#builtins">builtins</a>
+ &#8226;   <a href="#contextlib">contextlib</a>
+ &#8226;   <a href="#functools">functools</a>
+ &#8226;   <a href="#inspect">inspect</a>
+ &#8226;   <a href="#io">io</a>
+ &#8226;   <a href="#pprint">pprint</a>
+ &#8226;   <a href="#sys">sys</a>
+ &#8226;   <a href="#threading">threading</a>
+ &#8226;   <a href="#types">types</a>
+ &#8226;   <a href="#unittest">unittest</a>
+ &#8226;   <a href="#unittest.util">unittest.util</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#p5a_regression_runner">p5a_regression_runner</a>
+
+  </div>
+
+</div>
+
+<div class="node">
   <a name="unittest.result"></a>
   <a target="code" href="///C:/Program%20Files/Python310/lib/unittest/result.py" type="text/plain"><tt>unittest.result</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
@@ -18204,6 +18125,7 @@ imported by:
     <a href="#unittest">unittest</a>
  &#8226;   <a href="#unittest.case">unittest.case</a>
  &#8226;   <a href="#unittest.loader">unittest.loader</a>
+ &#8226;   <a href="#unittest.mock">unittest.mock</a>
  &#8226;   <a href="#unittest.result">unittest.result</a>
  &#8226;   <a href="#unittest.suite">unittest.suite</a>
 
@@ -18379,7 +18301,9 @@ imported by:
   <a target="code" href="///C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/voice_effects.py" type="text/plain"><tt>voice_effects</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
-    <a href="#pathlib">pathlib</a>
+    <a href="#app_paths">app_paths</a>
+ &#8226;   <a href="#os">os</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
  &#8226;   <a href="#voice_interface">voice_interface</a>
 
   </div>
@@ -18397,8 +18321,9 @@ imported by:
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
     <a href="#dataclasses">dataclasses</a>
+ &#8226;   <a href="#numpy">numpy</a>
  &#8226;   <a href="#pathlib">pathlib</a>
- &#8226;   <a href="#pydub">pydub</a>
+ &#8226;   <a href="#soundfile">soundfile</a>
  &#8226;   <a href="#typing">typing</a>
 
   </div>
@@ -18542,7 +18467,6 @@ imported by:
  &#8226;   <a href="#pkgutil">pkgutil</a>
  &#8226;   <a href="#psutil._common">psutil._common</a>
  &#8226;   <a href="#pydoc">pydoc</a>
- &#8226;   <a href="#pydub.utils">pydub.utils</a>
  &#8226;   <a href="#random">random</a>
  &#8226;   <a href="#runpy">runpy</a>
  &#8226;   <a href="#shlex">shlex</a>
@@ -18580,8 +18504,7 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#pydub.audio_segment">pydub.audio_segment</a>
- &#8226;   <a href="#simpleaudio.shiny">simpleaudio.shiny</a>
+    <a href="#t2m_interface">t2m_interface</a>
 
   </div>
 

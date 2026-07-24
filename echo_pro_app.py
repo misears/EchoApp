@@ -25,9 +25,12 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget,
     QStatusBar, QPushButton, QFileDialog, QHBoxLayout, QLineEdit,
     QComboBox, QProgressDialog,
-    QMessageBox, QDialog, QTextEdit, QListWidget, QListWidgetItem
+    QMessageBox, QDialog, QTextEdit, QListWidget, QListWidgetItem,
+    QTabWidget, QScrollArea, QSlider, QDial, QGroupBox, QGridLayout,
+    QFrame, QSizePolicy, QProgressBar
 )
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QPainter, QColor, QPen
 
 from project_model import Project, Track, Clip, new_empty_project, save_project, load_project
 from audio_info import get_audio_length_ms
@@ -65,6 +68,213 @@ from p5b_regression_runner import format_regression_summary as format_p5b_regres
 from recording_recovery import RecoverySnapshotManager
 from input_validation import parse_float, parse_int, parse_time_signature, run_common_validation_checks
 
+
+DARK_STYLE = """
+QMainWindow, QDialog, QWidget {
+    background-color: #16213e;
+    color: #dde1e7;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 11px;
+}
+QTabWidget::pane {
+    border: 1px solid #0f3460;
+    background: #1a1a2e;
+    border-radius: 4px;
+}
+QTabBar::tab {
+    background: #0f3460;
+    color: #aab4be;
+    padding: 8px 18px;
+    margin-right: 2px;
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+    font-weight: 600;
+}
+QTabBar::tab:selected {
+    background: #e94560;
+    color: #ffffff;
+}
+QPushButton {
+    background-color: #0f3460;
+    color: #dde1e7;
+    border: 1px solid #1a4080;
+    padding: 5px 12px;
+    border-radius: 4px;
+}
+QPushButton:hover {
+    background-color: #1a4080;
+    border-color: #e94560;
+}
+QPushButton:pressed {
+    background-color: #e94560;
+    color: #ffffff;
+}
+QLineEdit, QTextEdit, QListWidget, QComboBox {
+    background-color: #0d1b2a;
+    color: #dde1e7;
+    border: 1px solid #0f3460;
+    border-radius: 4px;
+    selection-background-color: #e94560;
+}
+QGroupBox {
+    border: 1px solid #1a4080;
+    border-radius: 6px;
+    margin-top: 14px;
+    padding-top: 6px;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 10px;
+    padding: 0 6px;
+    color: #e94560;
+    font-weight: bold;
+}
+QScrollArea { border: none; background: transparent; }
+QScrollBar:vertical {
+    background: #0d1b2a; width: 8px; border-radius: 4px;
+}
+QScrollBar::handle:vertical {
+    background: #0f3460; border-radius: 4px; min-height: 20px;
+}
+QStatusBar {
+    background-color: #0a1020;
+    color: #aab4be;
+    border-top: 1px solid #0f3460;
+}
+"""
+
+
+class LevelMeterBar(QProgressBar):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setRange(0, 100)
+        self.setValue(0)
+        self.setTextVisible(False)
+        self.setFixedHeight(7)
+
+    def set_db(self, db_value: float) -> None:
+        normalized = max(0.0, min(1.0, (db_value + 60.0) / 60.0))
+        self.setValue(int(normalized * 100))
+
+
+class TrackMixerRow(QFrame):
+    def __init__(self, track_index: int, track_name: str, *, on_volume_change=None, on_mute_toggle=None, on_solo_toggle=None, parent=None):
+        super().__init__(parent)
+        self.track_index = track_index
+        self._on_volume_change = on_volume_change
+        self._on_mute_toggle = on_mute_toggle
+        self._on_solo_toggle = on_solo_toggle
+
+        self.setObjectName("TrackMixerRow")
+        self.setFrameShape(QFrame.StyledPanel)
+        self.setMinimumHeight(76)
+
+        root = QHBoxLayout(self)
+        root.setContentsMargins(10, 6, 10, 6)
+        root.setSpacing(10)
+
+        badge = QLabel(str(track_index + 1))
+        badge.setFixedSize(22, 22)
+        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge.setStyleSheet("background:#0f3460; border-radius:11px; color:#e94560; font-weight:bold;")
+        root.addWidget(badge)
+
+        self.name_label = QLabel(track_name)
+        self.name_label.setMinimumWidth(100)
+        self.name_label.setMaximumWidth(140)
+        root.addWidget(self.name_label)
+
+        self.solo_btn = QPushButton("S")
+        self.solo_btn.setCheckable(True)
+        self.solo_btn.setFixedSize(26, 26)
+        self.solo_btn.clicked.connect(self._solo_clicked)
+        root.addWidget(self.solo_btn)
+
+        self.mute_btn = QPushButton("M")
+        self.mute_btn.setCheckable(True)
+        self.mute_btn.setFixedSize(26, 26)
+        self.mute_btn.clicked.connect(self._mute_clicked)
+        root.addWidget(self.mute_btn)
+
+        vol_col = QVBoxLayout()
+        vol_col.setSpacing(2)
+        vol_col.setContentsMargins(0, 0, 0, 0)
+
+        vol_top = QHBoxLayout()
+        vol_top.setContentsMargins(0, 0, 0, 0)
+        vol_top.addWidget(QLabel("VOL"))
+        vol_top.addStretch()
+        self.db_label = QLabel("0 dB")
+        self.db_label.setMinimumWidth(54)
+        self.db_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        vol_top.addWidget(self.db_label)
+        vol_col.addLayout(vol_top)
+
+        self.vol_slider = QSlider(Qt.Orientation.Horizontal)
+        self.vol_slider.setRange(-60, 6)
+        self.vol_slider.setValue(0)
+        self.vol_slider.valueChanged.connect(self._volume_changed)
+        vol_col.addWidget(self.vol_slider)
+        root.addLayout(vol_col, stretch=1)
+
+        pan_col = QVBoxLayout()
+        pan_col.setSpacing(1)
+        pan_col.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.pan_knob = QDial()
+        self.pan_knob.setRange(-100, 100)
+        self.pan_knob.setValue(0)
+        self.pan_knob.setFixedSize(36, 36)
+        self.pan_knob.setNotchesVisible(True)
+        pan_col.addWidget(self.pan_knob, alignment=Qt.AlignmentFlag.AlignCenter)
+        pan_lbl = QLabel("PAN")
+        pan_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pan_col.addWidget(pan_lbl)
+        root.addLayout(pan_col)
+
+        meter_col = QVBoxLayout()
+        meter_col.setSpacing(1)
+        self.level_meter = LevelMeterBar()
+        self.level_meter.setMinimumWidth(90)
+        meter_col.addWidget(self.level_meter)
+        self.peak_label = QLabel("-inf")
+        self.peak_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        meter_col.addWidget(self.peak_label)
+        root.addLayout(meter_col)
+
+    def _volume_changed(self, value: int):
+        self.db_label.setText(f"{value:+d} dB" if value != 0 else "0 dB")
+        if self._on_volume_change:
+            self._on_volume_change(self.track_index, float(value))
+
+    def _mute_clicked(self, checked: bool):
+        if self._on_mute_toggle:
+            self._on_mute_toggle(self.track_index, checked)
+
+    def _solo_clicked(self, checked: bool):
+        if self._on_solo_toggle:
+            self._on_solo_toggle(self.track_index, checked)
+
+    def set_volume_db(self, db: float):
+        self.vol_slider.blockSignals(True)
+        self.vol_slider.setValue(int(db))
+        self.db_label.setText(f"{int(db):+d} dB" if int(db) != 0 else "0 dB")
+        self.vol_slider.blockSignals(False)
+
+    def update_meter(self, current_db: float, peak_db: float):
+        self.level_meter.set_db(current_db)
+        self.peak_label.setText(f"{peak_db:.0f}")
+
+    def set_mute(self, muted: bool) -> None:
+        self.mute_btn.blockSignals(True)
+        self.mute_btn.setChecked(bool(muted))
+        self.mute_btn.blockSignals(False)
+
+    def set_solo(self, soloed: bool) -> None:
+        self.solo_btn.blockSignals(True)
+        self.solo_btn.setChecked(bool(soloed))
+        self.solo_btn.blockSignals(False)
+
 class FirstRunDialog(QDialog):
     def __init__(self):
         super().__init__()
@@ -80,7 +290,7 @@ class FirstRunDialog(QDialog):
             "- Create and save multitrack projects\n"
             "- Split songs into stems\n"
             "- Record and manage your own voice profiles\n"
-            "- Generate music clips (placeholder for now)\n\n"
+            "- Generate music clips with the local music backend\n\n"
             "Projects will be stored in:\n"
             f"{PROJECTS_DIR}\n\n"
             "Click 'Close' to start using Echo Pro."
@@ -2744,7 +2954,7 @@ class EchoProWindow(QMainWindow):
                 QMessageBox.information(
                     self,
                     "Music backend status",
-                    f"{capability['reason']}\n\nGenerated clip uses placeholder output until assets are available.",
+                    f"{capability['reason']}\n\nGenerated clip uses the current local preview backend until assets are available.",
                 )
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to generate clip:\n{e}")
@@ -2846,7 +3056,7 @@ class EchoProWindow(QMainWindow):
             self.sync_project_tracks_to_recording_engine()
             self.refresh_track_list()
             self.refresh_timeline()
-            self.update_status("Full song generated (placeholder clips).")
+            self.update_status("Full song generated with preview clips.")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to generate full song:\n{e}")
 
@@ -2932,6 +3142,525 @@ class EchoProWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to alter section:\n{e}")
 
+
+class TabbedEchoProWindow(EchoProWindow):
+    def __init__(self):
+        QMainWindow.__init__(self)
+        self.setWindowTitle("Echo Pro")
+        self.setMinimumSize(1280, 900)
+        self.setStyleSheet(DARK_STYLE)
+
+        self.current_project: Project = new_empty_project("Untitled")
+        self.next_clip_id = 1
+        self.recording_controller = RecordingController("default_session", self.current_project.name)
+        self.recording_controller.restore_session_preferences()
+        self.recovery_manager = RecoverySnapshotManager()
+        self.recording_meters = {}
+        self.mixer_rows = []
+        self.selected_track_index = None
+        self.selected_input_device_id = None
+        self.selected_output_device_id = None
+        self.last_song_generation = None
+
+        self.status = QStatusBar()
+        self.setStatusBar(self.status)
+
+        self.recording_timer = QTimer(self)
+        self.recording_timer.setInterval(100)
+        self.recording_timer.timeout.connect(self.refresh_recording_meters)
+        self.recording_timer.start()
+
+        self._build_ui()
+
+        self.refresh_track_list()
+        self.refresh_audio_device_selectors()
+        self.sync_project_tracks_to_recording_engine()
+        self.sync_recording_controls_from_controller()
+        self._build_recording_meters()
+        self._rebuild_mixer_rows()
+        self._apply_take_review_preferences()
+        self.refresh_take_track_selector()
+        self.refresh_take_review_list()
+        self.refresh_alter_section_selector()
+        self.update_recording_status_label()
+        self._prompt_recovery_for_current_session()
+        self.refresh_recovery_history()
+        self.update_status("Ready")
+
+    def _build_ui(self) -> None:
+        root = QVBoxLayout()
+        root.setContentsMargins(10, 10, 10, 8)
+        root.setSpacing(8)
+
+        header = QHBoxLayout()
+        self.project_name_label = QLabel("Project: Untitled")
+        self.project_name_label.setStyleSheet("font-size:16px; font-weight:bold; color:#e94560;")
+        header.addWidget(self.project_name_label)
+        header.addStretch()
+
+        for label, slot in [("New", self.new_project), ("Open", self.open_project), ("Save", self.save_project_dialog), ("Browse", self.browse_projects)]:
+            button = QPushButton(label)
+            button.setFixedWidth(78)
+            button.clicked.connect(slot)
+            header.addWidget(button)
+
+        root.addLayout(header)
+
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self._wrap_scroll(self._build_overview_tab()), "Home")
+        self.tabs.addTab(self._wrap_scroll(self._build_recording_tab()), "Recording")
+        self.tabs.addTab(self._wrap_scroll(self._build_voice_tab()), "Voice FX")
+        self.tabs.addTab(self._wrap_scroll(self._build_music_tab()), "Music")
+        self.tabs.addTab(self._wrap_scroll(self._build_tools_tab()), "Tools")
+        root.addWidget(self.tabs, stretch=1)
+
+        container = QWidget()
+        container.setLayout(root)
+        self.setCentralWidget(container)
+
+    def _wrap_scroll(self, content: QWidget) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(content)
+        return scroll
+
+    def _build_overview_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        project_group = QGroupBox("Project Actions")
+        project_layout = QHBoxLayout(project_group)
+        project_layout.setSpacing(8)
+        self.track_name_input = QLineEdit()
+        self.track_name_input.setPlaceholderText("Track name")
+        self.track_name_input.setFixedWidth(180)
+        project_layout.addWidget(self.track_name_input)
+        for label, slot in [("Add Track", self.add_track), ("Rename Selected", self.rename_selected_track), ("Delete Selected", self.delete_selected_track), ("Move Up", lambda: self.move_selected_track(-1)), ("Move Down", lambda: self.move_selected_track(1)), ("Mute", self.toggle_selected_track_mute), ("Solo", self.toggle_selected_track_solo), ("Arm/Disarm", self.toggle_arm_selected_track)]:
+            button = QPushButton(label)
+            button.clicked.connect(slot)
+            project_layout.addWidget(button)
+        project_layout.addStretch()
+        layout.addWidget(project_group)
+
+        clip_group = QGroupBox("Audio and Track Tools")
+        clip_layout = QGridLayout(clip_group)
+        clip_layout.setSpacing(8)
+        self.clip_track_index_input = QLineEdit()
+        self.clip_track_index_input.setPlaceholderText("Track index")
+        self.clip_track_index_input.setFixedWidth(90)
+        clip_layout.addWidget(QLabel("Clip Track"), 0, 0)
+        clip_layout.addWidget(self.clip_track_index_input, 0, 1)
+        self.clip_start_sec_input = QLineEdit()
+        self.clip_start_sec_input.setPlaceholderText("Start sec")
+        self.clip_start_sec_input.setFixedWidth(90)
+        clip_layout.addWidget(QLabel("Start"), 0, 2)
+        clip_layout.addWidget(self.clip_start_sec_input, 0, 3)
+        add_clip_btn = QPushButton("Add Clip from File")
+        add_clip_btn.clicked.connect(self.add_clip_from_file)
+        clip_layout.addWidget(add_clip_btn, 0, 4)
+
+        self.volume_track_index_input = QLineEdit()
+        self.volume_track_index_input.setPlaceholderText("Track index")
+        self.volume_track_index_input.setFixedWidth(90)
+        clip_layout.addWidget(QLabel("Volume Track"), 1, 0)
+        clip_layout.addWidget(self.volume_track_index_input, 1, 1)
+        self.volume_db_input = QLineEdit()
+        self.volume_db_input.setPlaceholderText("dB")
+        self.volume_db_input.setFixedWidth(90)
+        clip_layout.addWidget(QLabel("Volume dB"), 1, 2)
+        clip_layout.addWidget(self.volume_db_input, 1, 3)
+        set_vol_btn = QPushButton("Set Track Volume")
+        set_vol_btn.clicked.connect(self.set_track_volume)
+        clip_layout.addWidget(set_vol_btn, 1, 4)
+
+        play_btn = QPushButton("Play Project")
+        play_btn.clicked.connect(self.play_current_project)
+        stems_btn = QPushButton("Split Song into Stems")
+        stems_btn.clicked.connect(self.split_song_into_stems)
+        clip_layout.addWidget(play_btn, 2, 4)
+        clip_layout.addWidget(stems_btn, 2, 3)
+        layout.addWidget(clip_group)
+
+        tracks_group = QGroupBox("Tracks")
+        tracks_layout = QVBoxLayout(tracks_group)
+        self.track_list = QListWidget()
+        self.track_list.currentRowChanged.connect(self.on_track_selection_changed)
+        tracks_layout.addWidget(self.track_list)
+        layout.addWidget(tracks_group)
+
+        wave_group = QGroupBox("Waveforms")
+        wave_layout = QVBoxLayout(wave_group)
+        self.timeline = TimelineWidget(self.current_project)
+        self.timeline.setMinimumHeight(360)
+        self.timeline.on_project_changed = self._on_timeline_project_changed
+        self.timeline.on_comp_range_selected = self.on_timeline_comp_range_selected
+        wave_layout.addWidget(self.timeline)
+        layout.addWidget(wave_group, stretch=2)
+
+        mixer_group = QGroupBox("Studio Mixer")
+        mixer_layout = QVBoxLayout(mixer_group)
+        self.mixer_scroll = QScrollArea()
+        self.mixer_scroll.setWidgetResizable(True)
+        self.mixer_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.mixer_inner = QWidget()
+        self.mixer_layout = QVBoxLayout(self.mixer_inner)
+        self.mixer_layout.setContentsMargins(4, 4, 4, 4)
+        self.mixer_layout.setSpacing(4)
+        self.mixer_layout.addStretch()
+        self.mixer_scroll.setWidget(self.mixer_inner)
+        mixer_layout.addWidget(self.mixer_scroll)
+        layout.addWidget(mixer_group, stretch=1)
+
+        return tab
+
+    def _build_recording_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        device_group = QGroupBox("Audio Devices and Checks")
+        device_layout = QHBoxLayout(device_group)
+        self.input_device_combo = QComboBox()
+        self.output_device_combo = QComboBox()
+        device_layout.addWidget(QLabel("Input"))
+        device_layout.addWidget(self.input_device_combo)
+        device_layout.addWidget(QLabel("Output"))
+        device_layout.addWidget(self.output_device_combo)
+        for label, slot in [("Refresh Devices", self.refresh_audio_device_selectors), ("Test Devices", self.test_audio_devices), ("Run P5A Checks", self.run_p5a_regression_checks), ("Run P5B Checks", self.run_p5b_regression_checks)]:
+            button = QPushButton(label)
+            button.clicked.connect(slot)
+            device_layout.addWidget(button)
+        device_layout.addStretch()
+        layout.addWidget(device_group)
+
+        transport_group = QGroupBox("Transport")
+        transport_layout = QHBoxLayout(transport_group)
+        self.transport_bar = TransportBar()
+        self.transport_bar.record_button.clicked.connect(self.start_recording_session)
+        self.transport_bar.stop_button.clicked.connect(self.stop_recording_session)
+        self.transport_bar.undo_button.clicked.connect(self.undo_last_recording_take)
+        self.transport_bar.redo_button.clicked.connect(self.redo_last_recording_take)
+        self.transport_bar.click_button.clicked.connect(self.toggle_metronome)
+        self.transport_bar.stop_button.setEnabled(False)
+        transport_layout.addWidget(self.transport_bar)
+        self.record_track_input = QLineEdit()
+        self.record_track_input.setPlaceholderText("Arm track")
+        self.record_track_input.setFixedWidth(90)
+        transport_layout.addWidget(self.record_track_input)
+        for label, slot in [("Arm Track", self.arm_recording_track), ("Arm All", self.arm_all_recording_tracks), ("Clear Armed", self.clear_armed_recording_tracks)]:
+            button = QPushButton(label)
+            button.clicked.connect(slot)
+            transport_layout.addWidget(button)
+        self.record_tempo_input = QLineEdit()
+        self.record_tempo_input.setPlaceholderText("BPM")
+        self.record_tempo_input.setFixedWidth(80)
+        transport_layout.addWidget(self.record_tempo_input)
+        tempo_btn = QPushButton("Set Tempo")
+        tempo_btn.clicked.connect(self.set_recording_tempo)
+        transport_layout.addWidget(tempo_btn)
+        self.record_time_sig_input = QLineEdit()
+        self.record_time_sig_input.setPlaceholderText("4/4")
+        self.record_time_sig_input.setFixedWidth(70)
+        transport_layout.addWidget(self.record_time_sig_input)
+        time_btn = QPushButton("Set Time Sig")
+        time_btn.clicked.connect(self.set_recording_time_signature)
+        transport_layout.addWidget(time_btn)
+        self.record_count_in_input = QLineEdit()
+        self.record_count_in_input.setPlaceholderText("Count-in")
+        self.record_count_in_input.setFixedWidth(80)
+        transport_layout.addWidget(self.record_count_in_input)
+        count_btn = QPushButton("Set Count-In")
+        count_btn.clicked.connect(self.set_recording_count_in)
+        transport_layout.addWidget(count_btn)
+        layout.addWidget(transport_group)
+
+        self.punch_loop_widget = TransportPunchLoopWidget()
+        self.pre_roll_bar_input = self.punch_loop_widget.pre_roll_bar_input
+        self.post_roll_bar_input = self.punch_loop_widget.post_roll_bar_input
+        self.punch_mode_combo = self.punch_loop_widget.punch_mode_combo
+        self.punch_in_bar_input = self.punch_loop_widget.punch_in_bar_input
+        self.punch_out_bar_input = self.punch_loop_widget.punch_out_bar_input
+        self.loop_mode_combo = self.punch_loop_widget.loop_mode_combo
+        self.loop_start_bar_input = self.punch_loop_widget.loop_start_bar_input
+        self.loop_end_bar_input = self.punch_loop_widget.loop_end_bar_input
+        self.punch_mode_combo.currentIndexChanged.connect(self.on_punch_mode_changed)
+        self.loop_mode_combo.currentIndexChanged.connect(self.on_loop_mode_changed)
+        self.punch_loop_widget.set_roll_btn.clicked.connect(self.set_recording_pre_post_roll)
+        self.punch_loop_widget.set_punch_btn.clicked.connect(self.set_recording_punch_range)
+        self.punch_loop_widget.set_loop_btn.clicked.connect(self.set_recording_loop_range)
+        layout.addWidget(self.punch_loop_widget)
+
+        status_group = QGroupBox("Recording Status")
+        status_layout = QVBoxLayout(status_group)
+        self.recording_status_label = QLabel("Recording: idle")
+        status_layout.addWidget(self.recording_status_label)
+        self.recording_diagnostics_widget = RecordingDiagnosticsWidget()
+        status_layout.addWidget(self.recording_diagnostics_widget)
+        layout.addWidget(status_group)
+
+        takes_group = QGroupBox("Take Review")
+        takes_layout = QVBoxLayout(takes_group)
+        header = QHBoxLayout()
+        self.take_track_combo = QComboBox()
+        self.take_track_combo.currentIndexChanged.connect(self.refresh_take_review_list)
+        self.take_sort_combo = QComboBox()
+        self.take_sort_combo.addItem("Newest First", "newest")
+        self.take_sort_combo.addItem("Oldest First", "oldest")
+        self.take_sort_combo.currentIndexChanged.connect(self.on_take_review_preferences_changed)
+        self.take_filter_combo = QComboBox()
+        self.take_filter_combo.addItem("All Takes", "all")
+        self.take_filter_combo.addItem("Clipped Only", "clipped")
+        self.take_filter_combo.addItem("Active Only", "active")
+        self.take_filter_combo.currentIndexChanged.connect(self.on_take_review_preferences_changed)
+        self.take_view_mode_combo = QComboBox()
+        self.take_view_mode_combo.addItem("Expanded", "expanded")
+        self.take_view_mode_combo.addItem("Compact", "compact")
+        self.take_view_mode_combo.currentIndexChanged.connect(self.on_take_review_preferences_changed)
+        self.take_loop_combo = QComboBox()
+        self.take_loop_combo.addItem("One-Shot", False)
+        self.take_loop_combo.addItem("Loop", True)
+        self.take_loop_combo.currentIndexChanged.connect(self.on_take_review_preferences_changed)
+        self.hide_inactive_take_clips_btn = QPushButton("Hide Inactive Takes")
+        self.hide_inactive_take_clips_btn.setCheckable(True)
+        self.hide_inactive_take_clips_btn.toggled.connect(self.on_hide_inactive_take_clips_toggled)
+        for widget in [QLabel("Track"), self.take_track_combo, self.take_sort_combo, self.take_filter_combo, self.take_view_mode_combo, self.take_loop_combo, self.hide_inactive_take_clips_btn]:
+            header.addWidget(widget)
+        refresh_takes_btn = QPushButton("Refresh Takes")
+        refresh_takes_btn.clicked.connect(self.refresh_take_review_list)
+        header.addWidget(refresh_takes_btn)
+        header.addStretch()
+        takes_layout.addLayout(header)
+
+        self.take_list_widget = TakeListWidget()
+        self.take_review_list = self.take_list_widget.list_widget
+        self.take_list_widget.on_item_double_clicked(self.audition_selected_take)
+        takes_layout.addWidget(self.take_list_widget)
+
+        take_actions = QHBoxLayout()
+        for label, slot in [("Set Active Take", self.set_selected_take_active), ("Audition Selected", self.audition_selected_take), ("Audition Active", self.audition_active_take), ("Stop Audition", self.stop_take_audition), ("Delete Selected Take", self.delete_selected_take), ("Toggle Keeper", self.toggle_selected_take_keeper), ("Toggle Take Mute", self.toggle_selected_take_muted), ("Rate -", lambda: self.rate_selected_take(-1)), ("Rate +", lambda: self.rate_selected_take(1)), ("Use Best Take", self.use_best_take_for_selected_track)]:
+            button = QPushButton(label)
+            button.clicked.connect(slot)
+            take_actions.addWidget(button)
+        takes_layout.addLayout(take_actions)
+        layout.addWidget(takes_group, stretch=1)
+
+        comp_group = QGroupBox("Comping and Recovery")
+        comp_layout = QGridLayout(comp_group)
+        self.comp_start_sec_input = QLineEdit()
+        self.comp_end_sec_input = QLineEdit()
+        self.recovery_history_combo = QComboBox()
+        comp_layout.addWidget(QLabel("Comp Start"), 0, 0)
+        comp_layout.addWidget(self.comp_start_sec_input, 0, 1)
+        comp_layout.addWidget(QLabel("Comp End"), 0, 2)
+        comp_layout.addWidget(self.comp_end_sec_input, 0, 3)
+        button_row = QHBoxLayout()
+        for label, slot in [
+            ("Create Comp Region", self.create_comp_region_from_selection),
+            ("Assign Selected Take", self.assign_selected_take_to_comp_region),
+            ("Clear Comp Region", self.clear_comp_region_from_selection),
+            ("Refresh History", self.refresh_recovery_history),
+            ("Restore Selected", self.restore_selected_recovery_snapshot),
+        ]:
+            button = QPushButton(label)
+            button.clicked.connect(slot)
+            button_row.addWidget(button)
+        button_row.addStretch()
+        comp_layout.addLayout(button_row, 1, 0, 1, 4)
+        comp_layout.addWidget(QLabel("Recovery History"), 2, 0)
+        comp_layout.addWidget(self.recovery_history_combo, 2, 1, 1, 3)
+        layout.addWidget(comp_group)
+
+        meters_group = QGroupBox("Input Levels")
+        meters_layout = QVBoxLayout(meters_group)
+        self.meter_container = QVBoxLayout()
+        self._build_recording_meters()
+        meters_layout.addLayout(self.meter_container)
+        layout.addWidget(meters_group)
+
+        return tab
+
+    def _build_voice_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        effect_group = QGroupBox("Voice Conversion")
+        effect_layout = QGridLayout(effect_group)
+        self.voice_track_index_input = QLineEdit()
+        self.voice_clip_id_input = QLineEdit()
+        self.voice_profile_name_input = QLineEdit()
+        effect_layout.addWidget(QLabel("Track"), 0, 0)
+        effect_layout.addWidget(self.voice_track_index_input, 0, 1)
+        effect_layout.addWidget(QLabel("Clip ID"), 0, 2)
+        effect_layout.addWidget(self.voice_clip_id_input, 0, 3)
+        effect_layout.addWidget(QLabel("Voice Profile"), 1, 0)
+        effect_layout.addWidget(self.voice_profile_name_input, 1, 1, 1, 3)
+        apply_btn = QPushButton("Apply Voice Effect")
+        apply_btn.clicked.connect(self.apply_voice_effect_to_clip)
+        manage_btn = QPushButton("Manage Voices")
+        manage_btn.clicked.connect(self.open_voice_manager)
+        effect_layout.addWidget(apply_btn, 2, 2)
+        effect_layout.addWidget(manage_btn, 2, 3)
+        layout.addWidget(effect_group)
+        return tab
+
+    def _build_music_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        gen_group = QGroupBox("Music Generator")
+        gen_layout = QGridLayout(gen_group)
+        self.gen_style = QLineEdit()
+        self.gen_genre = QLineEdit()
+        self.gen_mood = QLineEdit()
+        self.gen_lyrics = QLineEdit()
+        self.gen_duration = QLineEdit()
+        self.cloud_enabled = QLineEdit("no")
+        gen_layout.addWidget(QLabel("Style"), 0, 0)
+        gen_layout.addWidget(self.gen_style, 0, 1)
+        gen_layout.addWidget(QLabel("Genre"), 0, 2)
+        gen_layout.addWidget(self.gen_genre, 0, 3)
+        gen_layout.addWidget(QLabel("Mood"), 1, 0)
+        gen_layout.addWidget(self.gen_mood, 1, 1)
+        gen_layout.addWidget(QLabel("Lyrics"), 1, 2)
+        gen_layout.addWidget(self.gen_lyrics, 1, 3)
+        gen_layout.addWidget(QLabel("Duration"), 2, 0)
+        gen_layout.addWidget(self.gen_duration, 2, 1)
+        gen_layout.addWidget(QLabel("Cloud"), 2, 2)
+        gen_layout.addWidget(self.cloud_enabled, 2, 3)
+        gen_btn = QPushButton("Generate Clip")
+        gen_btn.clicked.connect(self.generate_single_clip)
+        gen_layout.addWidget(gen_btn, 2, 4)
+        layout.addWidget(gen_group)
+
+        plan_group = QGroupBox("Song Planner")
+        plan_layout = QGridLayout(plan_group)
+        self.plan_total_length = QLineEdit()
+        self.plan_structure = QLineEdit()
+        self.plan_key = QLineEdit()
+        self.plan_chords = QLineEdit()
+        self.plan_time_sig = QLineEdit()
+        self.plan_tempo = QLineEdit()
+        self.plan_lyrics = QTextEdit()
+        plan_layout.addWidget(QLabel("Total Length"), 0, 0)
+        plan_layout.addWidget(self.plan_total_length, 0, 1)
+        plan_layout.addWidget(QLabel("Structure"), 0, 2)
+        plan_layout.addWidget(self.plan_structure, 0, 3)
+        plan_layout.addWidget(QLabel("Key"), 1, 0)
+        plan_layout.addWidget(self.plan_key, 1, 1)
+        plan_layout.addWidget(QLabel("Chords"), 1, 2)
+        plan_layout.addWidget(self.plan_chords, 1, 3)
+        plan_layout.addWidget(QLabel("Time Sig"), 2, 0)
+        plan_layout.addWidget(self.plan_time_sig, 2, 1)
+        plan_layout.addWidget(QLabel("Tempo"), 2, 2)
+        plan_layout.addWidget(self.plan_tempo, 2, 3)
+        plan_layout.addWidget(QLabel("Lyrics"), 3, 0)
+        plan_layout.addWidget(self.plan_lyrics, 3, 1, 1, 3)
+        plan_btn = QPushButton("Generate Full Song")
+        plan_btn.clicked.connect(self.generate_full_song)
+        plan_layout.addWidget(plan_btn, 4, 3)
+        layout.addWidget(plan_group)
+
+        alter_group = QGroupBox("Section Tweaks")
+        alter_layout = QHBoxLayout(alter_group)
+        self.alter_section_selector = QComboBox()
+        self.alter_section_selector.currentIndexChanged.connect(self.on_alter_section_selector_changed)
+        self.alter_section_index_input = QLineEdit()
+        self.alter_section_lyrics_input = QLineEdit()
+        alter_layout.addWidget(self.alter_section_selector)
+        alter_layout.addWidget(self.alter_section_index_input)
+        alter_layout.addWidget(self.alter_section_lyrics_input)
+        alter_btn = QPushButton("Alter Section")
+        alter_btn.clicked.connect(self.alter_generated_song_section)
+        alter_layout.addWidget(alter_btn)
+        layout.addWidget(alter_group)
+
+        return tab
+
+    def _build_tools_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        stems_group = QGroupBox("Project Tools")
+        stems_layout = QHBoxLayout(stems_group)
+        stems_btn = QPushButton("Split Song into Stems")
+        stems_btn.clicked.connect(self.split_song_into_stems)
+        stems_layout.addWidget(stems_btn)
+        layout.addWidget(stems_group)
+
+        regen_group = QGroupBox("Checks")
+        regen_layout = QHBoxLayout(regen_group)
+        for label, slot in [("Run P5A Checks", self.run_p5a_regression_checks), ("Run P5B Checks", self.run_p5b_regression_checks)]:
+            button = QPushButton(label)
+            button.clicked.connect(slot)
+            regen_layout.addWidget(button)
+        regen_layout.addStretch()
+        layout.addWidget(regen_group)
+        layout.addStretch()
+        return tab
+
+    def _rebuild_mixer_rows(self):
+        while self.mixer_layout.count() > 1:
+            item = self.mixer_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        self.mixer_rows = []
+        for idx, track in enumerate(self.current_project.tracks):
+            row = TrackMixerRow(
+                idx,
+                track.name,
+                on_volume_change=self._on_track_volume_changed,
+                on_mute_toggle=self._set_track_muted,
+                on_solo_toggle=self._set_track_soloed,
+            )
+            row.set_volume_db(track.volume_db)
+            row.set_mute(track.muted)
+            row.set_solo(track.soloed)
+            self.mixer_layout.insertWidget(self.mixer_layout.count() - 1, row)
+            self.mixer_rows.append(row)
+
+    def _on_track_volume_changed(self, track_index: int, db: float) -> None:
+        if 0 <= track_index < len(self.current_project.tracks):
+            self.current_project.tracks[track_index].volume_db = db
+            self.sync_project_tracks_to_recording_engine()
+            self.update_status(f"Track {track_index + 1} volume: {db:+.0f} dB")
+
+    def _set_track_muted(self, track_index: int, muted: bool) -> None:
+        if 0 <= track_index < len(self.current_project.tracks):
+            self.current_project.tracks[track_index].muted = bool(muted)
+            self.sync_project_tracks_to_recording_engine()
+            self.refresh_track_list()
+
+    def _set_track_soloed(self, track_index: int, soloed: bool) -> None:
+        if 0 <= track_index < len(self.current_project.tracks):
+            self.current_project.tracks[track_index].soloed = bool(soloed)
+            self.sync_project_tracks_to_recording_engine()
+            self.refresh_track_list()
+
+    def refresh_track_list(self):
+        super().refresh_track_list()
+        self._rebuild_mixer_rows()
+
+    def refresh_recording_meters(self):
+        super().refresh_recording_meters()
+        levels = self.recording_controller.get_meter_levels()
+        for track_id, row in enumerate(self.mixer_rows):
+            track_levels = levels.get(track_id)
+            if track_levels is not None:
+                row.update_meter(track_levels["current_db"], track_levels["peak_db"])
+
+
+EchoProWindow = TabbedEchoProWindow
+
 if __name__ == "__main__":
     run_common_validation_checks()
     app = QApplication(sys.argv)
@@ -2943,7 +3672,7 @@ if __name__ == "__main__":
         dlg.exec()
         mark_first_run_done()
 
-    win = EchoProWindow()
+    win = TabbedEchoProWindow()
     win.resize(1200, 700)
     win.show()
     sys.exit(app.exec())
