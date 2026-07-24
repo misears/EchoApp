@@ -73,6 +73,8 @@ def t2m_generate_clip(
         backend_name=model_config.name,
         metadata={
             "backend_type": model_config.backend_type,
-            "note": "Placeholder silent clip. Replace t2m_generate_clip with real model."
+            "note": "Placeholder silent clip. Replace t2m_generate_clip with real model.",
+            "capability_ready": bool(model_config.extra.get("ready", False)),
+            "capability_reason": str(model_config.extra.get("reason", "")),
         }
     )

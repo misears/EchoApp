@@ -3,6 +3,9 @@ Echo Pro Recording UI Components
 Reusable widgets for recording meters and transport controls.
 """
 
+import os
+import time
+
 try:
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QProgressBar, QWidget
@@ -81,6 +84,10 @@ class TrackMeterWidget(QFrame):
         super().__init__(parent)
         self.setFrameShape(QFrame.StyledPanel)
         self.clip_hold = False
+        self.peak_hold_timeout_sec = max(0.0, float(os.environ.get("ECHO_PEAK_HOLD_TIMEOUT_SEC", "2.0")))
+        self.silence_threshold_db = float(os.environ.get("ECHO_SILENCE_WARN_DB", "-55.0"))
+        self.last_clip_time = 0.0
+        self.peak_hold_db = -80.0
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 4, 8, 4)
 
@@ -102,7 +109,7 @@ class TrackMeterWidget(QFrame):
         layout.addWidget(self.clip_label)
 
         self.reset_button = QPushButton("Reset")
-        self.reset_button.clicked.connect(self.reset_clip_hold)
+        self.reset_button.clicked.connect(self.reset_meter_state)
         layout.addWidget(self.reset_button)
 
         self._set_clip_visual(False)
@@ -117,15 +124,29 @@ class TrackMeterWidget(QFrame):
             self.clip_label.setStyleSheet("color: #9adf9a;")
             self.setStyleSheet("")
 
-    def reset_clip_hold(self) -> None:
+    def reset_meter_state(self) -> None:
         self.clip_hold = False
+        self.peak_hold_db = -80.0
+        self.last_clip_time = 0.0
+        self.peak_label.setText("-∞ dB")
         self._set_clip_visual(False)
 
     def update_levels(self, current_db: float, peak_db: float, clipping: bool = False) -> None:
+        now = time.monotonic()
         self.meter.set_db(current_db)
-        self.peak_label.setText(f"{peak_db:.1f} dB")
+        self.peak_hold_db = max(self.peak_hold_db, float(peak_db))
+        self.peak_label.setText(f"{self.peak_hold_db:.1f} dB")
         if clipping:
             self.clip_hold = True
+            self.last_clip_time = now
+        elif self.clip_hold and self.peak_hold_timeout_sec > 0 and now - self.last_clip_time >= self.peak_hold_timeout_sec:
+            self.clip_hold = False
+
+        if current_db < self.silence_threshold_db and not self.clip_hold:
+            self.clip_label.setText("SIL")
+            self.clip_label.setStyleSheet("color: #f5c26b; font-weight: bold;")
+            self.setStyleSheet("QFrame { border: 1px solid #a87f2f; background-color: #3a331f; }")
+            return
         self._set_clip_visual(self.clip_hold)
 
 

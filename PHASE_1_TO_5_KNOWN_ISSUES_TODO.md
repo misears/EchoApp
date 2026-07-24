@@ -24,27 +24,27 @@ Purpose: single source of truth for active issues, errors, and fix tasks across 
 
 ### P1-1 Input validation hardening for clip import
 
-- Status: Open
+- Status: Closed (resolved 2026-07-23)
 - File targets: echo_pro_app.py
 - Problem:
   - Add Clip and related track-index fields rely on repeated ad hoc parsing.
   - Better validation and messaging would reduce user error loops.
 - TODO:
-  - [ ] Add shared numeric parsing helpers for int/float with consistent error text.
-  - [ ] Validate track index and clip time ranges before file dialog opens.
-  - [ ] Add explicit file-exists check before clip append.
-  - [ ] Add unit-style validation checks for common bad inputs.
+  - [x] Add shared numeric parsing helpers for int/float with consistent error text.
+  - [x] Validate track index and clip time ranges before file dialog opens.
+  - [x] Add explicit file-exists check before clip append.
+  - [x] Add unit-style validation checks for common bad inputs.
 
 ### P1-2 Timeline interactivity gap
 
-- Status: Open
+- Status: Closed (resolved 2026-07-23)
 - File targets: timeline_widget.py
 - Problem:
   - Timeline renders well but still has minimal direct editing interactions.
 - TODO:
-  - [ ] Add click select for clips.
-  - [ ] Add drag move for clip start times.
-  - [ ] Add visual selected-clip state and keyboard delete action.
+  - [x] Add click select for clips.
+  - [x] Add drag move for clip start times.
+  - [x] Add visual selected-clip state and keyboard delete action.
 
 ---
 
@@ -52,25 +52,25 @@ Purpose: single source of truth for active issues, errors, and fix tasks across 
 
 ### P2-1 Long-running stems UX
 
-- Status: Open
+- Status: Closed (resolved 2026-07-23)
 - File targets: echo_pro_app.py, stems_engine.py
 - Problem:
   - Stem split currently uses status text only; progress feedback is limited.
 - TODO:
-  - [ ] Add non-blocking progress dialog for stem separation.
-  - [ ] Add cancel/abort path if backend supports it.
-  - [ ] Add clearer completion/failure summaries.
+  - [x] Add non-blocking progress dialog for stem separation.
+  - [x] Add cancel/abort path if backend supports it.
+  - [x] Add clearer completion/failure summaries.
 
 ### P2-2 Demucs/ffmpeg failure guidance
 
-- Status: Open
+- Status: Closed (resolved 2026-07-23)
 - File targets: stems_engine.py, echo_pro_app.py
 - Problem:
   - Failures can still surface as generic exception text.
 - TODO:
-  - [ ] Map common Demucs-not-found errors to actionable user guidance.
-  - [ ] Map ffmpeg-not-found errors to setup/update instructions.
-  - [ ] Add quick link/action to dependency update script from UI error dialogs.
+  - [x] Map common Demucs-not-found errors to actionable user guidance.
+  - [x] Map ffmpeg-not-found errors to setup/update instructions.
+  - [x] Add quick link/action to dependency update script from UI error dialogs.
 
 ---
 
@@ -78,24 +78,25 @@ Purpose: single source of truth for active issues, errors, and fix tasks across 
 
 ### P3-1 Placeholder conversion quality (expected limitation)
 
-- Status: Open (by design)
+- Status: Closed (resolved 2026-07-23; placeholder behavior remains explicit by design)
 - File targets: voice_effects.py, voice_interface.py
 - Problem:
   - Voice conversion is placeholder behavior, not model-grade conversion.
 - TODO:
-  - [ ] Keep placeholder clearly labeled in UI and docs.
-  - [ ] Define model integration acceptance tests before swapping backend.
-  - [ ] Add configurable backend selection and runtime capability check.
+  - [x] Keep placeholder clearly labeled in UI and docs.
+  - [x] Define model integration acceptance tests before swapping backend.
+  - [x] Add configurable backend selection and runtime capability check.
+  - Validation note: baseline acceptance checks and parser sanity checks are codified in `input_validation.py::run_common_validation_checks()`.
 
 ### P3-2 Metadata consistency coverage
 
-- Status: Open
+- Status: Closed (resolved 2026-07-23)
 - File targets: voice_store.py, echo_pro_app.py
 - Problem:
   - Voice profile metadata and consent flow works, but validation coverage is limited.
 - TODO:
-  - [ ] Add checks for missing/corrupt profile files at load time.
-  - [ ] Add migration path if profile schema expands.
+  - [x] Add checks for missing/corrupt profile files at load time.
+  - [x] Add migration path if profile schema expands.
 
 ---
 
@@ -103,34 +104,34 @@ Purpose: single source of truth for active issues, errors, and fix tasks across 
 
 ### P4-1 Placeholder generation output (expected limitation)
 
-- Status: Open (by design)
+- Status: Closed (resolved 2026-07-23; placeholder output remains explicit by design)
 - File targets: t2m_interface.py, music_generator.py
 - Problem:
   - Generated audio is placeholder silence until real model integration.
 - TODO:
-  - [ ] Keep placeholder warning in generation UI.
-  - [ ] Add backend readiness check and user-readable capability state.
+  - [x] Keep placeholder warning in generation UI.
+  - [x] Add backend readiness check and user-readable capability state.
 
 ### P4-2 Section-alteration persistence scope
 
-- Status: Open
+- Status: Closed (resolved 2026-07-23)
 - File targets: echo_pro_app.py, song_planner.py
 - Problem:
   - Section alteration works in-session, but mapping is currently memory-resident and not persisted to project metadata.
 - TODO:
-  - [ ] Persist section mapping/version data into project/session metadata.
-  - [ ] Restore section mapping on project load.
-  - [ ] Add dropdown section picker to avoid manual index entry.
+  - [x] Persist section mapping/version data into project/session metadata.
+  - [x] Restore section mapping on project load.
+  - [x] Add dropdown section picker to avoid manual index entry.
 
 ### P4-3 Generation input validation polish
 
-- Status: Open
+- Status: Closed (resolved 2026-07-23)
 - File targets: echo_pro_app.py
 - Problem:
   - Generation forms can still accept incomplete/weak input combinations.
 - TODO:
-  - [ ] Validate structure list and duration bounds with friendly messages.
-  - [ ] Validate time signature format consistently across generation and recording.
+  - [x] Validate structure list and duration bounds with friendly messages.
+  - [x] Validate time signature format consistently across generation and recording.
 
 ---
 
@@ -151,7 +152,7 @@ Purpose: single source of truth for active issues, errors, and fix tasks across 
 
 ### P5A-2 Recording robustness regression suite
 
-- Status: Open
+- Status: Closed (resolved 2026-07-23)
 - File targets: recording_controller.py, audio_engine.py
 - Problem:
   - Major features are integrated, but dedicated regression matrix is still needed.
@@ -163,13 +164,13 @@ Purpose: single source of truth for active issues, errors, and fix tasks across 
 
 ### P5A-3 Meter semantics tuning
 
-- Status: Open
+- Status: Closed (resolved 2026-07-23)
 - File targets: recording_ui_components.py, audio_engine.py
 - Problem:
   - Clip hold/reset is implemented; peak reset and decay behavior can be improved.
 - TODO:
-  - [ ] Add optional peak hold timeout and manual peak reset.
-  - [ ] Add input-silence warning threshold option.
+  - [x] Add optional peak hold timeout and manual peak reset.
+  - [x] Add input-silence warning threshold option.
 
 ---
 
@@ -213,4 +214,4 @@ Purpose: single source of truth for active issues, errors, and fix tasks across 
 - [x] No active diagnostics/lint errors in planning docs.
 - [x] BUILD_STATUS.md reflects only currently active issues.
 - [x] Phase 5A take review UX completed and validated.
-- [ ] Core phase workflows (1-5A) pass regression checks.
+- [x] Core phase workflows (1-5A) pass regression checks.

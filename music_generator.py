@@ -1,4 +1,5 @@
 
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -8,21 +9,38 @@ from t2m_interface import (
     t2m_generate_clip,
     T2MClipResult,
 )
-from app_paths import ECHO_ROOT, ensure_dirs
+from app_paths import ACE_MODELS_DIR, ECHO_ROOT, ensure_dirs
 
 VALID_STYLES = ["lofi", "rock", "pop", "edm", "orchestral", "jazz", "hiphop", "ambient"]
 
+def get_music_backend_capability() -> dict:
+    ensure_dirs()
+    configured_model = os.environ.get("ECHO_ACE_MODEL_PATH", "").strip()
+    model_path = Path(configured_model) if configured_model else ACE_MODELS_DIR / "current"
+    ready = model_path.exists()
+    return {
+        "backend": "ACE Step 1.5",
+        "model_path": str(model_path),
+        "ready": ready,
+        "reason": "" if ready else "ACE Step 1.5 assets not installed yet. Run install_echo_pro.bat install/update.",
+    }
+
 def get_default_t2m_config(use_cloud: bool = False) -> T2MModelConfig:
+    capability = get_music_backend_capability()
     backend_type = "cloud" if use_cloud else "offline"
     return T2MModelConfig(
-        name="EchoProT2MPlaceholder",
+        name="ACE Step 1.5" if not use_cloud else "ACE Step 1.5 (Cloud)",
         backend_type=backend_type,
         max_clip_seconds=30,
         sample_rate=44100,
         stereo=True,
         fp16=True,
         batch_size=1,
-        extra={}
+        extra={
+            "ready": capability["ready"],
+            "reason": capability["reason"],
+            "model_path": capability["model_path"],
+        }
     )
 
 def generate_music_clip(

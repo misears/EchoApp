@@ -1,4 +1,5 @@
 
+import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, Optional, Tuple
@@ -6,7 +7,7 @@ from typing import Dict, Optional, Tuple
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget,
     QStatusBar, QPushButton, QFileDialog, QHBoxLayout, QLineEdit,
-    QComboBox,
+    QComboBox, QProgressDialog,
     QMessageBox, QDialog, QTextEdit, QListWidget, QListWidgetItem
 )
 from PySide6.QtCore import Qt, QTimer
@@ -15,7 +16,13 @@ from project_model import Project, Track, Clip, new_empty_project, save_project,
 from audio_info import get_audio_length_ms
 from timeline_widget import TimelineWidget
 from playback_mixer import play_project
-from stems_engine import separate_stems, add_stems_to_project
+from stems_engine import (
+    StemCancelledError,
+    StemDependencyError,
+    StemSeparationError,
+    add_stems_to_project,
+    separate_stems,
+)
 
 from app_paths import ECHO_ROOT, PROJECTS_DIR, VOICES_DIR, ensure_dirs
 from first_run import is_first_run, mark_first_run_done
@@ -23,15 +30,16 @@ from first_run import is_first_run, mark_first_run_done
 from voice_store import load_voice_profiles, add_voice_profile
 from voice_recorder import record_voice_to_wav
 from voice_interface import VoiceProfileConfig
-from voice_effects import apply_voice_conversion
+from voice_effects import apply_voice_conversion, get_voice_backend_capability
 
-from music_generator import generate_music_clip
+from music_generator import generate_music_clip, get_music_backend_capability
 from song_planner import generate_song_sections
 from recording_controller import RecordingController
 from recording_ui_components import TrackMeterWidget, TransportBar, RecordingDiagnosticsWidget
 from audio_device import device_manager
 from p5a_regression_runner import format_regression_summary, run_phase5a_regression_checks
 from recording_recovery import RecoverySnapshotManager
+from input_validation import parse_float, parse_int, parse_time_signature, run_common_validation_checks
 
 class FirstRunDialog(QDialog):
     def __init__(self):
@@ -650,6 +658,10 @@ class EchoProWindow(QMainWindow):
         layout.addLayout(planner_layout)
 
         alter_layout = QHBoxLayout()
+        self.alter_section_selector = QComboBox()
+        self.alter_section_selector.currentIndexChanged.connect(self.on_alter_section_selector_changed)
+        alter_layout.addWidget(self.alter_section_selector)
+
         self.alter_section_index_input = QLineEdit()
         self.alter_section_index_input.setPlaceholderText("Alter section index (0-based)")
         alter_layout.addWidget(self.alter_section_index_input)
@@ -667,12 +679,14 @@ class EchoProWindow(QMainWindow):
         # Cloud Settings
         cloud_layout = QHBoxLayout()
         self.cloud_enabled = QLineEdit()
-        self.cloud_enabled.setPlaceholderText("Cloud? yes/no")
+        self.cloud_enabled.setPlaceholderText("Cloud backend? yes/no (default: no = ACE Step 1.5 local)")
+        self.cloud_enabled.setText("no")
         cloud_layout.addWidget(self.cloud_enabled)
         layout.addLayout(cloud_layout)
 
         # Timeline
         self.timeline = TimelineWidget(self.current_project)
+        self.timeline.on_project_changed = self._on_timeline_project_changed
         layout.addWidget(self.timeline)
 
         container = QWidget()
@@ -686,10 +700,35 @@ class EchoProWindow(QMainWindow):
         self._apply_take_review_preferences()
         self.refresh_take_track_selector()
         self.refresh_take_review_list()
+        self.refresh_alter_section_selector()
         self.update_recording_status_label()
         self._prompt_recovery_for_current_session()
 
         self.update_status("Ready")
+
+    def _on_timeline_project_changed(self):
+        self.refresh_timeline()
+        self.update_status("Timeline updated")
+
+    def refresh_alter_section_selector(self):
+        current_index = self.alter_section_selector.currentIndex()
+        self.alter_section_selector.blockSignals(True)
+        self.alter_section_selector.clear()
+        if self.last_song_generation and isinstance(self.last_song_generation.get("sections"), list):
+            for section in self.last_song_generation["sections"]:
+                section_index = int(section.get("section_index", 0))
+                section_name = str(section.get("section_name", f"Section {section_index}"))
+                self.alter_section_selector.addItem(f"{section_index}: {section_name}", section_index)
+        self.alter_section_selector.blockSignals(False)
+        if self.alter_section_selector.count() > 0:
+            safe_index = current_index if 0 <= current_index < self.alter_section_selector.count() else 0
+            self.alter_section_selector.setCurrentIndex(safe_index)
+            self.on_alter_section_selector_changed()
+
+    def on_alter_section_selector_changed(self, *_args):
+        value = self.alter_section_selector.currentData()
+        if value is not None:
+            self.alter_section_index_input.setText(str(value))
 
     def _build_recording_meters(self):
         while self.meter_container.count():
@@ -1749,22 +1788,12 @@ class EchoProWindow(QMainWindow):
         self.update_recording_status_label()
 
     def set_recording_time_signature(self):
-        text = self.record_time_sig_input.text().strip()
-        if "/" not in text:
-            QMessageBox.warning(self, "Input error", "Time signature must look like 4/4.")
+        parsed_signature = self._parse_time_signature(self.record_time_sig_input.text(), field_name="Recording time signature")
+        if parsed_signature is None:
             return
-
-        parts = text.split("/", 1)
-        try:
-            numerator = int(parts[0].strip())
-            denominator = int(parts[1].strip())
-        except ValueError:
-            QMessageBox.warning(self, "Input error", "Time signature values must be numbers.")
-            return
-
-        if numerator <= 0 or denominator <= 0:
-            QMessageBox.warning(self, "Input error", "Time signature values must be positive.")
-            return
+        numerator_text, denominator_text = parsed_signature.split("/", 1)
+        numerator = int(numerator_text)
+        denominator = int(denominator_text)
 
         self.recording_controller.set_time_signature(numerator, denominator)
         self.update_status(f"Recording time signature set to {numerator}/{denominator}")
@@ -1995,11 +2024,65 @@ class EchoProWindow(QMainWindow):
         self.timeline.set_selected_track(self.selected_track_index)
         self.timeline.update()
 
+    def _parse_int_field(self, text: str, *, field_name: str, allow_empty: bool = False, default_value: Optional[int] = None) -> Optional[int]:
+        value = text.strip()
+        if not value:
+            if allow_empty:
+                return default_value
+            QMessageBox.warning(self, "Input error", f"{field_name} is required.")
+            return None
+        parsed = parse_int(value)
+        if parsed is None:
+            QMessageBox.warning(self, "Input error", f"{field_name} must be a whole number.")
+            return None
+        return parsed
+
+    def _parse_float_field(self, text: str, *, field_name: str, allow_empty: bool = False, default_value: Optional[float] = None) -> Optional[float]:
+        value = text.strip()
+        if not value:
+            if allow_empty:
+                return default_value
+            QMessageBox.warning(self, "Input error", f"{field_name} is required.")
+            return None
+        parsed = parse_float(value)
+        if parsed is None:
+            QMessageBox.warning(self, "Input error", f"{field_name} must be numeric.")
+            return None
+        return parsed
+
+    def _parse_time_signature(self, text: str, *, field_name: str = "Time signature") -> Optional[str]:
+        parsed = parse_time_signature(text)
+        if parsed is None:
+            QMessageBox.warning(self, "Input error", f"{field_name} must look like 4/4.")
+            return None
+        numerator, denominator = parsed
+        return f"{numerator}/{denominator}"
+
+    def _parse_track_index(self, text: str, *, field_name: str = "Track index") -> Optional[int]:
+        parsed = self._parse_int_field(text, field_name=field_name)
+        if parsed is None:
+            return None
+        if parsed < 0 or parsed >= len(self.current_project.tracks):
+            QMessageBox.warning(self, "Input error", f"{field_name} is out of range.")
+            return None
+        return parsed
+
+    def _restore_song_generation_metadata(self) -> None:
+        metadata = self.current_project.metadata.get("song_generation_state")
+        self.last_song_generation = metadata if isinstance(metadata, dict) else None
+
+    def _persist_song_generation_metadata(self) -> None:
+        if self.last_song_generation:
+            self.current_project.metadata["song_generation_state"] = self.last_song_generation
+        else:
+            self.current_project.metadata.pop("song_generation_state", None)
+
     def new_project(self):
         self.current_project = new_empty_project("Untitled")
         self.project_name_label.setText("Project: Untitled")
         self.next_clip_id = 1
         self.last_song_generation = None
+        self._persist_song_generation_metadata()
         self.recording_controller = RecordingController("new_session", self.current_project.name)
         self.recording_controller.restore_session_preferences()
         self.selected_track_index = None
@@ -2010,6 +2093,7 @@ class EchoProWindow(QMainWindow):
         self.refresh_track_list()
         self.refresh_take_track_selector()
         self.refresh_take_review_list()
+        self.refresh_alter_section_selector()
         self.update_recording_status_label()
         self._prompt_recovery_for_current_session()
         self.refresh_timeline()
@@ -2028,7 +2112,7 @@ class EchoProWindow(QMainWindow):
             proj = load_project(Path(filename))
             self.current_project = proj
             self.project_name_label.setText(f"Project: {proj.name}")
-            self.last_song_generation = None
+            self._restore_song_generation_metadata()
             max_id = 0
             for c in proj.clips:
                 if c.id > max_id:
@@ -2044,6 +2128,7 @@ class EchoProWindow(QMainWindow):
             self.refresh_track_list()
             self.refresh_take_track_selector()
             self.refresh_take_review_list()
+            self.refresh_alter_section_selector()
             self.update_recording_status_label()
             self._prompt_recovery_for_current_session()
             self.refresh_timeline()
@@ -2079,7 +2164,7 @@ class EchoProWindow(QMainWindow):
                 proj = load_project(Path(filename))
                 self.current_project = proj
                 self.project_name_label.setText(f"Project: {proj.name}")
-                self.last_song_generation = None
+                self._restore_song_generation_metadata()
                 max_id = 0
                 for c in proj.clips:
                     if c.id > max_id:
@@ -2095,6 +2180,7 @@ class EchoProWindow(QMainWindow):
                 self.refresh_track_list()
                 self.refresh_take_track_selector()
                 self.refresh_take_review_list()
+                self.refresh_alter_section_selector()
                 self.update_recording_status_label()
                 self._prompt_recovery_for_current_session()
                 self.refresh_timeline()
@@ -2117,19 +2203,21 @@ class EchoProWindow(QMainWindow):
         self.update_status(f"Added track: {name}")
 
     def add_clip_from_file(self):
-        try:
-            track_index = int(self.clip_track_index_input.text())
-        except ValueError:
-            QMessageBox.warning(self, "Input error", "Track index must be a number (0, 1, 2, ...).")
-            return
-        if track_index < 0 or track_index >= len(self.current_project.tracks):
-            QMessageBox.warning(self, "Input error", "Track index out of range.")
+        track_index = self._parse_track_index(self.clip_track_index_input.text(), field_name="Track index")
+        if track_index is None:
             return
 
-        try:
-            start_sec = float(self.clip_start_sec_input.text())
-        except ValueError:
-            start_sec = 0.0
+        start_sec = self._parse_float_field(
+            self.clip_start_sec_input.text(),
+            field_name="Start time (seconds)",
+            allow_empty=True,
+            default_value=0.0,
+        )
+        if start_sec is None:
+            return
+        if start_sec < 0:
+            QMessageBox.warning(self, "Input error", "Start time must be zero or greater.")
+            return
 
         filename, _ = QFileDialog.getOpenFileName(
             self,
@@ -2139,14 +2227,18 @@ class EchoProWindow(QMainWindow):
         )
         if not filename:
             return
+        file_path = Path(filename)
+        if not file_path.exists():
+            QMessageBox.warning(self, "Input error", "Selected file does not exist.")
+            return
 
         try:
-            length_ms = get_audio_length_ms(filename)
+            length_ms = get_audio_length_ms(str(file_path))
             start_ms = int(start_sec * 1000)
             clip = Clip(
                 id=self.next_clip_id,
                 track_index=track_index,
-                file_path=filename,
+                file_path=str(file_path),
                 start_ms=start_ms,
                 length_ms=length_ms
             )
@@ -2158,19 +2250,12 @@ class EchoProWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to add clip:\n{e}")
 
     def set_track_volume(self):
-        try:
-            track_index = int(self.volume_track_index_input.text())
-        except ValueError:
-            QMessageBox.warning(self, "Input error", "Track index must be a number.")
-            return
-        if track_index < 0 or track_index >= len(self.current_project.tracks):
-            QMessageBox.warning(self, "Input error", "Track index out of range.")
+        track_index = self._parse_track_index(self.volume_track_index_input.text(), field_name="Track index")
+        if track_index is None:
             return
 
-        try:
-            db = float(self.volume_db_input.text())
-        except ValueError:
-            QMessageBox.warning(self, "Input error", "Volume must be a number (decibels).")
+        db = self._parse_float_field(self.volume_db_input.text(), field_name="Volume dB")
+        if db is None:
             return
 
         self.current_project.tracks[track_index].volume_db = db
@@ -2198,16 +2283,56 @@ class EchoProWindow(QMainWindow):
         )
         if not filename:
             return
+        song_path = Path(filename)
+        if not song_path.exists():
+            QMessageBox.warning(self, "Stems", "Selected song file does not exist.")
+            return
+
+        progress = QProgressDialog("Preparing stem separation...", "Cancel", 0, 0, self)
+        progress.setWindowTitle("Stem separation")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        progress.show()
 
         try:
-            song_path = Path(filename)
             stems_root = song_path.parent / "echo_stems"
             song_stems_dir = stems_root / song_path.stem
+            app_root = Path(__file__).resolve().parent
+            local_demucs = app_root / "runtime" / "venv" / "Scripts" / "demucs.exe"
+            local_ffmpeg = app_root / "tools" / "ffmpeg" / "current" / "bin" / "ffmpeg.exe"
+            seed_demucs = app_root / "seeds" / "demucs" / "demucs.exe"
+            seed_ffmpeg = app_root / "seeds" / "ffmpeg" / "bin" / "ffmpeg.exe"
+
+            if local_demucs.exists():
+                demucs_executable = str(local_demucs)
+            elif seed_demucs.exists():
+                demucs_executable = str(seed_demucs)
+            else:
+                demucs_executable = "demucs"
+
+            if local_ffmpeg.exists():
+                ffmpeg_executable = str(local_ffmpeg)
+            elif seed_ffmpeg.exists():
+                ffmpeg_executable = str(seed_ffmpeg)
+            else:
+                ffmpeg_executable = None
 
             self.update_status("Running Demucs... this may take a while.")
             QApplication.processEvents()
 
-            stems = separate_stems(str(song_path), song_stems_dir)
+            def _progress_message(text: str) -> None:
+                progress.setLabelText(text)
+                QApplication.processEvents()
+
+            stems = separate_stems(
+                str(song_path),
+                song_stems_dir,
+                demucs_executable=demucs_executable,
+                ffmpeg_executable=ffmpeg_executable,
+                progress_callback=_progress_message,
+                cancel_check=progress.wasCanceled,
+            )
 
             self.next_clip_id = add_stems_to_project(
                 self.current_project,
@@ -2226,9 +2351,25 @@ class EchoProWindow(QMainWindow):
                 "Stems were created and added as tracks.\n"
                 "You can now edit them on the timeline."
             )
-        except Exception as e:
+        except StemCancelledError as e:
+            QMessageBox.information(self, "Stems", str(e))
+            self.update_status("Stems cancelled")
+        except StemDependencyError as e:
+            install_choice = QMessageBox.question(
+                self,
+                "Missing dependency",
+                f"{e}\n\nRun dependency update now?",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            if install_choice == QMessageBox.Yes:
+                script_path = Path(__file__).resolve().parent / "install_echo_pro.bat"
+                subprocess.Popen([str(script_path), "update"], cwd=str(script_path.parent))
+            self.update_status("Stems dependency issue")
+        except StemSeparationError as e:
             QMessageBox.critical(self, "Error", f"Failed to split stems:\n{e}")
             self.update_status("Stems error")
+        finally:
+            progress.close()
 
     def open_voice_manager(self):
         dlg = VoiceManagerDialog(self)
@@ -2236,15 +2377,11 @@ class EchoProWindow(QMainWindow):
         self.update_status("Voice manager closed")
 
     def apply_voice_effect_to_clip(self):
-        try:
-            track_index = int(self.voice_track_index_input.text())
-        except ValueError:
-            QMessageBox.warning(self, "Input error", "Track index must be a number.")
+        track_index = self._parse_track_index(self.voice_track_index_input.text(), field_name="Track index")
+        if track_index is None:
             return
-        try:
-            clip_id = int(self.voice_clip_id_input.text())
-        except ValueError:
-            QMessageBox.warning(self, "Input error", "Clip ID must be a number.")
+        clip_id = self._parse_int_field(self.voice_clip_id_input.text(), field_name="Clip ID")
+        if clip_id is None:
             return
         profile_name = self.voice_profile_name_input.text().strip()
         if not profile_name:
@@ -2278,6 +2415,8 @@ class EchoProWindow(QMainWindow):
                 "This voice profile is not marked as consented. Please confirm consent before using."
             )
             return
+
+        backend_capability = get_voice_backend_capability()
 
         try:
             source_path = Path(target_clip.file_path)
@@ -2326,8 +2465,10 @@ class EchoProWindow(QMainWindow):
             QMessageBox.information(
                 self,
                 "Voice conversion applied",
-                "A placeholder voice conversion was applied.\n"
-                "In the future, this will use a real model without changing this UI."
+                "Voice conversion completed.\n"
+                f"Backend: {result.backend_name}\n"
+                f"Model ready: {backend_capability.get('ready', False)}\n"
+                f"{backend_capability.get('reason', '')}"
             )
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to apply voice conversion:\n{e}")
@@ -2335,12 +2476,18 @@ class EchoProWindow(QMainWindow):
 
     def generate_single_clip(self):
         try:
-            style = self.gen_style.text()
-            genre = self.gen_genre.text()
-            mood = self.gen_mood.text()
-            lyrics = self.gen_lyrics.text()
-            duration_sec = int(self.gen_duration.text())
+            style = self.gen_style.text().strip() or "ambient"
+            genre = self.gen_genre.text().strip()
+            mood = self.gen_mood.text().strip()
+            lyrics = self.gen_lyrics.text().strip()
+            duration_sec = self._parse_int_field(self.gen_duration.text(), field_name="Duration (sec)")
+            if duration_sec is None:
+                return
+            if duration_sec < 10 or duration_sec > 300:
+                QMessageBox.warning(self, "Input error", "Duration must be between 10 and 300 seconds.")
+                return
             use_cloud = self.cloud_enabled.text().strip().lower() == "yes"
+            capability = get_music_backend_capability()
 
             project_id = self.current_project.name.replace(" ", "_") or "default_project"
 
@@ -2378,13 +2525,24 @@ class EchoProWindow(QMainWindow):
             self.sync_project_tracks_to_recording_engine()
             self.refresh_track_list()
             self.refresh_timeline()
-            self.update_status("Generated clip added to project.")
+            self.update_status(f"Generated clip added to project (backend: {capability['backend']}).")
+            if not capability["ready"]:
+                QMessageBox.information(
+                    self,
+                    "Music backend status",
+                    f"{capability['reason']}\n\nGenerated clip uses placeholder output until assets are available.",
+                )
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to generate clip:\n{e}")
 
     def generate_full_song(self):
         try:
-            total_length_sec = int(self.plan_total_length.text())
+            total_length_sec = self._parse_int_field(self.plan_total_length.text(), field_name="Total length (sec)")
+            if total_length_sec is None:
+                return
+            if total_length_sec < 10:
+                QMessageBox.warning(self, "Input error", "Total length must be at least 10 seconds.")
+                return
             structure = [s.strip() for s in self.plan_structure.text().split(",") if s.strip()]
             if not structure:
                 QMessageBox.warning(self, "Input error", "Enter at least one section in the structure.")
@@ -2392,8 +2550,15 @@ class EchoProWindow(QMainWindow):
 
             key = self.plan_key.text()
             chords = self.plan_chords.text()
-            time_sig = self.plan_time_sig.text()
-            tempo = int(self.plan_tempo.text())
+            time_sig = self._parse_time_signature(self.plan_time_sig.text(), field_name="Generation time signature")
+            if time_sig is None:
+                return
+            tempo = self._parse_int_field(self.plan_tempo.text(), field_name="Tempo (BPM)")
+            if tempo is None:
+                return
+            if tempo <= 0:
+                QMessageBox.warning(self, "Input error", "Tempo must be greater than zero.")
+                return
             lyrics = self.plan_lyrics.toPlainText()
 
             use_cloud = self.cloud_enabled.text().strip().lower() == "yes"
@@ -2461,6 +2626,8 @@ class EchoProWindow(QMainWindow):
                 "use_cloud": use_cloud,
                 "sections": section_snapshots,
             }
+            self._persist_song_generation_metadata()
+            self.refresh_alter_section_selector()
 
             self.sync_project_tracks_to_recording_engine()
             self.refresh_track_list()
@@ -2538,6 +2705,8 @@ class EchoProWindow(QMainWindow):
 
             section_data["version"] = next_version
             section_data["lyrics"] = lyrics
+            self._persist_song_generation_metadata()
+            self.refresh_alter_section_selector()
 
             self.refresh_timeline()
             self.update_status(f"Altered section {section_index} ({section_name}) without full regeneration")
@@ -2550,6 +2719,7 @@ class EchoProWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to alter section:\n{e}")
 
 if __name__ == "__main__":
+    run_common_validation_checks()
     app = QApplication(sys.argv)
 
     ensure_dirs()

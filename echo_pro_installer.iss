@@ -22,7 +22,7 @@ Name: "{group}\Update Echo Pro Dependencies"; Filename: "{cmd}"; Parameters: "/C
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop icon"; Flags: unchecked
-Name: "installdeps"; Description: "Install runtime dependencies (ffmpeg, demucs runtime)"; Flags: checkedonce
+Name: "installdeps"; Description: "Install runtime dependencies (ffmpeg, demucs, RVC, ACE Step 1.5 assets)"; Flags: checkedonce
 Name: "portablemode"; Description: "Enable portable mode launcher (keep app data in install folder)"; Flags: unchecked
 
 [Dirs]

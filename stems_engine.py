@@ -3,23 +3,97 @@ import subprocess
 import os
 from pathlib import Path
 import shutil
+import time
+from typing import Callable, Optional
 
 from project_model import Clip, Track, Project
 from audio_info import get_audio_length_ms
 
-def separate_stems(input_path: str, output_dir: Path) -> dict:
+
+class StemSeparationError(RuntimeError):
+    pass
+
+
+class StemDependencyError(StemSeparationError):
+    pass
+
+
+class StemCancelledError(StemSeparationError):
+    pass
+
+
+def _normalize_failure(stderr_text: str) -> StemSeparationError:
+    lowered = stderr_text.lower()
+    if "ffmpeg" in lowered and ("not found" in lowered or "missing" in lowered):
+        return StemDependencyError(
+            "ffmpeg is missing. Run install_echo_pro.bat install (or update) to install local ffmpeg tooling."
+        )
+    if "demucs" in lowered and ("not found" in lowered or "no module named" in lowered):
+        return StemDependencyError(
+            "Demucs runtime is missing. Run install_echo_pro.bat install (or update) to install local demucs tooling."
+        )
+    return StemSeparationError(stderr_text.strip() or "Demucs failed while splitting stems.")
+
+
+def separate_stems(
+    input_path: str,
+    output_dir: Path,
+    *,
+    demucs_executable: str = "demucs",
+    ffmpeg_executable: Optional[str] = None,
+    progress_callback: Optional[Callable[[str], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
+) -> dict:
     """
     Use Demucs to separate a song into stems.
     Returns a dict mapping stem names to file paths.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    cmd = [
-        "demucs",
-        "-o", str(output_dir),
-        input_path
-    ]
-    subprocess.run(cmd, check=True)
+    cmd = [demucs_executable, "-o", str(output_dir), input_path]
+    env = os.environ.copy()
+    if ffmpeg_executable:
+        env["FFMPEG_BINARY"] = ffmpeg_executable
+
+    if progress_callback is not None:
+        progress_callback("Starting Demucs separation...")
+
+    try:
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+        )
+    except FileNotFoundError as exc:
+        raise StemDependencyError(
+            "Demucs executable was not found. Run install_echo_pro.bat install (or update)."
+        ) from exc
+
+    stderr_chunks = []
+    while process.poll() is None:
+        if cancel_check is not None and cancel_check():
+            process.terminate()
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=3)
+            raise StemCancelledError("Stem separation was cancelled.")
+        if progress_callback is not None:
+            progress_callback("Demucs processing in progress...")
+        time.sleep(0.2)
+
+    stdout_data, stderr_data = process.communicate()
+    if stdout_data:
+        stderr_chunks.append(stdout_data)
+    if stderr_data:
+        stderr_chunks.append(stderr_data)
+    stderr_text = "\n".join(stderr_chunks)
+
+    if process.returncode != 0:
+        raise _normalize_failure(stderr_text)
 
     stem_folder = None
     for root, dirs, files in os.walk(output_dir):
@@ -29,7 +103,7 @@ def separate_stems(input_path: str, output_dir: Path) -> dict:
             break
 
     if stem_folder is None:
-        raise RuntimeError("Could not find stem folder after Demucs run.")
+        raise StemSeparationError("Could not find stem folder after Demucs run.")
 
     stems = {}
     for stem_file in stem_folder.glob("*.wav"):

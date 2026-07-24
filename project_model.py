@@ -26,6 +26,7 @@ class Project:
     name: str
     tracks: List[Track]
     clips: List[Clip]
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 def new_empty_project(name: str) -> Project:
     return Project(name=name, tracks=[], clips=[])
@@ -35,6 +36,7 @@ def save_project(project: Project, path: Path):
         "name": project.name,
         "tracks": [asdict(t) for t in project.tracks],
         "clips": [asdict(c) for c in project.clips],
+        "metadata": project.metadata,
     }
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
@@ -46,4 +48,7 @@ def load_project(path: Path) -> Project:
         clip_copy = dict(clip_data)
         clip_copy.setdefault("metadata", {})
         clips.append(Clip(**clip_copy))
-    return Project(name=data.get("name", "Untitled"), tracks=tracks, clips=clips)
+    metadata = data.get("metadata", {})
+    if not isinstance(metadata, dict):
+        metadata = {}
+    return Project(name=data.get("name", "Untitled"), tracks=tracks, clips=clips, metadata=metadata)

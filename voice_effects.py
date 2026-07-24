@@ -1,4 +1,5 @@
 
+import os
 from pathlib import Path
 
 from voice_interface import (
@@ -8,14 +9,39 @@ from voice_interface import (
     VoiceConvertResult,
     voice_convert,
 )
+from app_paths import RVC_MODELS_DIR, ensure_dirs
+
+
+def _resolve_rvc_model_path() -> Path:
+    configured = os.environ.get("ECHO_RVC_MODEL_PATH", "").strip()
+    if configured:
+        return Path(configured)
+    return RVC_MODELS_DIR / "current"
+
+
+def get_voice_backend_capability() -> dict:
+    ensure_dirs()
+    model_path = _resolve_rvc_model_path()
+    model_ready = model_path.exists()
+    return {
+        "backend": "RVC",
+        "model_path": str(model_path),
+        "ready": model_ready,
+        "reason": "" if model_ready else "RVC model assets not found. Run install_echo_pro.bat install/update.",
+    }
+
 
 def get_default_voice_backend() -> VoiceBackendConfig:
+    capability = get_voice_backend_capability()
     return VoiceBackendConfig(
-        name="EchoProVoicePlaceholder",
-        model_path="",
+        name="RVC",
+        model_path=capability["model_path"],
         device="cpu",
         sample_rate=44100,
-        extra={}
+        extra={
+            "ready": capability["ready"],
+            "reason": capability["reason"],
+        }
     )
 
 def apply_voice_conversion(
@@ -37,4 +63,8 @@ def apply_voice_conversion(
         notes=notes
     )
     result = voice_convert(request, output_path, backend)
+    if "ready" not in result.metadata:
+        result.metadata["ready"] = backend.extra.get("ready", False)
+    if "reason" not in result.metadata:
+        result.metadata["reason"] = backend.extra.get("reason", "")
     return result
