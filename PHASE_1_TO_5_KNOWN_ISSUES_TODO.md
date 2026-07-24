@@ -8,6 +8,7 @@ Purpose: single source of truth for active issues, errors, and fix tasks across 
 - Active diagnostics errors:
   - None currently reported in planning docs.
 - No active diagnostics errors found in core code modules for Phases 1-5.
+- Remaining open work is feature completion and validation, not a diagnostics cleanup item.
 
 ## Important Status Notes
 
@@ -201,10 +202,10 @@ Purpose: single source of truth for active issues, errors, and fix tasks across 
 
 ## Prioritized Execution Order
 
-1. P5A-2 recording regression suite
-2. P2-1 stems progress UX + P2-2 dependency error guidance
-3. P4-2 section-alteration persistence
-4. P1-1 input validation consolidation
+1. Phase 5B UI and timeline polishing
+2. Phase 6 installer validation
+3. P2-1 stems progress UX + P2-2 dependency error guidance if they resurface in QA
+4. P4-2 section-alteration persistence if project metadata changes
 5. Remaining enhancement items
 
 ---

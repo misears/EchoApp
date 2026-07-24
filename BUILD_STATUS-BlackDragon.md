@@ -1,8 +1,8 @@
 # ECHO PRO BUILD STATUS
 
-**Last Updated:** 2026-07-22
+**Last Updated:** 2026-07-24
 **Python Version:** 3.14 (pydub removed — all audio now uses soundfile + ffprobe)
-**Overall Completion:** 87% (Phases 1–4 Complete and Verified, Phase 5 In Progress)
+**Overall Completion:** 94% (Phases 1–4 Complete and Verified, Phase 5A Complete, Phase 5B In Progress)
 
 ---
 
@@ -121,7 +121,7 @@
 ---
 
 ### PHASE 5: UI MODERNISATION + WINDOWS INSTALLER
-**Status:** IN PROGRESS (60%)
+**Status:** IN PROGRESS (75%)
 
 | Deliverable | File | Status | Notes |
 |------------|------|--------|-------|
@@ -247,4 +247,4 @@
 | 2 | Stems + Playback | 100% | All clear | Modern | YES |
 | 3 | Voice Recording | 100% | All clear | Modern | YES |
 | 4 | Music Generator | 100% | All clear | Modern | YES |
-| 5 | UI + Installer | 60% | Pan/mute open | Done | Partial |
+| 5 | UI + Installer | 75% | Pan/mute open | Done | Partial |

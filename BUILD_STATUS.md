@@ -1,7 +1,7 @@
 # ECHO PRO BUILD STATUS — Code vs. Outline Comparison
 
-**Last Updated:** 2026-07-23  
-**Overall Completion:** 88% (Phases 1-4 Complete, Phase 5A In Progress, Phase 5B Planned, Phase 6 Not Started)
+**Last Updated:** 2026-07-24  
+**Overall Completion:** 94% (Phases 1-4 Complete and Verified, Phase 5A Complete, Phase 5B In Progress, Phase 6 Not Started)
 
 ---
 
@@ -122,7 +122,7 @@
 
 ### 🎙️ PHASE 5A: PROFESSIONAL RECORDING CORE
 
-**Status:** 🚧 **IN PROGRESS** (85%)
+**Status:** ✅ **COMPLETE** (100%)
 
 | Deliverable | File | Status | Notes |
 | ------------ | ------ | -------- | ------- |
@@ -140,18 +140,19 @@
 - ✅ Count-in and time signature UI wired
 - ✅ Live meter clipping feedback with reset controls
 - ✅ Advanced take review panel implemented with timeline-linked active/alt take states
+- ✅ Phase 5A regression runner added and last run passed (3/3)
 
 ### 🎛️ PHASE 5B: RECORDING POLISH AND PRODUCTION SAFETY
 
-**Status:** ⏳ **PLANNED** (0%)
+**Status:** 🚧 **IN PROGRESS** (65%)
 
 | Deliverable | Plan File | Status | Notes |
 | ------------ | ----------- | -------- | ------- |
-| Punch In/Out | `PHASE_5B_RECORDING_PLAN.md` | ⏳ Planned | Precise timed capture windows |
-| Loop Recording | `PHASE_5B_RECORDING_PLAN.md` | ⏳ Planned | Auto-take increment per cycle |
-| Take Browser + Selection | `PHASE_5B_RECORDING_PLAN.md` | ⏳ Planned | Active take selection by track |
-| Basic Comping Workflow | `PHASE_5B_RECORDING_PLAN.md` | ⏳ Planned | Non-destructive region take choices |
-| Recovery + Safety Checks | `PHASE_5B_RECORDING_PLAN.md` | ⏳ Planned | Disk checks and interrupted-session restore |
+| Punch In/Out | `PHASE_5B_RECORDING_PLAN.md` | ✅ Done | Bar-based punch controls, pre/post-roll, and auto-stop at punch-out |
+| Loop Recording | `PHASE_5B_RECORDING_PLAN.md` | ✅ Done | Cycle-based take rollover with loop transport state |
+| Take Browser + Selection | `PHASE_5B_RECORDING_PLAN.md` | ✅ Done | Keeper/mute/rating actions and active take selection |
+| Basic Comping Workflow | `PHASE_5B_RECORDING_PLAN.md` | ✅ Done | Non-destructive comp regions with assign/clear actions |
+| Recovery + Safety Checks | `PHASE_5B_RECORDING_PLAN.md` | 🚧 In Progress | Snapshot validation is in place; recovery history UX and broader QA remain |
 
 ### 📦 PHASE 6: WINDOWS INSTALLER
 
@@ -172,15 +173,15 @@
 
 ### High Priority (Fix Before Release)
 
-1. **Phase 5A Recording Regression Suite Not Yet Formalized**
-   - Files: `recording_controller.py`, `audio_engine.py`, `echo_pro_app.py`
-   - Issue: Feature coverage expanded, but scripted regression checks are still pending
-   - Impact: Higher risk of transport edge-case regressions between sessions
+1. **Phase 5B UI and Timeline Polishing Still Pending**
+   - Files: `recording_ui_components.py`, `timeline_widget.py`
+   - Issue: reusable take browser widgets, transport widgets, and comp overlays are still unfinished
+   - Impact: Phase 5B works functionally, but the UX still needs dedicated widgets and overlays
 
-2. **Phase 5B Recording Safety and Recovery Not Implemented**
-   - Files: planned in `PHASE_5B_RECORDING_PLAN.md`
-   - Issue: Punch/loop/comping/recovery flows are still pending
-   - Impact: Release workflow is missing production-safe recording behavior
+2. **Phase 6 Installer Validation**
+   - Files: `EchoPro.spec`, `echo_pro_installer.iss`, `install_echo_pro.bat`, `EchoPro_Portable.bat`
+   - Issue: packaging and clean-machine validation are not yet complete
+   - Impact: Release workflow still needs end-to-end installer and portable-mode verification
 
 ### Medium Priority (Nice to Have)
 
@@ -315,8 +316,8 @@ All Phase 1-4 features are implemented and ready to test:
 | 2 | 2 | ✅ 100% | 🟡 Good | ✅ Ready | ✅ YES |
 | 3 | 4 | ✅ 100% | 🟡 Good | ✅ Ready | ✅ YES |
 | 4 | 3 | ✅ 100% | 🟡 Good | ✅ Ready | ✅ YES |
-| 5A | 5 | 🚧 85% | 🟡 Good | 🟡 Partial | 🟡 Almost |
-| 5B | 1 (plan) | ⏳ 0% | - | - | ⏳ Planned |
+| 5A | 5 | ✅ 100% | 🟡 Good | ✅ Ready | ✅ YES |
+| 5B | 1 (plan) | 🚧 65% | 🟡 Good | 🟡 Partial | 🟡 Almost |
 | 6 | 3 | ❌ 0% | ❌ Not started | ❌ Pending | ❌ NO |
 
 **Legend:**
@@ -385,21 +386,20 @@ When ready to integrate real AI models:
 
 - Phases 1-4 code: **COMPLETE** ✅
 - Phases 1-4 testing: **READY** ✅
-- Phase 5A recording core: **IN PROGRESS** 🚧
-- Phase 5B recording polish: **PLANNED** ⏳
+- Phase 5A recording core: **COMPLETE** ✅
+- Phase 5B recording polish: **IN PROGRESS** 🚧
 - Phase 6 installer: **NOT STARTED** ❌
-- Overall: **88% Complete**
+- Overall: **94% Complete**
 
 **Blockers for Release:**
 
-1. Phase 5A recording regression suite and edge-case validation
-2. Phase 5B recording polish and safety implementation
-3. Phase 6 installer end-to-end validation (dependency install/update + portable mode)
-4. Full end-to-end testing
+1. Phase 5B recording polish and safety implementation
+2. Phase 6 installer end-to-end validation (dependency install/update + portable mode)
+3. Full end-to-end testing
 
 **Time Estimate to Release:**
 
-- Complete remaining Phase 5A/5B work: **1-2 weeks**
+- Complete remaining Phase 5B work: **1-2 weeks**
 - Build and test Phase 6 installer: **1-2 days**
 - End-to-end regression + release QA: **1-2 days**
 - **Total: ~2-3 weeks to production-ready v1.0**

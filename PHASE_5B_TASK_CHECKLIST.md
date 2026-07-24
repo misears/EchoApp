@@ -1,17 +1,17 @@
 # Phase 5B Task Checklist
 
-Status: Ready for implementation  
+Status: In progress  
 Scope: Punch/loop workflows, take browser, comping v1, recovery, and safety checks
 
 ## Progress Update
 
-- 2026-07-23: Initial P5B-1 punch/loop transport plus pre/post-roll scheduling landed.
+- 2026-07-24: P5B core transport and recovery plumbing are largely in place.
   - `recording_controller.py`: added punch and loop state, range setters (samples/seconds/bars), pre/post-roll windows, punch auto-stop, and loop cycle take rollover.
   - `echo_pro_app.py`: added bar-based punch controls, pre/post-roll controls, and loop controls in recording panel with live cycle/status display.
   - `recording_controller.py` + `recording_ui_components.py`: added structured transport diagnostics API and compact diagnostics panel wiring in the recording UI.
   - `recording_session.py` + `echo_pro_app.py`: added take quality markers and browser actions (keeper/mute/rating) with metadata persistence and clip sync.
   - `recording_session.py` + `echo_pro_app.py` + `recording_recovery.py`: added comp-region actions (create/assign/clear) plus interrupted-session snapshot validation and restore/discard prompt flow.
-  - Remaining: reusable comp/take widgets and advanced recovery history UX.
+  - Remaining: reusable comp/take widgets, timeline comp overlays, recovery history UX, and broader session validation.
 
 ## Usage
 
@@ -49,17 +49,17 @@ Scope: Punch/loop workflows, take browser, comping v1, recovery, and safety chec
 
 ### recording_session.py
 
-- [ ] P0-RS-001 Add active-take pointer per track
+- [x] P0-RS-001 Add active-take pointer per track
   - Store `active_take_number` for each track
   - Add methods to set/get active take safely
   - Accept when switching active take changes playback selection source
 - [x] P0-RS-002 Add take tags and quality markers
   - Support `is_keeper`, `is_muted`, `rating`, `clip_events`
   - Accept when tags persist through save/load
-- [ ] P0-RS-003 Add comp region model (non-destructive)
+- [x] P0-RS-003 Add comp region model (non-destructive)
   - Add structure for comp regions and selected source take
   - Accept when comp map serializes to metadata and reloads intact
-- [ ] P0-RS-004 Save metadata on critical state transitions
+- [x] P0-RS-004 Save metadata on critical state transitions
   - Persist after loop cycle completion, active-take change, comp edit
   - Accept when forced app close loses at most current callback window
 
@@ -107,13 +107,13 @@ Scope: Punch/loop workflows, take browser, comping v1, recovery, and safety chec
 
 ### new file: recording_recovery.py
 
-- [ ] P0-RR-001 Create recovery snapshot helpers
+- [x] P0-RR-001 Create recovery snapshot helpers
   - Save minimal crash-safe snapshot at recording state boundaries
   - Accept when snapshot writes are atomic and fail-safe
-- [ ] P0-RR-002 Create restore validator
+- [x] P0-RR-002 Create restore validator
   - Validate snapshot age, session ID, project identity, and integrity
   - Accept when invalid snapshots are safely rejected with explanation
-- [ ] P0-RR-003 Create restore/apply methods
+- [x] P0-RR-003 Create restore/apply methods
   - Restore active takes, loop state, and comp metadata references
   - Accept when restored state does not mutate source takes destructively
 
@@ -216,4 +216,4 @@ Scope: Punch/loop workflows, take browser, comping v1, recovery, and safety chec
 - [ ] All P0 tickets complete
 - [ ] P0 regression checklist passes
 - [ ] No blocking recording regressions introduced in existing Phase 5A flow
-- [ ] Build/status docs updated with implementation results
+- [x] Build/status docs updated with implementation results

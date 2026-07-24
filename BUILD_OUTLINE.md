@@ -17,7 +17,7 @@ Before starting any phase, ensure you have:
 
 This outline originally grouped recording into earlier implementation sessions and used Phase 5 for installer packaging only. The active roadmap now splits advanced recording into two explicit production phases before installer release work.
 
-### Phase 5A (In Progress): Recording Core Integration
+### Phase 5A (Complete): Recording Core Integration
 
 - Multi-track recording controls in the main app
 - Input/output device selection and test workflow
@@ -27,7 +27,7 @@ This outline originally grouped recording into earlier implementation sessions a
 
 Primary reference: `PHASE_5A_RECORDING_PLAN.md`
 
-### Phase 5B (Planned): Recording Polish and Production Safety
+### Phase 5B (In Progress): Recording Polish and Production Safety
 
 - Punch-in/out transport and loop recording workflows
 - Take browser and active-take selection
@@ -40,6 +40,8 @@ Primary reference: `PHASE_5B_RECORDING_PLAN.md`
 ### Phase 6 (Installer)
 
 Phase 5 in this original document maps to Phase 6 in the active execution plan.
+
+Phase 5A is now complete and validated. Phase 5B is the remaining recording work before installer release.
 
 ---
 
@@ -424,17 +426,17 @@ Package Echo Pro as a professional Windows application with installer.
 
 ### Phase 4 → Phase 5A Requirements
 
-- [ ] Single clip generation works (placeholder)
-- [ ] Song generation works (placeholder)
-- [ ] All 4 AI interfaces frozen and documented
-- [ ] No critical bugs in main app workflow
+- [x] Single clip generation works (placeholder)
+- [x] Song generation works (placeholder)
+- [x] All 4 AI interfaces frozen and documented
+- [x] No critical bugs in main app workflow
 
 ### Phase 5A → Phase 5B Requirements
 
-- [ ] Stable recording start/stop across supported devices
-- [ ] Count-in and timing controls validated with real recordings
-- [ ] Meter clipping/peak feedback validated during sessions
-- [ ] Track arm/select/mute/solo behavior verified while recording
+- [x] Stable recording start/stop across supported devices
+- [x] Count-in and timing controls validated with real recordings
+- [x] Meter clipping/peak feedback validated during sessions
+- [x] Track arm/select/mute/solo behavior verified while recording
 
 ### Phase 5B → Phase 6 Requirements
 
@@ -463,8 +465,8 @@ Package Echo Pro as a professional Windows application with installer.
 | Phase 2 | ✅ Complete | - | - | 100% | Audio features |
 | Phase 3 | ✅ Complete | - | - | 100% | Voice system |
 | Phase 4 | ✅ Complete | - | - | 100% | AI generation |
-| Phase 5A | 🚧 In Progress | - | - | 70% | Recording core integration |
-| Phase 5B | ⏳ Planned | - | - | 0% | Recording polish + safety |
+| Phase 5A | ✅ Complete | - | - | 100% | Recording core integration |
+| Phase 5B | 🚧 In Progress | - | - | 65% | Recording polish + safety |
 | Phase 6 | ⏳ Pending | - | - | 0% | Installer |
 | Testing | ⏳ Pending | - | - | - | Full QA |
 
