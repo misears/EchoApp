@@ -59,12 +59,20 @@ def t2m_generate_clip(
     Placeholder implementation: generates silence.
     Replace this body with a real T2M model.
     """
-    from pydub import AudioSegment
+    import wave as _wave
 
     duration_ms = request.duration_seconds * 1000
-    silence = AudioSegment.silent(duration=duration_ms)
+    sample_rate = model_config.sample_rate
+    n_channels = 2 if model_config.stereo else 1
+    n_frames = int(sample_rate * request.duration_seconds)
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    silence.export(str(output_path), format="wav")
+    with _wave.open(str(output_path), "w") as wf:
+        wf.setnchannels(n_channels)
+        wf.setsampwidth(2)        # 16-bit PCM
+        wf.setframerate(sample_rate)
+        # Write silence: all-zero bytes (n_frames × channels × 2 bytes)
+        wf.writeframes(b"\x00" * n_frames * n_channels * 2)
 
     return T2MClipResult(
         audio_path=output_path,

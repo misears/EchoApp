@@ -146,6 +146,10 @@
   ('asyncio.windows_utils',
    'C:\\Program Files\\Python310\\lib\\asyncio\\windows_utils.py',
    'PYMODULE'),
+  ('audio_engine',
+   'C:\\Users\\misea\\OneDrive\\Documents\\AI Project '
+   'Folders\\EchoApp\\audio_engine.py',
+   'PYMODULE'),
   ('audio_info',
    'C:\\Users\\misea\\OneDrive\\Documents\\AI Project '
    'Folders\\EchoApp\\audio_info.py',
@@ -369,6 +373,10 @@
    'C:\\Program Files\\Python310\\lib\\logging\\handlers.py',
    'PYMODULE'),
   ('lzma', 'C:\\Program Files\\Python310\\lib\\lzma.py', 'PYMODULE'),
+  ('metronome',
+   'C:\\Users\\misea\\OneDrive\\Documents\\AI Project '
+   'Folders\\EchoApp\\metronome.py',
+   'PYMODULE'),
   ('mimetypes', 'C:\\Program Files\\Python310\\lib\\mimetypes.py', 'PYMODULE'),
   ('multiprocessing',
    'C:\\Program Files\\Python310\\lib\\multiprocessing\\__init__.py',
@@ -1008,6 +1016,18 @@
   ('readline',
    'C:\\Program Files\\Python310\\lib\\site-packages\\readline.py',
    'PYMODULE'),
+  ('recording_controller',
+   'C:\\Users\\misea\\OneDrive\\Documents\\AI Project '
+   'Folders\\EchoApp\\recording_controller.py',
+   'PYMODULE'),
+  ('recording_session',
+   'C:\\Users\\misea\\OneDrive\\Documents\\AI Project '
+   'Folders\\EchoApp\\recording_session.py',
+   'PYMODULE'),
+  ('recording_ui_components',
+   'C:\\Users\\misea\\OneDrive\\Documents\\AI Project '
+   'Folders\\EchoApp\\recording_ui_components.py',
+   'PYMODULE'),
   ('runpy', 'C:\\Program Files\\Python310\\lib\\runpy.py', 'PYMODULE'),
   ('secrets', 'C:\\Program Files\\Python310\\lib\\secrets.py', 'PYMODULE'),
   ('selectors', 'C:\\Program Files\\Python310\\lib\\selectors.py', 'PYMODULE'),
@@ -1073,6 +1093,10 @@
    'PYMODULE'),
   ('tty', 'C:\\Program Files\\Python310\\lib\\tty.py', 'PYMODULE'),
   ('typing', 'C:\\Program Files\\Python310\\lib\\typing.py', 'PYMODULE'),
+  ('undo_manager',
+   'C:\\Users\\misea\\OneDrive\\Documents\\AI Project '
+   'Folders\\EchoApp\\undo_manager.py',
+   'PYMODULE'),
   ('unittest',
    'C:\\Program Files\\Python310\\lib\\unittest\\__init__.py',
    'PYMODULE'),

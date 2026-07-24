@@ -45,14 +45,16 @@ def voice_convert(
     Placeholder implementation: slight gain change.
     Replace this body with a real voice conversion model.
     """
-    from pydub import AudioSegment
+    import numpy as np
+    import soundfile as sf
 
-    audio = AudioSegment.from_file(str(request.source_wav))
-    gain_db = (request.strength - 1.0) * 3.0
-    converted = audio + gain_db
+    data, samplerate = sf.read(str(request.source_wav), always_2d=False)
+    # Apply gain: strength=1.0 → no change; <1.0 → quieter; >1.0 → louder
+    gain_linear = 10.0 ** ((request.strength - 1.0) * 3.0 / 20.0)
+    converted = np.clip(data * gain_linear, -1.0, 1.0)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    converted.export(str(output_path), format="wav")
+    sf.write(str(output_path), converted, samplerate, subtype="PCM_16")
 
     return VoiceConvertResult(
         audio_path=output_path,

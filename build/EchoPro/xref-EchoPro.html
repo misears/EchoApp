@@ -173,6 +173,8 @@ imports:
  &#8226;   <a href="#pyi_rth_pkgutil.py">pyi_rth_pkgutil.py</a>
  &#8226;   <a href="#pyi_rth_pyside6.py">pyi_rth_pyside6.py</a>
  &#8226;   <a href="#re">re</a>
+ &#8226;   <a href="#recording_controller">recording_controller</a>
+ &#8226;   <a href="#recording_ui_components">recording_ui_components</a>
  &#8226;   <a href="#reprlib">reprlib</a>
  &#8226;   <a href="#song_planner">song_planner</a>
  &#8226;   <a href="#sre_compile">sre_compile</a>
@@ -355,6 +357,7 @@ imported by:
  &#8226;   <a href="#PySide6.QtNetwork">PySide6.QtNetwork</a>
  &#8226;   <a href="#PySide6.QtWidgets">PySide6.QtWidgets</a>
  &#8226;   <a href="#echo_pro_app.py">echo_pro_app.py</a>
+ &#8226;   <a href="#recording_ui_components">recording_ui_components</a>
  &#8226;   <a href="#timeline_widget">timeline_widget</a>
 
   </div>
@@ -430,6 +433,7 @@ imports:
 imported by:
     <a href="#PySide6.QtWidgets">PySide6.QtWidgets</a>
  &#8226;   <a href="#echo_pro_app.py">echo_pro_app.py</a>
+ &#8226;   <a href="#recording_ui_components">recording_ui_components</a>
  &#8226;   <a href="#timeline_widget">timeline_widget</a>
 
   </div>
@@ -1609,6 +1613,7 @@ imported by:
     <a href="#echo_pro_app.py">echo_pro_app.py</a>
  &#8226;   <a href="#first_run">first_run</a>
  &#8226;   <a href="#music_generator">music_generator</a>
+ &#8226;   <a href="#recording_session">recording_session</a>
  &#8226;   <a href="#song_planner">song_planner</a>
  &#8226;   <a href="#voice_store">voice_store</a>
 
@@ -2589,6 +2594,27 @@ imported by:
 </div>
 
 <div class="node">
+  <a name="audio_engine"></a>
+  <a target="code" href="///C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/audio_engine.py" type="text/plain"><tt>audio_engine</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#collections">collections</a>
+ &#8226;   <a href="#numpy">numpy</a>
+ &#8226;   <a href="#sounddevice">sounddevice</a>
+ &#8226;   <a href="#threading">threading</a>
+ &#8226;   <a href="#typing">typing</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#recording_controller">recording_controller</a>
+ &#8226;   <a href="#recording_session">recording_session</a>
+
+  </div>
+
+</div>
+
+<div class="node">
   <a name="audio_info"></a>
   <a target="code" href="///C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/audio_info.py" type="text/plain"><tt>audio_info</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
@@ -3043,6 +3069,7 @@ imported by:
  &#8226;   <a href="#asyncio.selector_events">asyncio.selector_events</a>
  &#8226;   <a href="#asyncio.sslproto">asyncio.sslproto</a>
  &#8226;   <a href="#asyncio.streams">asyncio.streams</a>
+ &#8226;   <a href="#audio_engine">audio_engine</a>
  &#8226;   <a href="#collections.abc">collections.abc</a>
  &#8226;   <a href="#concurrent.futures._base">concurrent.futures._base</a>
  &#8226;   <a href="#contextlib">contextlib</a>
@@ -3600,10 +3627,14 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#numpy.array_api._data_type_functions">numpy.array_api._data_type_functions</a>
+    <a href="#metronome">metronome</a>
+ &#8226;   <a href="#numpy.array_api._data_type_functions">numpy.array_api._data_type_functions</a>
  &#8226;   <a href="#pprint">pprint</a>
  &#8226;   <a href="#project_model">project_model</a>
+ &#8226;   <a href="#recording_controller">recording_controller</a>
+ &#8226;   <a href="#recording_session">recording_session</a>
  &#8226;   <a href="#t2m_interface">t2m_interface</a>
+ &#8226;   <a href="#undo_manager">undo_manager</a>
  &#8226;   <a href="#voice_interface">voice_interface</a>
  &#8226;   <a href="#voice_store">voice_store</a>
 
@@ -3632,6 +3663,7 @@ imported by:
  &#8226;   <a href="#http.cookiejar">http.cookiejar</a>
  &#8226;   <a href="#http.server">http.server</a>
  &#8226;   <a href="#psutil">psutil</a>
+ &#8226;   <a href="#recording_session">recording_session</a>
  &#8226;   <a href="#smtplib">smtplib</a>
  &#8226;   <a href="#voice_store">voice_store</a>
  &#8226;   <a href="#xmlrpc.client">xmlrpc.client</a>
@@ -7952,6 +7984,7 @@ imported by:
  &#8226;   <a href="#numpy._version">numpy._version</a>
  &#8226;   <a href="#project_model">project_model</a>
  &#8226;   <a href="#pydub.utils">pydub.utils</a>
+ &#8226;   <a href="#recording_session">recording_session</a>
  &#8226;   <a href="#voice_store">voice_store</a>
 
   </div>
@@ -8214,6 +8247,24 @@ imported by:
  &#8226;   <a href="#selectors">selectors</a>
  &#8226;   <a href="#song_planner">song_planner</a>
  &#8226;   <a href="#statistics">statistics</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="metronome"></a>
+  <a target="code" href="///C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/metronome.py" type="text/plain"><tt>metronome</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#dataclasses">dataclasses</a>
+ &#8226;   <a href="#numpy">numpy</a>
+ &#8226;   <a href="#typing">typing</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#recording_controller">recording_controller</a>
 
   </div>
 
@@ -9251,7 +9302,9 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#numpy">numpy</a>
+    <a href="#audio_engine">audio_engine</a>
+ &#8226;   <a href="#metronome">metronome</a>
+ &#8226;   <a href="#numpy">numpy</a>
  &#8226;   <a href="#numpy.__config__">numpy.__config__</a>
  &#8226;   <a href="#numpy._distributor_init">numpy._distributor_init</a>
  &#8226;   <a href="#numpy._globals">numpy._globals</a>
@@ -9330,6 +9383,7 @@ imported by:
  &#8226;   <a href="#numpy.testing._private.utils">numpy.testing._private.utils</a>
  &#8226;   <a href="#numpy.typing">numpy.typing</a>
  &#8226;   <a href="#numpy.version">numpy.version</a>
+ &#8226;   <a href="#recording_controller">recording_controller</a>
  &#8226;   <a href="#sounddevice">sounddevice</a>
  &#8226;   <a href="#soundfile">soundfile</a>
 
@@ -14432,6 +14486,7 @@ imported by:
  &#8226;   <a href="#numpy.testing._private.extbuild">numpy.testing._private.extbuild</a>
  &#8226;   <a href="#playback_mixer">playback_mixer</a>
  &#8226;   <a href="#project_model">project_model</a>
+ &#8226;   <a href="#recording_session">recording_session</a>
  &#8226;   <a href="#song_planner">song_planner</a>
  &#8226;   <a href="#stems_engine">stems_engine</a>
  &#8226;   <a href="#t2m_interface">t2m_interface</a>
@@ -16244,6 +16299,68 @@ imported by:
 </div>
 
 <div class="node">
+  <a name="recording_controller"></a>
+  <a target="code" href="///C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/recording_controller.py" type="text/plain"><tt>recording_controller</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#audio_engine">audio_engine</a>
+ &#8226;   <a href="#dataclasses">dataclasses</a>
+ &#8226;   <a href="#metronome">metronome</a>
+ &#8226;   <a href="#numpy">numpy</a>
+ &#8226;   <a href="#recording_session">recording_session</a>
+ &#8226;   <a href="#sounddevice">sounddevice</a>
+ &#8226;   <a href="#typing">typing</a>
+ &#8226;   <a href="#undo_manager">undo_manager</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#echo_pro_app.py">echo_pro_app.py</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="recording_session"></a>
+  <a target="code" href="///C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/recording_session.py" type="text/plain"><tt>recording_session</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#app_paths">app_paths</a>
+ &#8226;   <a href="#audio_engine">audio_engine</a>
+ &#8226;   <a href="#dataclasses">dataclasses</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#json">json</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#typing">typing</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#recording_controller">recording_controller</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="recording_ui_components"></a>
+  <a target="code" href="///C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/recording_ui_components.py" type="text/plain"><tt>recording_ui_components</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#PySide6.QtCore">PySide6.QtCore</a>
+ &#8226;   <a href="#PySide6.QtWidgets">PySide6.QtWidgets</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#echo_pro_app.py">echo_pro_app.py</a>
+
+  </div>
+
+</div>
+
+<div class="node">
   <a name="reprlib"></a>
   <a target="code" href="///C:/Program%20Files/Python310/lib/reprlib.py" type="text/plain"><tt>reprlib</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
@@ -16719,7 +16836,9 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#voice_recorder">voice_recorder</a>
+    <a href="#audio_engine">audio_engine</a>
+ &#8226;   <a href="#recording_controller">recording_controller</a>
+ &#8226;   <a href="#voice_recorder">voice_recorder</a>
 
   </div>
 
@@ -17417,6 +17536,7 @@ imported by:
  &#8226;   <a href="#asyncio.mixins">asyncio.mixins</a>
  &#8226;   <a href="#asyncio.proactor_events">asyncio.proactor_events</a>
  &#8226;   <a href="#asyncio.unix_events">asyncio.unix_events</a>
+ &#8226;   <a href="#audio_engine">audio_engine</a>
  &#8226;   <a href="#concurrent.futures._base">concurrent.futures._base</a>
  &#8226;   <a href="#concurrent.futures.process">concurrent.futures.process</a>
  &#8226;   <a href="#concurrent.futures.thread">concurrent.futures.thread</a>
@@ -17739,10 +17859,12 @@ imported by:
  &#8226;   <a href="#PySide6.QtNetwork">PySide6.QtNetwork</a>
  &#8226;   <a href="#PySide6.QtWidgets">PySide6.QtWidgets</a>
  &#8226;   <a href="#asyncio.staggered">asyncio.staggered</a>
+ &#8226;   <a href="#audio_engine">audio_engine</a>
  &#8226;   <a href="#functools">functools</a>
  &#8226;   <a href="#importlib.abc">importlib.abc</a>
  &#8226;   <a href="#importlib.metadata">importlib.metadata</a>
  &#8226;   <a href="#importlib.metadata._meta">importlib.metadata._meta</a>
+ &#8226;   <a href="#metronome">metronome</a>
  &#8226;   <a href="#music_generator">music_generator</a>
  &#8226;   <a href="#numpy._typing">numpy._typing</a>
  &#8226;   <a href="#numpy._typing._array_like">numpy._typing._array_like</a>
@@ -17776,11 +17898,31 @@ imported by:
  &#8226;   <a href="#pyreadline3.logger.control">pyreadline3.logger.control</a>
  &#8226;   <a href="#pyreadline3.py3k_compat">pyreadline3.py3k_compat</a>
  &#8226;   <a href="#pyreadline3.unicode_helper">pyreadline3.unicode_helper</a>
+ &#8226;   <a href="#recording_controller">recording_controller</a>
+ &#8226;   <a href="#recording_session">recording_session</a>
  &#8226;   <a href="#shiboken6">shiboken6</a>
  &#8226;   <a href="#song_planner">song_planner</a>
  &#8226;   <a href="#t2m_interface">t2m_interface</a>
+ &#8226;   <a href="#undo_manager">undo_manager</a>
  &#8226;   <a href="#voice_interface">voice_interface</a>
  &#8226;   <a href="#voice_store">voice_store</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="undo_manager"></a>
+  <a target="code" href="///C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/undo_manager.py" type="text/plain"><tt>undo_manager</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#dataclasses">dataclasses</a>
+ &#8226;   <a href="#typing">typing</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#recording_controller">recording_controller</a>
 
   </div>
 

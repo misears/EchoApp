@@ -115,31 +115,51 @@ def separate_stems(
 
     return stems
 
-def add_stems_to_project(project: Project, stems: dict, project_folder: Path, next_clip_id_start: int = 1):
-    """
-    Given a project and a dict of stems (name -> path),
+# Preferred display order for well-known demucs stem names
+_STEM_ORDER = ["vocals", "drums", "bass", "guitar", "piano", "other"]
+
+
+def add_stems_to_project(
+    project: Project,
+    stems: dict,
+    project_folder: Path,
+    next_clip_id_start: int = 1,
+) -> int:
+    """Given a project and a dict of stems (name -> path),
     create tracks and clips for each stem.
     Returns updated next_clip_id.
+
+    Stems are added in the preferred order first, then any
+    additional stems not in the preferred list are appended.
     """
     next_clip_id = next_clip_id_start
 
-    stem_order = ["vocals", "drums", "bass", "guitar", "other"]
-    for stem_name in stem_order:
-        if stem_name not in stems:
-            continue
+    # Ordered stems first, then any extras (e.g. from 6-source model)
+    ordered = [s for s in _STEM_ORDER if s in stems]
+    extras = [s for s in stems if s not in _STEM_ORDER]
+    all_stems = ordered + extras
+
+    for stem_name in all_stems:
         file_path = stems[stem_name]
+
+        if not Path(file_path).exists():
+            continue  # skip missing files gracefully
+
+        try:
+            length_ms = get_audio_length_ms(file_path)
+        except Exception:
+            length_ms = 0  # add track even if duration unknown
 
         track_name = stem_name.capitalize()
         track_index = len(project.tracks)
         project.tracks.append(Track(name=track_name))
 
-        length_ms = get_audio_length_ms(file_path)
         clip = Clip(
             id=next_clip_id,
             track_index=track_index,
             file_path=file_path,
             start_ms=0,
-            length_ms=length_ms
+            length_ms=length_ms,
         )
         project.clips.append(clip)
         next_clip_id += 1
