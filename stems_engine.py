@@ -6,6 +6,9 @@ import shutil
 import time
 from typing import Callable, Optional
 
+import numpy as np
+import soundfile as sf
+
 from project_model import Clip, Track, Project
 from audio_info import get_audio_length_ms
 
@@ -32,7 +35,47 @@ def _normalize_failure(stderr_text: str) -> StemSeparationError:
         return StemDependencyError(
             "Demucs runtime is missing. Run install_echo_pro.bat install (or update) to install local demucs tooling."
         )
+    if "assertionerror" in lowered or "pad1d" in lowered:
+        return StemSeparationError(
+            "Demucs could not process the source audio as-is. Try a longer source file or update the stem preflight handling."
+        )
     return StemSeparationError(stderr_text.strip() or "Demucs failed while splitting stems.")
+
+
+def _prepare_demucs_input(input_path: Path, *, minimum_seconds: float = 10.0) -> tuple[Path, int]:
+    """Pad very short audio so Demucs receives a stable minimum input length."""
+    original_length_ms = get_audio_length_ms(str(input_path))
+    if original_length_ms >= int(minimum_seconds * 1000):
+        return input_path, original_length_ms
+
+    try:
+        audio, sample_rate = sf.read(str(input_path), always_2d=True)
+    except Exception:
+        return input_path, original_length_ms
+
+    min_frames = int(round(sample_rate * minimum_seconds))
+    original_frames = int(audio.shape[0])
+    if original_frames >= min_frames:
+        return input_path, original_length_ms
+
+    padded = input_path.parent / f"{input_path.stem}_demucs_padded.wav"
+    silence_frames = min_frames - original_frames
+    padded_audio = np.vstack([audio, np.zeros((silence_frames, audio.shape[1]), dtype=audio.dtype)])
+    sf.write(str(padded), padded_audio, sample_rate)
+    return padded, original_length_ms
+
+
+def _trim_audio_file(path: Path, max_frames: int) -> None:
+    try:
+        audio, sample_rate = sf.read(str(path), always_2d=True)
+    except Exception:
+        return
+
+    if int(audio.shape[0]) <= int(max_frames):
+        return
+
+    trimmed = audio[: int(max_frames)]
+    sf.write(str(path), trimmed, sample_rate)
 
 
 def separate_stems(
@@ -50,7 +93,10 @@ def separate_stems(
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    cmd = [demucs_executable, "-o", str(output_dir), input_path]
+    input_file = Path(input_path)
+    demucs_input, original_length_ms = _prepare_demucs_input(input_file)
+
+    cmd = [demucs_executable, "-o", str(output_dir), str(demucs_input)]
     env = os.environ.copy()
     if ffmpeg_executable:
         env["FFMPEG_BINARY"] = ffmpeg_executable
@@ -112,6 +158,18 @@ def separate_stems(
             shutil.move(str(stem_file), target)
         stem_name = stem_file.stem.lower()
         stems[stem_name] = str(target)
+
+    if demucs_input != input_file:
+        try:
+            original_audio, _original_sample_rate = sf.read(str(input_file), always_2d=True)
+            original_frames = int(original_audio.shape[0])
+            for stem_path in stems.values():
+                _trim_audio_file(Path(stem_path), original_frames)
+        finally:
+            try:
+                demucs_input.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     return stems
 
