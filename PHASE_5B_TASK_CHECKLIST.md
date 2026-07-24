@@ -201,14 +201,14 @@ Scope: Punch/loop workflows, take browser, comping v1, recovery, and safety chec
 
 ### Recovery validation
 
-- [ ] Simulate interruption during recording and verify restore prompt appears
-- [ ] Restore session and verify take pointers and loop/punch state
-- [ ] Discard recovery and verify clean startup path
+- [x] Simulate interruption during recording and verify restore prompt appears
+- [x] Restore session and verify take pointers and loop/punch state
+- [x] Discard recovery and verify clean startup path
 
 ### Safety validation
 
 - [x] Device preflight returns readable failure for invalid I/O pairing
-- [ ] Clip and silence warnings appear without blocking callback performance
+- [x] Clip and silence warnings appear without blocking callback performance
 - [x] Existing Phase 1-5A workflows remain functional
 
 ---

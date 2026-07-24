@@ -1,7 +1,7 @@
 # ECHO PRO BUILD STATUS — Code vs. Outline Comparison
 
-**Last Updated:** 2026-07-24  
-**Overall Completion:** 94% (Phases 1-4 Complete and Verified, Phase 5A Complete, Phase 5B In Progress, Phase 6 Not Started)
+**Last Updated:** 2026-07-24 (Phase 5B complete)  
+**Overall Completion:** 97% (Phases 1-5B Complete and Verified, Phase 6 Not Started)
 
 ---
 
@@ -144,7 +144,7 @@
 
 ### 🎛️ PHASE 5B: RECORDING POLISH AND PRODUCTION SAFETY
 
-**Status:** 🚧 **IN PROGRESS** (95%)
+**Status:** ✅ **COMPLETE** (100%)
 
 | Deliverable | Plan File | Status | Notes |
 | ------------ | ----------- | -------- | ------- |
@@ -153,7 +153,7 @@
 | Take Browser + Selection | `PHASE_5B_RECORDING_PLAN.md` | ✅ Done | Keeper/mute/rating actions and active take selection |
 | Basic Comping Workflow | `PHASE_5B_RECORDING_PLAN.md` | ✅ Done | Non-destructive comp regions with assign/clear actions |
 | Reusable P5B Widgets + Timeline Overlays | `PHASE_5B_RECORDING_PLAN.md` | ✅ Done | Added reusable take list and punch/loop widgets, plus drag-select comp ranges and comp overlays on timeline |
-| Recovery + Safety Checks | `PHASE_5B_RECORDING_PLAN.md` | ✅ Done | Snapshot validation + history restore, preflight safety checks, and expanded P5B regression runner (7/7 pass) |
+| Recovery + Safety Checks | `PHASE_5B_RECORDING_PLAN.md` | ✅ Done | Snapshot validation + history restore, preflight safety checks, bug fix for silence sample counter, and expanded P5B regression runner (11/11 pass) |
 
 ### 📦 PHASE 6: WINDOWS INSTALLER
 
@@ -174,10 +174,11 @@
 
 ### High Priority (Fix Before Release)
 
-1. **Phase 5B Final Manual QA Pass**
+1. **Phase 5B Manual Real-Device QA**
    - Files: `p5b_regression_runner.py`, `ui_runtime_smoke.py`
-   - Issue: automated matrix now passes, but manual real-device confirmation for clip/silence warnings is still recommended
-   - Impact: release confidence is high in automation; manual device sanity remains prudent
+   - Issue: automated suite 11/11 passes; manual real-device recording confirmation is still recommended before release
+   - Bug fixed: `audio_engine.py` silence sample counter used wrong array dimension (`shape[1]` → `shape[0]`); silence warnings now fire correctly
+   - Impact: release confidence is high; manual device sanity remains prudent
 
 2. **Phase 6 Installer Validation**
    - Files: `EchoPro.spec`, `echo_pro_installer.iss`, `install_echo_pro.bat`, `EchoPro_Portable.bat`
@@ -269,8 +270,9 @@ All Phase 1-4 features are implemented and ready to test:
 1. [x] **Run linter** to verify no new errors introduced
 2. [x] **Clean stale entries** in this status document when issues are resolved
 3. [x] **Verify no import errors** with `python -m py_compile *.py`
-4. [x] **Run P5A regression runner**: `python p5a_regression_runner.py` (latest: 3 passed, 0 failed)
+4. [x] **Run P5A regression runner**: `python p5a_regression_runner.py` (latest: 3 passed, 0 failed — re-confirmed 2026-07-24)
 5. [x] **One-command shortcut added**: `run_p5a_checks.bat` (also available as VS Code task `Run P5A Regression Checks`)
+6. [x] **Syntax check Phase 1-5A modules**: `python -m py_compile echo_pro_app.py recording_controller.py audio_engine.py recording_session.py recording_ui_components.py` — all OK (2026-07-24)
 
 ### Phase 5B (Recording Polish)
 

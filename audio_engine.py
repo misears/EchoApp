@@ -259,7 +259,7 @@ class Track:
         current_db = 20 * np.log10(rms + 1e-10)
         peak = float(np.max(np.abs(audio)))
         peak_db = 20 * np.log10(peak + 1e-10)
-        sample_count = int(audio.shape[1]) if audio.ndim == 2 else 0
+        sample_count = int(audio.shape[0]) if audio.ndim >= 1 else 0
         clipped = peak > 1.0
 
         with self.lock:
