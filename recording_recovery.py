@@ -19,6 +19,8 @@ class RecoverySnapshotManager:
         base = root_dir or (ECHO_ROOT / "recording_recovery")
         self.root_dir = Path(base)
         self.root_dir.mkdir(parents=True, exist_ok=True)
+        self.history_dir = self.root_dir / "history"
+        self.history_dir.mkdir(parents=True, exist_ok=True)
 
     def _snapshot_path(self, session_id: str) -> Path:
         safe_session = str(session_id).strip().replace(" ", "_")
@@ -51,12 +53,21 @@ class RecoverySnapshotManager:
 
         target = self._snapshot_path(session_id)
         temp_path = target.with_suffix(".tmp")
+        history_path = self._history_snapshot_path(session_id)
+        history_temp_path = history_path.with_suffix(".tmp")
         try:
             temp_path.write_text(json.dumps(snapshot, indent=2), encoding="utf-8")
             temp_path.replace(target)
+            history_temp_path.write_text(json.dumps(snapshot, indent=2), encoding="utf-8")
+            history_temp_path.replace(history_path)
             return True
         except Exception:
             return False
+
+    def _history_snapshot_path(self, session_id: str) -> Path:
+        safe_session = str(session_id).strip().replace(" ", "_")
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        return self.history_dir / f"{safe_session}_{stamp}.json"
 
     def load_snapshot(self, session_id: str) -> Optional[Dict[str, object]]:
         target = self._snapshot_path(session_id)
@@ -122,3 +133,21 @@ class RecoverySnapshotManager:
             return False, "Snapshot interrupted flag is invalid"
 
         return True, "ok"
+
+    def list_snapshot_history(self, session_id: str, limit: int = 20) -> list[Path]:
+        safe_session = str(session_id).strip().replace(" ", "_")
+        candidates = sorted(
+            self.history_dir.glob(f"{safe_session}_*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        return candidates[: max(1, int(limit))]
+
+    def load_snapshot_from_path(self, file_path: Path) -> Optional[Dict[str, object]]:
+        path = Path(file_path)
+        if not path.exists():
+            return None
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return None

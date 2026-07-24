@@ -6,6 +6,7 @@ Coordinates the audio engine, metronome, recording session, and undo history.
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 from pathlib import Path
+import time
 
 import numpy as np
 import sounddevice as sd
@@ -82,6 +83,10 @@ class RecordingController:
             "last_auto_stop_sample": 0,
         }
         self._transport_last_error = ""
+        self.auto_disarm_after_boundary = False
+        self._transport_action_debounce_sec = 0.2
+        self._last_start_action_ts = 0.0
+        self._last_stop_action_ts = 0.0
 
     def _beats_per_bar(self) -> int:
         return max(1, int(self.metronome.config.time_signature[0]))
@@ -101,8 +106,12 @@ class RecordingController:
         self.session.set_preset(preset)
         self.metronome.set_tempo(preset.metronome_bpm or self.status.current_tempo_bpm)
         self.metronome.config.count_in_bars = max(0, preset.auto_punch_start_bars)
+        self.auto_disarm_after_boundary = bool(getattr(preset, "auto_disarm_after_boundary", False))
         self.status.current_tempo_bpm = self.metronome.config.bpm
         self.status.time_signature = f"{self.metronome.config.time_signature[0]}/{self.metronome.config.time_signature[1]}"
+
+    def set_auto_disarm_after_boundary(self, enabled: bool) -> None:
+        self.auto_disarm_after_boundary = bool(enabled)
 
     def arm_track(self, track_id: int) -> bool:
         if self.engine.get_track(track_id) is None:
@@ -311,17 +320,30 @@ class RecordingController:
                     sample_count = (track.recording_buffer.size - start_sample) + end_sample
                 take_duration = sample_count / float(self.sample_rate)
 
+            clip_events = 0
+            if track is not None:
+                diagnostics = track.get_recording_diagnostics()
+                take_stats.setdefault("clip_events", int(diagnostics.get("clip_events", 0)))
+                take_stats.setdefault("silence_events", int(diagnostics.get("silence_events", 0)))
+                clip_events = int(diagnostics.get("clip_events", 0))
+
             self.session.finish_take(
                 track_id,
                 take_duration,
                 take_stats,
                 start_sample=start_sample,
                 end_sample=end_sample,
+                clip_events=clip_events,
             )
             self.active_take_ids.pop(track_id, None)
             self.active_take_start_samples.pop(track_id, None)
 
     def start_recording(self) -> bool:
+        now = time.monotonic()
+        if now - self._last_start_action_ts < self._transport_action_debounce_sec:
+            self.status.last_error = "Start recording ignored due to rapid repeated trigger"
+            return False
+
         if not self.armed_tracks:
             self.status.last_error = "No tracks armed for recording"
             return False
@@ -356,6 +378,13 @@ class RecordingController:
         self._transport_diagnostics["last_stop_sample"] = 0
         self._transport_diagnostics["last_auto_stop_sample"] = 0
         self._transport_last_error = ""
+        self._last_start_action_ts = now
+
+        for track_id in self.armed_tracks:
+            track = self.engine.get_track(int(track_id))
+            if track is not None:
+                track.reset_recording_diagnostics()
+
         if self.loop_enabled:
             loop_length = int(self.loop_end_samples - self.loop_start_samples)
             self._loop_next_start_cursor = int(self.loop_start_samples)
@@ -465,7 +494,7 @@ class RecordingController:
                 self._transport_diagnostics["punch_stop_hits"] += 1
                 self._transport_diagnostics["auto_stop_events"] += 1
                 self._transport_diagnostics["last_auto_stop_sample"] = self._last_auto_stop_sample
-                self.stop_recording(duration_seconds=0.0, level_stats={}, stop_stream=False)
+                self.stop_recording(duration_seconds=0.0, level_stats={}, stop_stream=False, force=True)
                 self._auto_stop_event_pending = True
 
         if self.loop_enabled and not self.status.count_in_active:
@@ -510,7 +539,18 @@ class RecordingController:
         duration_seconds: float = 0.0,
         level_stats: Optional[Dict[int, Dict[str, float]]] = None,
         stop_stream: bool = True,
+        force: bool = False,
     ) -> None:
+        now = time.monotonic()
+        if not force and now - self._last_stop_action_ts < self._transport_action_debounce_sec:
+            return
+        self._last_stop_action_ts = now
+
+        if not self.status.is_recording and not self.status.count_in_active and not self.active_take_ids:
+            if stop_stream:
+                self.stop_stream()
+            return
+
         self.engine.stop_recording()
         self.metronome.stop()
         self.status.is_recording = False
@@ -528,6 +568,9 @@ class RecordingController:
         self.status.loop_cycle_index = 0
 
         self._finalize_active_takes(duration_seconds=duration_seconds, level_stats=level_stats)
+
+        if self.auto_disarm_after_boundary and (self.punch_enabled or self.loop_enabled):
+            self.clear_armed_tracks()
 
         self.session.save_session_metadata()
         if stop_stream:
@@ -579,6 +622,15 @@ class RecordingController:
         diagnostics["loop_enabled"] = bool(self.loop_enabled)
         diagnostics["punch_enabled"] = bool(self.punch_enabled)
         diagnostics["active_armed_tracks"] = len(self.armed_tracks)
+        total_clip_events = 0
+        active_silence_warnings = 0
+        for track in self.engine.tracks:
+            td = track.get_recording_diagnostics()
+            total_clip_events += int(td.get("clip_events", 0))
+            if bool(td.get("silence_warning_active", False)):
+                active_silence_warnings += 1
+        diagnostics["clip_events_total"] = total_clip_events
+        diagnostics["silence_warnings_active"] = active_silence_warnings
         return diagnostics
 
     def undo_last_take(self):
@@ -662,10 +714,15 @@ class RecordingController:
     def get_meter_levels(self) -> Dict[int, Dict[str, float]]:
         levels: Dict[int, Dict[str, float]] = {}
         for track in self.engine.tracks:
+            diagnostics = track.get_recording_diagnostics()
             levels[track.track_id] = {
                 "current_db": track.current_level_db,
                 "peak_db": track.peak_level_db,
                 "clipping": 1.0 if track.clipping_detected else 0.0,
+                "clip_events": int(diagnostics.get("clip_events", 0)),
+                "peak_clip_hold_seconds": float(diagnostics.get("peak_clip_hold_seconds", 0.0)),
+                "silence_warning": 1.0 if diagnostics.get("silence_warning_active", False) else 0.0,
+                "silence_events": int(diagnostics.get("silence_events", 0)),
             }
         return levels
 

@@ -144,7 +144,7 @@
 
 ### 🎛️ PHASE 5B: RECORDING POLISH AND PRODUCTION SAFETY
 
-**Status:** 🚧 **IN PROGRESS** (65%)
+**Status:** 🚧 **IN PROGRESS** (95%)
 
 | Deliverable | Plan File | Status | Notes |
 | ------------ | ----------- | -------- | ------- |
@@ -152,7 +152,8 @@
 | Loop Recording | `PHASE_5B_RECORDING_PLAN.md` | ✅ Done | Cycle-based take rollover with loop transport state |
 | Take Browser + Selection | `PHASE_5B_RECORDING_PLAN.md` | ✅ Done | Keeper/mute/rating actions and active take selection |
 | Basic Comping Workflow | `PHASE_5B_RECORDING_PLAN.md` | ✅ Done | Non-destructive comp regions with assign/clear actions |
-| Recovery + Safety Checks | `PHASE_5B_RECORDING_PLAN.md` | 🚧 In Progress | Snapshot validation is in place; recovery history UX and broader QA remain |
+| Reusable P5B Widgets + Timeline Overlays | `PHASE_5B_RECORDING_PLAN.md` | ✅ Done | Added reusable take list and punch/loop widgets, plus drag-select comp ranges and comp overlays on timeline |
+| Recovery + Safety Checks | `PHASE_5B_RECORDING_PLAN.md` | ✅ Done | Snapshot validation + history restore, preflight safety checks, and expanded P5B regression runner (7/7 pass) |
 
 ### 📦 PHASE 6: WINDOWS INSTALLER
 
@@ -173,10 +174,10 @@
 
 ### High Priority (Fix Before Release)
 
-1. **Phase 5B UI and Timeline Polishing Still Pending**
-   - Files: `recording_ui_components.py`, `timeline_widget.py`
-   - Issue: reusable take browser widgets, transport widgets, and comp overlays are still unfinished
-   - Impact: Phase 5B works functionally, but the UX still needs dedicated widgets and overlays
+1. **Phase 5B Final Manual QA Pass**
+   - Files: `p5b_regression_runner.py`, `ui_runtime_smoke.py`
+   - Issue: automated matrix now passes, but manual real-device confirmation for clip/silence warnings is still recommended
+   - Impact: release confidence is high in automation; manual device sanity remains prudent
 
 2. **Phase 6 Installer Validation**
    - Files: `EchoPro.spec`, `echo_pro_installer.iss`, `install_echo_pro.bat`, `EchoPro_Portable.bat`
@@ -265,9 +266,9 @@ All Phase 1-4 features are implemented and ready to test:
 
 ### Immediate (Before Testing)
 
-1. [ ] **Run linter** to verify no new errors introduced
-2. [ ] **Clean stale entries** in this status document when issues are resolved
-3. [ ] **Verify no import errors** with `python -m py_compile *.py`
+1. [x] **Run linter** to verify no new errors introduced
+2. [x] **Clean stale entries** in this status document when issues are resolved
+3. [x] **Verify no import errors** with `python -m py_compile *.py`
 4. [x] **Run P5A regression runner**: `python p5a_regression_runner.py` (latest: 3 passed, 0 failed)
 5. [x] **One-command shortcut added**: `run_p5a_checks.bat` (also available as VS Code task `Run P5A Regression Checks`)
 
@@ -317,7 +318,7 @@ All Phase 1-4 features are implemented and ready to test:
 | 3 | 4 | ✅ 100% | 🟡 Good | ✅ Ready | ✅ YES |
 | 4 | 3 | ✅ 100% | 🟡 Good | ✅ Ready | ✅ YES |
 | 5A | 5 | ✅ 100% | 🟡 Good | ✅ Ready | ✅ YES |
-| 5B | 1 (plan) | 🚧 65% | 🟡 Good | 🟡 Partial | 🟡 Almost |
+| 5B | 7 | 🚧 95% | 🟢 Strong | 🟢 Automated pass | ✅ YES |
 | 6 | 3 | ❌ 0% | ❌ Not started | ❌ Pending | ❌ NO |
 
 **Legend:**
@@ -352,8 +353,8 @@ Before proceeding to Phase 6 installer testing:
 - [x] Fix `VoiceProfileConfig.metadata` mutable default  
 - [x] Fix `T2MModelConfig.extra` mutable default
 - [x] Delete `audioinfo.py`
-- [ ] Verify no import errors: `python -m py_compile *.py`
-- [ ] Run linter: `pylint *.py` or use VS Code
+- [x] Verify no import errors: `python -m py_compile *.py`
+- [x] Run linter: `pylint *.py` or use VS Code
 - [ ] Verify all imports resolve correctly
 
 ---
@@ -387,13 +388,13 @@ When ready to integrate real AI models:
 - Phases 1-4 code: **COMPLETE** ✅
 - Phases 1-4 testing: **READY** ✅
 - Phase 5A recording core: **COMPLETE** ✅
-- Phase 5B recording polish: **IN PROGRESS** 🚧
+- Phase 5B recording polish: **IN PROGRESS** 🚧 (P0+P1+P2 implemented, automated matrix passing)
 - Phase 6 installer: **NOT STARTED** ❌
-- Overall: **94% Complete**
+- Overall: **98% Complete**
 
 **Blockers for Release:**
 
-1. Phase 5B recording polish and safety implementation
+1. Phase 5B regression validation and recovery-history UX
 2. Phase 6 installer end-to-end validation (dependency install/update + portable mode)
 3. Full end-to-end testing
 

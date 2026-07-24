@@ -2,6 +2,7 @@
 from PySide6.QtWidgets import QWidget
 from PySide6.QtGui import QPainter, QColor, QPen
 from PySide6.QtCore import Qt, QRect, QPoint
+from typing import Callable, Dict, List, Optional
 
 from project_model import Project
 
@@ -20,11 +21,18 @@ class TimelineWidget(QWidget):
         self.selected_clip_id = None
         self.selected_track_index = None
         self.hide_inactive_take_clips = False
-        self.on_project_changed = None
+        self.on_project_changed: Optional[Callable[[], None]] = None
+        self.on_comp_range_selected: Optional[Callable[[int, int, int], None]] = None
         self._clip_rects = []
         self._dragging_clip_id = None
         self._drag_start_point = None
         self._drag_origin_start_ms = None
+        self._comp_regions_by_track: Dict[int, List[dict]] = {}
+        self._comp_color_mode = "alternating"
+        self._comp_selecting = False
+        self._comp_select_start_ms: Optional[int] = None
+        self._comp_select_end_ms: Optional[int] = None
+        self._comp_select_track_index: Optional[int] = None
         self.setMinimumHeight(300)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
@@ -40,6 +48,31 @@ class TimelineWidget(QWidget):
     def set_hide_inactive_take_clips(self, hide: bool):
         self.hide_inactive_take_clips = bool(hide)
         self.update()
+
+    def set_comp_regions_for_track(self, track_index: int, regions: List[dict]) -> None:
+        self._comp_regions_by_track[int(track_index)] = list(regions)
+        self.update()
+
+    def clear_comp_regions(self) -> None:
+        self._comp_regions_by_track = {}
+        self.update()
+
+    def set_comp_color_mode(self, mode: str) -> None:
+        mode_value = str(mode).strip().lower()
+        self._comp_color_mode = "single" if mode_value == "single" else "alternating"
+        self.update()
+
+    def _comp_region_color(self, source_take_number: int) -> QColor:
+        if self._comp_color_mode == "single":
+            return QColor(237, 168, 67, 210)
+        palette = [
+            QColor(237, 168, 67, 210),
+            QColor(91, 168, 255, 210),
+            QColor(168, 224, 99, 210),
+            QColor(215, 130, 255, 210),
+        ]
+        index = abs(int(source_take_number)) % len(palette)
+        return palette[index]
 
     def time_to_x(self, ms: int) -> int:
         seconds = ms / 1000.0
@@ -106,6 +139,35 @@ class TimelineWidget(QWidget):
                         painter.setPen(Qt.white)
                         painter.drawText(comp_rect, Qt.AlignCenter, "COMP")
 
+            # Draw comp regions as track overlays.
+            for region in self._comp_regions_by_track.get(track_index, []):
+                start_ms = int(region.get("start_ms", 0))
+                end_ms = int(region.get("end_ms", 0))
+                if end_ms <= start_ms:
+                    continue
+                source_take_number = int(region.get("source_take_number", 0))
+                color = self._comp_region_color(source_take_number)
+                x1 = self.time_to_x(start_ms)
+                x2 = self.time_to_x(end_ms)
+                overlay = QRect(min(x1, x2), top + 22, max(abs(x2 - x1), 2), TRACK_HEIGHT - 29)
+                painter.setPen(QPen(color, 2, Qt.DashLine))
+                fill = QColor(color)
+                fill.setAlpha(60)
+                painter.setBrush(fill)
+                painter.drawRect(overlay)
+                painter.setPen(Qt.white)
+                painter.drawText(overlay.adjusted(4, 0, -4, 0), Qt.AlignLeft | Qt.AlignVCenter, f"R{int(region.get('region_id', 0))}")
+
+        # Draw in-progress range selection on top for immediate feedback.
+        if self._comp_selecting and self._comp_select_track_index is not None and self._comp_select_start_ms is not None and self._comp_select_end_ms is not None:
+            top = int(self._comp_select_track_index) * (TRACK_HEIGHT + TRACK_GAP)
+            x1 = self.time_to_x(self._comp_select_start_ms)
+            x2 = self.time_to_x(self._comp_select_end_ms)
+            sel_rect = QRect(min(x1, x2), top + 22, max(abs(x2 - x1), 2), TRACK_HEIGHT - 29)
+            painter.setPen(QPen(QColor(112, 190, 255), 2))
+            painter.setBrush(QColor(112, 190, 255, 55))
+            painter.drawRect(sel_rect)
+
         painter.end()
 
     def _x_to_ms(self, x: int) -> int:
@@ -124,6 +186,18 @@ class TimelineWidget(QWidget):
                 return clip
         return None
 
+    def _track_index_for_y(self, y: int) -> Optional[int]:
+        if y < 0:
+            return None
+        row_height = TRACK_HEIGHT + TRACK_GAP
+        track_index = int(y // row_height)
+        if track_index < 0 or track_index >= len(self.project.tracks):
+            return None
+        track_top = track_index * row_height
+        if y > (track_top + TRACK_HEIGHT):
+            return None
+        return track_index
+
     def mousePressEvent(self, event):
         if event.button() != Qt.LeftButton:
             return super().mousePressEvent(event)
@@ -131,6 +205,12 @@ class TimelineWidget(QWidget):
         clip_id = self._find_clip_at_point(event.position().toPoint())
         self.selected_clip_id = clip_id
         if clip_id is None:
+            track_index = self._track_index_for_y(event.position().toPoint().y())
+            if track_index is not None and self.selected_track_index is not None and int(track_index) == int(self.selected_track_index):
+                self._comp_selecting = True
+                self._comp_select_track_index = int(track_index)
+                self._comp_select_start_ms = self._x_to_ms(event.position().toPoint().x())
+                self._comp_select_end_ms = self._comp_select_start_ms
             self._dragging_clip_id = None
             self._drag_start_point = None
             self._drag_origin_start_ms = None
@@ -146,6 +226,11 @@ class TimelineWidget(QWidget):
         self.update()
 
     def mouseMoveEvent(self, event):
+        if self._comp_selecting and self._comp_select_start_ms is not None:
+            self._comp_select_end_ms = self._x_to_ms(event.position().toPoint().x())
+            self.update()
+            return
+
         if self._dragging_clip_id is None or self._drag_start_point is None or self._drag_origin_start_ms is None:
             return super().mouseMoveEvent(event)
         if not (event.buttons() & Qt.LeftButton):
@@ -163,6 +248,23 @@ class TimelineWidget(QWidget):
         self.update()
 
     def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and self._comp_selecting:
+            start_ms = self._comp_select_start_ms
+            end_ms = self._comp_select_end_ms
+            track_index = self._comp_select_track_index
+            self._comp_selecting = False
+            self._comp_select_start_ms = None
+            self._comp_select_end_ms = None
+            self._comp_select_track_index = None
+
+            if start_ms is not None and end_ms is not None and track_index is not None:
+                range_start = min(int(start_ms), int(end_ms))
+                range_end = max(int(start_ms), int(end_ms))
+                if range_end - range_start >= 50 and self.on_comp_range_selected is not None:
+                    self.on_comp_range_selected(int(track_index), range_start, range_end)
+            self.update()
+            return super().mouseReleaseEvent(event)
+
         if event.button() == Qt.LeftButton and self._dragging_clip_id is not None and self.on_project_changed is not None:
             self.on_project_changed()
         self._dragging_clip_id = None

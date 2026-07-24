@@ -202,7 +202,7 @@ Purpose: single source of truth for active issues, errors, and fix tasks across 
 
 ## Prioritized Execution Order
 
-1. Phase 5B UI and timeline polishing
+1. Phase 5B validation pass and recovery-history UX
 2. Phase 6 installer validation
 3. P2-1 stems progress UX + P2-2 dependency error guidance if they resurface in QA
 4. P4-2 section-alteration persistence if project metadata changes

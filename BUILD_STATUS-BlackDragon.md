@@ -9,10 +9,11 @@
 ## PHASE-BY-PHASE STATUS
 
 ### PHASE 1: CORE DAW
+
 **Status:** COMPLETE (100%)
 
 | Deliverable | File | Status | Notes |
-|------------|------|--------|-------|
+| ---------- | ---- | ------ | ----- |
 | Project Model | `project_model.py` | Done | Clip, Track, Project dataclasses; JSON .eproj format |
 | Audio Info | `audio_info.py` | Done | soundfile + ffprobe backend (pydub removed) |
 | Timeline Widget | `timeline_widget.py` | Done | Visual rendering works; no drag-edit yet |
@@ -22,6 +23,7 @@
 | Project Save/Load | `project_model.py` | Done | JSON .eproj files |
 
 **Feature Checklist:**
+
 - New Project → works
 - Add Track → works (adds mixer row automatically)
 - Add Clip from File → works
@@ -29,16 +31,18 @@
 - Timeline displays clips → works
 
 **Known Issues:**
+
 - Timeline is read-only (no drag/resize of clips yet)
 - No duplicate-filename check on `audioinfo.py` — delete that file if it still exists
 
 ---
 
 ### PHASE 2: STEMS, PLAYBACK, MIXING
+
 **Status:** COMPLETE (100%)
 
 | Deliverable | File | Status | Notes |
-|------------|------|--------|-------|
+| ---------- | ---- | ------ | ----- |
 | Stems Engine | `stems_engine.py` | Done | Demucs wrapper; supports 4-stem and 6-stem models |
 | Playback Mixer | `playback_mixer.py` | Done | Audio mixing with per-track volume |
 | First Run Dialog | `echo_pro_app.py` | Done | Welcome screen |
@@ -47,6 +51,7 @@
 | Play Button | `echo_pro_app.py` | Done | Full project playback |
 
 **Feature Checklist:**
+
 - Split Song into Stems → works (requires `demucs` CLI on PATH)
 - Stems auto-import into tracks → FIXED (was broken by pydub/Python 3.14 issue)
 - Play Project → works
@@ -54,6 +59,7 @@
 - Browse Projects dialog → works
 
 **Bug Fixes Applied (2026-07-22):**
+
 - `audio_info.py`: Replaced `pydub.AudioSegment` with `soundfile` + `ffprobe`.
   `audioop` was removed in Python 3.14, breaking all pydub calls silently.
 - `stems_engine.py`: `add_stems_to_project` now handles ALL stems returned by
@@ -63,10 +69,11 @@
 ---
 
 ### PHASE 3: VOICE RECORDING + VOICE CONVERSION
+
 **Status:** COMPLETE (100%)
 
 | Deliverable | File | Status | Notes |
-|------------|------|--------|-------|
+| ---------- | ---- | ------ | ----- |
 | Voice Profiles | `voice_store.py` | Done | JSON persistence with consent flags |
 | Microphone Recording | `voice_recorder.py` | Done | 10-second recording via sounddevice |
 | Voice Interface | `voice_interface.py` | Done | Dataclasses + placeholder conversion |
@@ -75,6 +82,7 @@
 | Apply Voice Effect | `echo_pro_app.py` | Done | Creates new track with converted audio |
 
 **Feature Checklist:**
+
 - Manage Voices button → opens dialog
 - Record New Voice (10s) → works
 - Voice profiles save to `%APPDATA%\EchoPro\voices\` → works
@@ -82,20 +90,23 @@
 - Consent warning → mandatory before use
 
 **Bug Fixes Applied (2026-07-22):**
+
 - `voice_interface.py`: `voice_convert()` now uses `soundfile` + `numpy` for
   gain adjustment; pydub dependency removed.
 
 **Model Integration Point:**
+
 - `voice_interface.py::voice_convert()` — replace body with RVC, VITS, or
   Resembler when a real model is available. Interface (inputs/outputs) is frozen.
 
 ---
 
 ### PHASE 4: MUSIC GENERATOR + SONG PLANNER
+
 **Status:** COMPLETE (100%)
 
 | Deliverable | File | Status | Notes |
-|------------|------|--------|-------|
+| ---------- | ---- | ------ | ----- |
 | T2M Interface | `t2m_interface.py` | Done | Frozen dataclass interfaces |
 | Music Generator | `music_generator.py` | Done | Wrapper with config and style validation |
 | Song Planner | `song_planner.py` | Done | Lyrics splitting + duration planning |
@@ -104,6 +115,7 @@
 | Cloud Toggle | `echo_pro_app.py` | Done | yes/no cloud backend field in Mixer toolbar |
 
 **Feature Checklist:**
+
 - Generate Clip button → works (outputs silent placeholder WAV)
 - Generate Full Song button → works
 - Lyrics splitting → works for multi-section songs
@@ -111,20 +123,23 @@
 - Generated clips added to project → works
 
 **Bug Fixes Applied (2026-07-22):**
+
 - `t2m_interface.py`: `t2m_generate_clip()` now uses stdlib `wave` module to
   write silent WAV; pydub dependency removed.
 
 **Model Integration Point:**
+
 - `t2m_interface.py::t2m_generate_clip()` — replace body with AudioLDM,
   Stable Audio, or MusicGen. Interface is frozen.
 
 ---
 
 ### PHASE 5: UI MODERNISATION + WINDOWS INSTALLER
+
 **Status:** IN PROGRESS (75%)
 
 | Deliverable | File | Status | Notes |
-|------------|------|--------|-------|
+| ---------- | ---- | ------ | ----- |
 | Dark theme stylesheet | `echo_pro_app.py` | Done | Navy/red dark theme via QSS |
 | Tab layout | `echo_pro_app.py` | Done | Mixer / Recording / Generate / Voice FX |
 | Per-track mixer rows | `echo_pro_app.py` | Done | TrackMixerRow: slider, pan knob, S/M buttons |
@@ -138,6 +153,7 @@
 | EchoPro.exe | `Output/` | Pending | Not yet produced in this session |
 
 **Remaining Phase 5 Work:**
+
 - [ ] Wire pan knob values into playback mixer (currently UI-only)
 - [ ] Wire solo/mute button state into `play_project()` to mute/solo tracks
 - [ ] Review and update `EchoPro.spec` for data folder inclusions
@@ -149,7 +165,7 @@
 ## DEPENDENCY STATUS
 
 | Library | Status | Used For |
-|---------|--------|----------|
+| ------- | ------ | -------- |
 | PySide6 | OK | All UI |
 | soundfile | OK | Audio duration (WAV/FLAC/OGG) |
 | ffprobe (ffmpeg) | OK | Audio duration (MP3 and all formats) |
@@ -163,7 +179,7 @@
 ## ACTIVE BUG LIST
 
 | # | Severity | File | Issue | Fix Applied |
-|---|----------|------|-------|-------------|
+| - | -------- | ---- | ----- | ----------- |
 | 1 | Critical | `audio_info.py` | pydub/audioop crash on Python 3.14 | YES — soundfile+ffprobe |
 | 2 | Critical | `stems_engine.py` | Stems not imported after Demucs | YES — fixed via #1 + all-stems loop |
 | 3 | Critical | `voice_interface.py` | pydub crash in voice_convert | YES — soundfile+numpy |
@@ -177,54 +193,49 @@
 ## READY-TO-TEST FEATURES
 
 ### Phase 1
-```
-+ Create new project
-+ Add track to project
-+ Add audio clip to track (WAV, MP3, FLAC, OGG)
-+ View clips on timeline
-+ Save project as .eproj
-+ Load project from disk
-+ Open project from file browser
-```
+
+- Create new project
+- Add track to project
+- Add audio clip to track (WAV, MP3, FLAC, OGG)
+- View clips on timeline
+- Save project as .eproj
+- Load project from disk
+- Open project from file browser
 
 ### Phase 2
-```
-+ Split song into stems (requires demucs on PATH)
-+ All stems auto-import as tracks and clips  [FIXED]
-+ Play entire project
-+ Adjust track volume via mixer slider
-+ First-run wizard shows on first launch
-+ Browse projects in library
-```
+
+- Split song into stems (requires demucs on PATH)
+- All stems auto-import as tracks and clips [FIXED]
+- Play entire project
+- Adjust track volume via mixer slider
+- First-run wizard shows on first launch
+- Browse projects in library
 
 ### Phase 3
-```
-+ Record voice profile (10s microphone capture)
-+ Save and list voice profiles
-+ Apply placeholder voice effect (gain)  [FIXED]
-+ New track created with converted audio
-+ Consent warning enforced
-```
+
+- Record voice profile (10s microphone capture)
+- Save and list voice profiles
+- Apply placeholder voice effect (gain) [FIXED]
+- New track created with converted audio
+- Consent warning enforced
 
 ### Phase 4
-```
-+ Generate single music clip (silent placeholder)  [FIXED]
-+ Generate full song with sections (silent placeholder)  [FIXED]
-+ Lyrics split across sections
-+ Duration planning
-+ Cloud toggle selects backend
-+ Generated clips added to project
-```
+
+- Generate single music clip (silent placeholder) [FIXED]
+- Generate full song with sections (silent placeholder) [FIXED]
+- Lyrics split across sections
+- Duration planning
+- Cloud toggle selects backend
+- Generated clips added to project
 
 ### Phase 5 (UI)
-```
-+ Dark navy/red theme applied globally
-+ Mixer tab: per-track rows with volume slider + pan knob + S/M buttons
-+ Recording tab: transport, arm, tempo, level meters
-+ Generate tab: music generator + song planner forms
-+ Voice FX tab: voice effect + manage voices
-+ Timeline visible at bottom across all tabs
-```
+
+- Dark navy/red theme applied globally
+- Mixer tab: per-track rows with volume slider + pan knob + S/M buttons
+- Recording tab: transport, arm, tempo, level meters
+- Generate tab: music generator + song planner forms
+- Voice FX tab: voice effect + manage voices
+- Timeline visible at bottom across all tabs
 
 ---
 
@@ -242,7 +253,7 @@
 ## COMPLETION MATRIX
 
 | Phase | Description | Code | Bugs Fixed | UI | Ready |
-|-------|-------------|------|------------|----|-------|
+| ----- | ----------- | ---- | ---------- | -- | ----- |
 | 1 | Core DAW | 100% | All clear | Modern | YES |
 | 2 | Stems + Playback | 100% | All clear | Modern | YES |
 | 3 | Voice Recording | 100% | All clear | Modern | YES |

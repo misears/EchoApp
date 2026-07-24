@@ -44,6 +44,7 @@ class RecordingPreset:
     auto_punch_enabled: bool = False
     auto_punch_start_bars: int = 0
     auto_punch_duration_bars: int = 4
+    auto_disarm_after_boundary: bool = False
 
 
 @dataclass
@@ -75,6 +76,7 @@ class RecordingSession:
             "take_sort": "newest",
             "take_loop": False,
             "hide_inactive_take_clips": False,
+            "take_view_mode": "expanded",
         }
         self.comp_regions: Dict[int, List[CompRegion]] = {}
         self.next_comp_region_id: int = 1
@@ -253,6 +255,7 @@ class RecordingSession:
         notes: str = "",
         start_sample: Optional[int] = None,
         end_sample: Optional[int] = None,
+        clip_events: Optional[int] = None,
     ) -> Optional[RecordingTake]:
         """Finish current take, record stats."""
         if track_id not in self.takes or not self.takes[track_id]:
@@ -266,6 +269,14 @@ class RecordingSession:
             take.end_sample = int(end_sample)
         take.level_stats = level_stats
         take.notes = notes
+        if clip_events is None:
+            raw_events = level_stats.get("clip_events", take.clip_events)
+            try:
+                take.clip_events = int(raw_events)
+            except (TypeError, ValueError):
+                take.clip_events = int(take.clip_events)
+        else:
+            take.clip_events = max(0, int(clip_events))
         
         self.total_recording_time_seconds += duration_seconds
         
@@ -362,6 +373,24 @@ class RecordingSession:
             return False
         take.rating = max(0, min(5, int(rating)))
         return True
+
+    def set_take_notes(self, track_id: int, take_number: int, notes: str) -> bool:
+        take = self.get_take(track_id, take_number)
+        if take is None:
+            return False
+        take.notes = str(notes)
+        return True
+
+    def apply_take_note_template(self, track_id: int, take_number: int, template_name: str) -> bool:
+        templates = {
+            "clean": "Clean take",
+            "noisy": "Noisy take - recheck room/input chain",
+            "timing": "Timing issue - tighten entrance/phrasing",
+        }
+        text = templates.get(str(template_name).strip().lower())
+        if text is None:
+            return False
+        return self.set_take_notes(track_id, take_number, text)
     
     def delete_take(self, track_id: int, take_number: int) -> bool:
         """Delete a specific take."""

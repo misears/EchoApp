@@ -9,6 +9,9 @@ from threading import Lock
 from typing import Callable, List, Optional, Tuple
 import sounddevice as sd
 
+SILENCE_WARN_DB = -55.0
+SILENCE_WARN_SECONDS = 1.0
+
 class AudioBuffer:
     """Ring buffer for real-time audio processing."""
     
@@ -233,6 +236,15 @@ class Track:
         self.current_level_db = -80.0
         self.peak_level_db = -80.0
         self.clipping_detected = False
+
+        # Recording diagnostics
+        self.clip_event_count = 0
+        self.peak_clip_hold_seconds = 0.0
+        self.silence_warning_active = False
+        self.silence_event_count = 0
+        self._clip_hold_samples = 0
+        self._silence_run_samples = 0
+        self._last_block_clipped = False
         
         self.lock = Lock()
     
@@ -247,11 +259,54 @@ class Track:
         current_db = 20 * np.log10(rms + 1e-10)
         peak = float(np.max(np.abs(audio)))
         peak_db = 20 * np.log10(peak + 1e-10)
+        sample_count = int(audio.shape[1]) if audio.ndim == 2 else 0
+        clipped = peak > 1.0
 
         with self.lock:
             self.current_level_db = current_db
             self.peak_level_db = peak_db
-            self.clipping_detected = peak > 1.0
+            self.clipping_detected = clipped
+
+            if clipped:
+                if not self._last_block_clipped:
+                    self.clip_event_count += 1
+                self._clip_hold_samples += max(0, sample_count)
+                hold_seconds = self._clip_hold_samples / float(max(1, self.sample_rate))
+                self.peak_clip_hold_seconds = max(self.peak_clip_hold_seconds, hold_seconds)
+            else:
+                self._clip_hold_samples = 0
+            self._last_block_clipped = clipped
+
+            if current_db < SILENCE_WARN_DB:
+                self._silence_run_samples += max(0, sample_count)
+                if (
+                    not self.silence_warning_active
+                    and self._silence_run_samples / float(max(1, self.sample_rate)) >= SILENCE_WARN_SECONDS
+                ):
+                    self.silence_warning_active = True
+                    self.silence_event_count += 1
+            else:
+                self._silence_run_samples = 0
+                self.silence_warning_active = False
+
+    def reset_recording_diagnostics(self) -> None:
+        with self.lock:
+            self.clip_event_count = 0
+            self.peak_clip_hold_seconds = 0.0
+            self.silence_warning_active = False
+            self.silence_event_count = 0
+            self._clip_hold_samples = 0
+            self._silence_run_samples = 0
+            self._last_block_clipped = False
+
+    def get_recording_diagnostics(self) -> dict:
+        with self.lock:
+            return {
+                "clip_events": int(self.clip_event_count),
+                "peak_clip_hold_seconds": float(self.peak_clip_hold_seconds),
+                "silence_warning_active": bool(self.silence_warning_active),
+                "silence_events": int(self.silence_event_count),
+            }
     
     def get_playback_audio(self, num_samples: int) -> np.ndarray:
         """Get audio for playback."""

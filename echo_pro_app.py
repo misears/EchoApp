@@ -1,8 +1,25 @@
 
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false
+
+import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, Optional, Tuple
+
+
+def _configure_qt_font_fallback() -> None:
+    """Point Qt at Windows system fonts when bundled Qt fonts are unavailable."""
+    if os.name != "nt":
+        return
+    if os.environ.get("QT_QPA_FONTDIR"):
+        return
+    windows_fonts = Path(os.environ.get("WINDIR", "C:\\Windows")) / "Fonts"
+    if windows_fonts.exists():
+        os.environ["QT_QPA_FONTDIR"] = str(windows_fonts)
+
+
+_configure_qt_font_fallback()
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget,
@@ -35,9 +52,16 @@ from voice_effects import apply_voice_conversion, get_voice_backend_capability
 from music_generator import generate_music_clip, get_music_backend_capability
 from song_planner import generate_song_sections
 from recording_controller import RecordingController
-from recording_ui_components import TrackMeterWidget, TransportBar, RecordingDiagnosticsWidget
+from recording_ui_components import (
+    RecordingDiagnosticsWidget,
+    TakeListWidget,
+    TrackMeterWidget,
+    TransportBar,
+    TransportPunchLoopWidget,
+)
 from audio_device import device_manager
 from p5a_regression_runner import format_regression_summary, run_phase5a_regression_checks
+from p5b_regression_runner import format_regression_summary as format_p5b_regression_summary, run_phase5b_regression_checks
 from recording_recovery import RecoverySnapshotManager
 from input_validation import parse_float, parse_int, parse_time_signature, run_common_validation_checks
 
@@ -145,7 +169,7 @@ class VoiceManagerDialog(QDialog):
         profiles = load_voice_profiles()
         for p in profiles:
             item = QListWidgetItem(f"{p.name} [{p.file_path}]")
-            item.setData(Qt.UserRole, p)
+            item.setData(Qt.ItemDataRole.UserRole, p)
             self.voice_list.addItem(item)
 
     def record_new_voice(self):
@@ -159,9 +183,9 @@ class VoiceManagerDialog(QDialog):
             "Consent confirmation",
             "You should only record your own voice or voices you have explicit permission to use.\n\n"
             "Do you confirm this?",
-            QMessageBox.Yes | QMessageBox.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
-        if confirm != QMessageBox.Yes:
+        if confirm != QMessageBox.StandardButton.Yes:
             return
 
         output_wav = VOICES_DIR / f"{name.replace(' ', '_')}.wav"
@@ -329,6 +353,8 @@ class EchoProWindow(QMainWindow):
         test_devices_btn.clicked.connect(self.test_audio_devices)
         run_p5a_checks_btn = QPushButton("Run P5A Checks")
         run_p5a_checks_btn.clicked.connect(self.run_p5a_regression_checks)
+        run_p5b_checks_btn = QPushButton("Run P5B Checks")
+        run_p5b_checks_btn.clicked.connect(self.run_p5b_regression_checks)
 
         device_row.addWidget(QLabel("Input"))
         device_row.addWidget(self.input_device_combo)
@@ -337,6 +363,7 @@ class EchoProWindow(QMainWindow):
         device_row.addWidget(refresh_devices_btn)
         device_row.addWidget(test_devices_btn)
         device_row.addWidget(run_p5a_checks_btn)
+        device_row.addWidget(run_p5b_checks_btn)
         recording_layout.addLayout(device_row)
 
         transport_row = QHBoxLayout()
@@ -392,55 +419,24 @@ class EchoProWindow(QMainWindow):
         set_count_in_btn.clicked.connect(self.set_recording_count_in)
         timing_row.addWidget(set_count_in_btn)
 
-        self.pre_roll_bar_input = QLineEdit()
-        self.pre_roll_bar_input.setPlaceholderText("Pre-Roll (bars)")
-        timing_row.addWidget(self.pre_roll_bar_input)
-
-        self.post_roll_bar_input = QLineEdit()
-        self.post_roll_bar_input.setPlaceholderText("Post-Roll (bars)")
-        timing_row.addWidget(self.post_roll_bar_input)
-
-        set_roll_btn = QPushButton("Set Pre/Post")
-        set_roll_btn.clicked.connect(self.set_recording_pre_post_roll)
-        timing_row.addWidget(set_roll_btn)
-
-        self.punch_mode_combo = QComboBox()
-        self.punch_mode_combo.addItem("Punch Off", False)
-        self.punch_mode_combo.addItem("Punch On", True)
-        self.punch_mode_combo.currentIndexChanged.connect(self.on_punch_mode_changed)
-        timing_row.addWidget(self.punch_mode_combo)
-
-        self.punch_in_bar_input = QLineEdit()
-        self.punch_in_bar_input.setPlaceholderText("Punch In (bars)")
-        timing_row.addWidget(self.punch_in_bar_input)
-
-        self.punch_out_bar_input = QLineEdit()
-        self.punch_out_bar_input.setPlaceholderText("Punch Out (bars)")
-        timing_row.addWidget(self.punch_out_bar_input)
-
-        set_punch_btn = QPushButton("Set Punch")
-        set_punch_btn.clicked.connect(self.set_recording_punch_range)
-        timing_row.addWidget(set_punch_btn)
-
-        self.loop_mode_combo = QComboBox()
-        self.loop_mode_combo.addItem("Loop Off", False)
-        self.loop_mode_combo.addItem("Loop On", True)
-        self.loop_mode_combo.currentIndexChanged.connect(self.on_loop_mode_changed)
-        timing_row.addWidget(self.loop_mode_combo)
-
-        self.loop_start_bar_input = QLineEdit()
-        self.loop_start_bar_input.setPlaceholderText("Loop Start (bars)")
-        timing_row.addWidget(self.loop_start_bar_input)
-
-        self.loop_end_bar_input = QLineEdit()
-        self.loop_end_bar_input.setPlaceholderText("Loop End (bars)")
-        timing_row.addWidget(self.loop_end_bar_input)
-
-        set_loop_btn = QPushButton("Set Loop")
-        set_loop_btn.clicked.connect(self.set_recording_loop_range)
-        timing_row.addWidget(set_loop_btn)
-
         recording_layout.addLayout(timing_row)
+
+        self.punch_loop_widget = TransportPunchLoopWidget()
+        self.pre_roll_bar_input = self.punch_loop_widget.pre_roll_bar_input
+        self.post_roll_bar_input = self.punch_loop_widget.post_roll_bar_input
+        self.punch_mode_combo = self.punch_loop_widget.punch_mode_combo
+        self.punch_in_bar_input = self.punch_loop_widget.punch_in_bar_input
+        self.punch_out_bar_input = self.punch_loop_widget.punch_out_bar_input
+        self.loop_mode_combo = self.punch_loop_widget.loop_mode_combo
+        self.loop_start_bar_input = self.punch_loop_widget.loop_start_bar_input
+        self.loop_end_bar_input = self.punch_loop_widget.loop_end_bar_input
+
+        self.punch_mode_combo.currentIndexChanged.connect(self.on_punch_mode_changed)
+        self.loop_mode_combo.currentIndexChanged.connect(self.on_loop_mode_changed)
+        self.punch_loop_widget.set_roll_btn.clicked.connect(self.set_recording_pre_post_roll)
+        self.punch_loop_widget.set_punch_btn.clicked.connect(self.set_recording_punch_range)
+        self.punch_loop_widget.set_loop_btn.clicked.connect(self.set_recording_loop_range)
+        recording_layout.addWidget(self.punch_loop_widget)
 
         self.recording_status_label = QLabel("Recording: idle")
         recording_layout.addWidget(self.recording_status_label)
@@ -467,14 +463,21 @@ class EchoProWindow(QMainWindow):
         self.take_filter_combo.currentIndexChanged.connect(self.on_take_review_preferences_changed)
         take_review_header.addWidget(self.take_filter_combo)
 
+        self.take_view_mode_combo = QComboBox()
+        self.take_view_mode_combo.addItem("Expanded", "expanded")
+        self.take_view_mode_combo.addItem("Compact", "compact")
+        self.take_view_mode_combo.currentIndexChanged.connect(self.on_take_review_preferences_changed)
+        take_review_header.addWidget(self.take_view_mode_combo)
+
         refresh_takes_btn = QPushButton("Refresh Takes")
         refresh_takes_btn.clicked.connect(self.refresh_take_review_list)
         take_review_header.addWidget(refresh_takes_btn)
         recording_layout.addLayout(take_review_header)
 
-        self.take_review_list = QListWidget()
-        self.take_review_list.itemDoubleClicked.connect(self.audition_selected_take)
-        recording_layout.addWidget(self.take_review_list)
+        self.take_list_widget = TakeListWidget()
+        self.take_review_list = self.take_list_widget.list_widget
+        self.take_list_widget.on_item_double_clicked(self.audition_selected_take)
+        recording_layout.addWidget(self.take_list_widget)
 
         badge_legend = QLabel(
             "<span style='color:#148250; font-weight:bold;'>■ ACTIVE</span> "
@@ -533,6 +536,22 @@ class EchoProWindow(QMainWindow):
         rate_up_btn.clicked.connect(lambda: self.rate_selected_take(1))
         take_actions_row.addWidget(rate_up_btn)
 
+        best_take_btn = QPushButton("Use Best Take")
+        best_take_btn.clicked.connect(self.use_best_take_for_selected_track)
+        take_actions_row.addWidget(best_take_btn)
+
+        note_clean_btn = QPushButton("Note: Clean")
+        note_clean_btn.clicked.connect(lambda: self.apply_selected_take_note_template("clean"))
+        take_actions_row.addWidget(note_clean_btn)
+
+        note_noisy_btn = QPushButton("Note: Noisy")
+        note_noisy_btn.clicked.connect(lambda: self.apply_selected_take_note_template("noisy"))
+        take_actions_row.addWidget(note_noisy_btn)
+
+        note_timing_btn = QPushButton("Note: Timing")
+        note_timing_btn.clicked.connect(lambda: self.apply_selected_take_note_template("timing"))
+        take_actions_row.addWidget(note_timing_btn)
+
         recording_layout.addLayout(take_actions_row)
 
         comp_actions_row = QHBoxLayout()
@@ -559,6 +578,20 @@ class EchoProWindow(QMainWindow):
         comp_actions_row.addWidget(clear_comp_btn)
 
         recording_layout.addLayout(comp_actions_row)
+
+        recovery_history_row = QHBoxLayout()
+        recovery_history_row.addWidget(QLabel("Recovery History"))
+        self.recovery_history_combo = QComboBox()
+        recovery_history_row.addWidget(self.recovery_history_combo)
+
+        refresh_recovery_btn = QPushButton("Refresh History")
+        refresh_recovery_btn.clicked.connect(self.refresh_recovery_history)
+        recovery_history_row.addWidget(refresh_recovery_btn)
+
+        restore_recovery_btn = QPushButton("Restore Selected")
+        restore_recovery_btn.clicked.connect(self.restore_selected_recovery_snapshot)
+        recovery_history_row.addWidget(restore_recovery_btn)
+        recording_layout.addLayout(recovery_history_row)
 
         self.meter_container = QVBoxLayout()
         self._build_recording_meters()
@@ -687,6 +720,7 @@ class EchoProWindow(QMainWindow):
         # Timeline
         self.timeline = TimelineWidget(self.current_project)
         self.timeline.on_project_changed = self._on_timeline_project_changed
+        self.timeline.on_comp_range_selected = self.on_timeline_comp_range_selected
         layout.addWidget(self.timeline)
 
         container = QWidget()
@@ -703,6 +737,7 @@ class EchoProWindow(QMainWindow):
         self.refresh_alter_section_selector()
         self.update_recording_status_label()
         self._prompt_recovery_for_current_session()
+        self.refresh_recovery_history()
 
         self.update_status("Ready")
 
@@ -733,6 +768,8 @@ class EchoProWindow(QMainWindow):
     def _build_recording_meters(self):
         while self.meter_container.count():
             item = self.meter_container.takeAt(0)
+            if item is None:
+                continue
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
@@ -853,6 +890,7 @@ class EchoProWindow(QMainWindow):
             "take_sort": self.take_sort_combo.currentData(),
             "take_loop": bool(self.take_loop_combo.currentData()),
             "hide_inactive_take_clips": self.hide_inactive_take_clips_btn.isChecked(),
+            "take_view_mode": self.take_view_mode_combo.currentData(),
         }
 
     def _save_take_review_preferences(self) -> None:
@@ -874,11 +912,18 @@ class EchoProWindow(QMainWindow):
         if loop_index >= 0:
             self.take_loop_combo.setCurrentIndex(loop_index)
 
+        view_mode = str(prefs.get("take_view_mode", "expanded"))
+        view_mode_index = self.take_view_mode_combo.findData(view_mode)
+        if view_mode_index >= 0:
+            self.take_view_mode_combo.setCurrentIndex(view_mode_index)
+        self.take_list_widget.set_view_mode(view_mode)
+
         hide_inactive = bool(prefs.get("hide_inactive_take_clips", False))
         self.hide_inactive_take_clips_btn.setChecked(hide_inactive)
         self.timeline.set_hide_inactive_take_clips(hide_inactive)
 
     def on_take_review_preferences_changed(self, *_args):
+        self.take_list_widget.set_view_mode(str(self.take_view_mode_combo.currentData() or "expanded"))
         self._save_take_review_preferences()
         self.refresh_take_review_list()
 
@@ -1024,7 +1069,7 @@ class EchoProWindow(QMainWindow):
 
         if not takes:
             self.take_review_list.addItem("No takes recorded for this track yet.")
-            self.take_review_list.item(0).setFlags(Qt.NoItemFlags)
+            self.take_review_list.item(0).setFlags(Qt.ItemFlag.NoItemFlags)
             return
 
         for take in takes:
@@ -1033,32 +1078,41 @@ class EchoProWindow(QMainWindow):
             status = "ACTIVE" if take.used else "inactive"
             timestamp = take.timestamp.replace("T", " ")[:19]
             clip_flag = "CLIP" if clipping else "OK"
+            clip_events = int(getattr(take, "clip_events", 0))
             keeper_flag = "KEEP" if bool(getattr(take, "is_keeper", False)) else "----"
             muted_flag = "MUTED" if bool(getattr(take, "is_muted", False)) else "AUD"
             rating = int(getattr(take, "rating", 0))
+            note_flag = "NOTE" if str(getattr(take, "notes", "")).strip() else "----"
             text = (
                 f"Take {take.take_number} [{status}] | {take.duration_seconds:.2f}s"
-                f" | Peak {peak_db:.1f} dB | {clip_flag} | {keeper_flag} | {muted_flag} | R{rating} | {timestamp}"
+                f" | Peak {peak_db:.1f} dB | {clip_flag}({clip_events}) | {keeper_flag} | {muted_flag} | R{rating} | {note_flag} | {timestamp}"
             )
             item = QListWidgetItem(text)
-            item.setData(Qt.UserRole, {"track_id": int(track_id), "take_number": take.take_number})
+            item.setData(Qt.ItemDataRole.UserRole, {"track_id": int(track_id), "take_number": take.take_number})
             self.take_review_list.addItem(item)
 
-    def _get_selected_take(self):
+    def _get_selected_take(self) -> Tuple[Optional[int], Optional[int], Optional[object]]:
         track_id, take_number = self._selected_take_ref()
         if track_id is None or take_number is None:
             return None, None, None
         take = self.recording_controller.session.get_take(int(track_id), int(take_number))
         return int(track_id), int(take_number), take
 
-    def _selected_take_ref(self):
+    def _selected_take_ref(self) -> Tuple[Optional[int], Optional[int]]:
         item = self.take_review_list.currentItem()
         if item is None:
             return None, None
-        data = item.data(Qt.UserRole)
+        data = item.data(Qt.ItemDataRole.UserRole)
         if not isinstance(data, dict):
             return None, None
-        return data.get("track_id"), data.get("take_number")
+        track_id = data.get("track_id")
+        take_number = data.get("take_number")
+        if not isinstance(track_id, (int, str)) or not isinstance(take_number, (int, str)):
+            return None, None
+        try:
+            return int(track_id), int(take_number)
+        except ValueError:
+            return None, None
 
     def set_selected_take_active(self):
         track_id, take_number = self._selected_take_ref()
@@ -1124,9 +1178,9 @@ class EchoProWindow(QMainWindow):
             self,
             "Delete take",
             f"Delete take {take_number} from track {track_id}?",
-            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
-        if confirm != QMessageBox.Yes:
+        if confirm != QMessageBox.StandardButton.Yes:
             return
 
         if self.recording_controller.session.delete_take(int(track_id), int(take_number)):
@@ -1146,7 +1200,7 @@ class EchoProWindow(QMainWindow):
 
     def toggle_selected_take_keeper(self):
         track_id, take_number, take = self._get_selected_take()
-        if take is None:
+        if take is None or track_id is None or take_number is None:
             QMessageBox.warning(self, "Take review", "Select a take first.")
             return
 
@@ -1163,7 +1217,7 @@ class EchoProWindow(QMainWindow):
 
     def toggle_selected_take_muted(self):
         track_id, take_number, take = self._get_selected_take()
-        if take is None:
+        if take is None or track_id is None or take_number is None:
             QMessageBox.warning(self, "Take review", "Select a take first.")
             return
 
@@ -1180,7 +1234,7 @@ class EchoProWindow(QMainWindow):
 
     def rate_selected_take(self, delta: int):
         track_id, take_number, take = self._get_selected_take()
-        if take is None:
+        if take is None or track_id is None or take_number is None:
             QMessageBox.warning(self, "Take review", "Select a take first.")
             return
 
@@ -1195,6 +1249,52 @@ class EchoProWindow(QMainWindow):
         self.refresh_take_review_list()
         self.refresh_timeline()
         self.update_status(f"Take {take_number} rating set to {new_rating}")
+
+    def use_best_take_for_selected_track(self):
+        track_id = self.take_track_combo.currentData()
+        if track_id is None:
+            QMessageBox.warning(self, "Take review", "Select a track first.")
+            return
+
+        takes = self.recording_controller.get_track_takes(int(track_id))
+        if not takes:
+            QMessageBox.warning(self, "Take review", "No takes recorded for this track.")
+            return
+
+        def score(take) -> tuple:
+            keeper_rank = 0 if bool(getattr(take, "is_keeper", False)) else 1
+            clip_events = int(getattr(take, "clip_events", 0))
+            rating_rank = -int(getattr(take, "rating", 0))
+            take_rank = -int(getattr(take, "take_number", 0))
+            return (keeper_rank, clip_events, rating_rank, take_rank)
+
+        best_take = sorted(takes, key=score)[0]
+        if self.recording_controller.set_active_take(int(track_id), int(best_take.take_number)):
+            self._sync_take_clips_for_track(int(track_id))
+            self._set_active_take_clip_metadata(int(track_id), int(best_take.take_number))
+            self.recording_controller.session.save_session_metadata()
+            self.refresh_take_review_list()
+            self.refresh_timeline()
+            self.update_status(
+                f"Best take selected for track {track_id}: take {best_take.take_number} "
+                f"(keeper={bool(getattr(best_take, 'is_keeper', False))}, clip_events={int(getattr(best_take, 'clip_events', 0))})"
+            )
+        else:
+            QMessageBox.warning(self, "Take review", "Could not activate best take.")
+
+    def apply_selected_take_note_template(self, template_name: str):
+        track_id, take_number, take = self._get_selected_take()
+        if take is None or track_id is None or take_number is None:
+            QMessageBox.warning(self, "Take review", "Select a take first.")
+            return
+
+        if not self.recording_controller.session.apply_take_note_template(track_id, take_number, template_name):
+            QMessageBox.warning(self, "Take review", "Could not apply note template.")
+            return
+
+        self.recording_controller.session.save_session_metadata()
+        self.refresh_take_review_list()
+        self.update_status(f"Applied '{template_name}' note template to take {take_number} on track {track_id}")
 
     def _parse_comp_selection_ms(self) -> Optional[Tuple[int, int]]:
         start_text = self.comp_start_sec_input.text().strip()
@@ -1215,6 +1315,16 @@ class EchoProWindow(QMainWindow):
             return None
 
         return int(round(start_sec * 1000.0)), int(round(end_sec * 1000.0))
+
+    def on_timeline_comp_range_selected(self, track_id: int, start_ms: int, end_ms: int) -> None:
+        self.comp_start_sec_input.setText(f"{max(0.0, start_ms / 1000.0):.3f}")
+        self.comp_end_sec_input.setText(f"{max(0.0, end_ms / 1000.0):.3f}")
+        combo_index = self.take_track_combo.findData(int(track_id))
+        if combo_index >= 0:
+            self.take_track_combo.setCurrentIndex(combo_index)
+        self.update_status(
+            f"Comp range selected from timeline: track {track_id}, {start_ms}ms to {end_ms}ms"
+        )
 
     def create_comp_region_from_selection(self):
         track_id, take_number = self._selected_take_ref()
@@ -1326,9 +1436,11 @@ class EchoProWindow(QMainWindow):
             reason=reason,
             interrupted=interrupted,
         )
+        self.refresh_recovery_history()
 
     def _clear_recovery_snapshot(self) -> None:
         self.recovery_manager.clear_snapshot(self.recording_controller.session.session_id)
+        self.refresh_recovery_history()
 
     def _restore_from_snapshot(self, snapshot: Dict[str, object]) -> bool:
         payload = snapshot.get("payload")
@@ -1376,7 +1488,52 @@ class EchoProWindow(QMainWindow):
         self.refresh_take_review_list()
         self.sync_recording_controls_from_controller()
         self.refresh_timeline()
+        self.refresh_recovery_history()
         return True
+
+    def refresh_recovery_history(self) -> None:
+        session_id = self.recording_controller.session.session_id
+        items = self.recovery_manager.list_snapshot_history(session_id, limit=20)
+        self.recovery_history_combo.blockSignals(True)
+        self.recovery_history_combo.clear()
+        for path in items:
+            self.recovery_history_combo.addItem(path.name, str(path))
+        self.recovery_history_combo.blockSignals(False)
+
+    def restore_selected_recovery_snapshot(self) -> None:
+        selected_path = self.recovery_history_combo.currentData()
+        if not selected_path:
+            QMessageBox.warning(self, "Recovery", "No recovery snapshot selected.")
+            return
+
+        snapshot = self.recovery_manager.load_snapshot_from_path(Path(str(selected_path)))
+        if snapshot is None:
+            QMessageBox.warning(self, "Recovery", "Could not load selected recovery snapshot.")
+            return
+
+        valid, reason = self.recovery_manager.validate_snapshot(
+            snapshot,
+            expected_session_id=self.recording_controller.session.session_id,
+            expected_project_name=self.current_project.name,
+            max_age_hours=24 * 30,
+        )
+        if not valid:
+            QMessageBox.warning(self, "Recovery", f"Selected snapshot is invalid: {reason}")
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Restore Recovery Snapshot",
+            "Restore selected snapshot history entry into current session state?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        if self._restore_from_snapshot(snapshot):
+            self.update_status("Recovery snapshot restored from history")
+        else:
+            QMessageBox.warning(self, "Recovery", "Failed to restore selected recovery snapshot.")
 
     def _prompt_recovery_for_current_session(self) -> None:
         session_id = self.recording_controller.session.session_id
@@ -1400,10 +1557,10 @@ class EchoProWindow(QMainWindow):
             "Interrupted Recording Detected",
             "Echo Pro found an interrupted recording snapshot for this session.\n\n"
             "Restore recording state and comp metadata now?",
-            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
 
-        if choice == QMessageBox.Yes:
+        if choice == QMessageBox.StandardButton.Yes:
             if self._restore_from_snapshot(snapshot):
                 self.update_status("Recovered interrupted recording session state")
             else:
@@ -1490,9 +1647,9 @@ class EchoProWindow(QMainWindow):
             self,
             "Delete track",
             f"Delete track '{track.name}' and {clip_count} clip(s) on it?",
-            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
-        if confirm != QMessageBox.Yes:
+        if confirm != QMessageBox.StandardButton.Yes:
             return
 
         self.current_project.tracks.pop(track_index)
@@ -1712,17 +1869,9 @@ class EchoProWindow(QMainWindow):
             QMessageBox.warning(self, "Audio device test", "Selected output device is not usable.")
             return
 
+        preflight = device_manager.get_preflight_summary(required_input_channels=2, required_output_channels=2)
         ok, message = device_manager.test_device_configuration()
-        summary = device_manager.get_device_summary()
-        details = (
-            f"Input: {summary['input_device']}\n"
-            f"Output: {summary['output_device']}\n"
-            f"Sample Rate: {summary['sample_rate']} Hz\n"
-            f"Buffer Size: {summary['buffer_size']}\n"
-            f"Input Latency: {summary['input_latency_ms']:.1f} ms\n"
-            f"Output Latency: {summary['output_latency_ms']:.1f} ms\n"
-            f"Round Trip Latency: {summary['total_latency_ms']:.1f} ms"
-        )
+        details = device_manager.format_preflight_summary(preflight)
 
         if ok:
             QMessageBox.information(
@@ -1730,7 +1879,9 @@ class EchoProWindow(QMainWindow):
                 "Audio Device Test Passed",
                 f"Result: {message}\n\n{details}",
             )
-            self.update_status(f"Device test passed ({summary['total_latency_ms']:.1f} ms round trip)")
+            self.update_status(
+                f"Device test passed ({float(preflight.get('total_latency_ms', 0.0)):.1f} ms round trip)"
+            )
         else:
             QMessageBox.critical(
                 self,
@@ -1744,14 +1895,60 @@ class EchoProWindow(QMainWindow):
         report = run_phase5a_regression_checks()
         summary = format_regression_summary(report)
 
-        if int(report.get("failed", 0)) == 0:
+        failed_raw = report.get("failed", 0)
+        if isinstance(failed_raw, (int, float, str)):
+            try:
+                failed_count = int(failed_raw)
+            except ValueError:
+                failed_count = 0
+        else:
+            failed_count = 0
+
+        passed_raw = report.get("passed", 0)
+        if isinstance(passed_raw, (int, float, str)):
+            try:
+                passed_count = int(passed_raw)
+            except ValueError:
+                passed_count = 0
+        else:
+            passed_count = 0
+
+        if failed_count == 0:
             QMessageBox.information(self, "P5A Regression Checks", summary)
         else:
             QMessageBox.warning(self, "P5A Regression Checks", summary)
 
-        self.update_status(
-            f"P5A regression checks complete: {report.get('passed', 0)} passed, {report.get('failed', 0)} failed"
-        )
+        self.update_status(f"P5A regression checks complete: {passed_count} passed, {failed_count} failed")
+
+    def run_p5b_regression_checks(self):
+        self.update_status("Running P5B regression checks...")
+        report = run_phase5b_regression_checks()
+        summary = format_p5b_regression_summary(report)
+
+        failed_raw = report.get("failed", 0)
+        if isinstance(failed_raw, (int, float, str)):
+            try:
+                failed_count = int(failed_raw)
+            except ValueError:
+                failed_count = 0
+        else:
+            failed_count = 0
+
+        passed_raw = report.get("passed", 0)
+        if isinstance(passed_raw, (int, float, str)):
+            try:
+                passed_count = int(passed_raw)
+            except ValueError:
+                passed_count = 0
+        else:
+            passed_count = 0
+
+        if failed_count == 0:
+            QMessageBox.information(self, "P5B Regression Checks", summary)
+        else:
+            QMessageBox.warning(self, "P5B Regression Checks", summary)
+
+        self.update_status(f"P5B regression checks complete: {passed_count} passed, {failed_count} failed")
 
     def arm_recording_track(self):
         try:
@@ -2022,6 +2219,21 @@ class EchoProWindow(QMainWindow):
     def refresh_timeline(self):
         self.timeline.set_project(self.current_project)
         self.timeline.set_selected_track(self.selected_track_index)
+        self.timeline.clear_comp_regions()
+        for track_id in range(len(self.current_project.tracks)):
+            comp_regions = self.recording_controller.session.get_comp_regions_for_track(int(track_id))
+            serialized = [
+                {
+                    "region_id": int(region.region_id),
+                    "start_ms": int(region.start_ms),
+                    "end_ms": int(region.end_ms),
+                    "source_take_number": int(region.source_take_number),
+                    "enabled": bool(region.enabled),
+                }
+                for region in comp_regions
+                if bool(region.enabled)
+            ]
+            self.timeline.set_comp_regions_for_track(int(track_id), serialized)
         self.timeline.update()
 
     def _parse_int_field(self, text: str, *, field_name: str, allow_empty: bool = False, default_value: Optional[int] = None) -> Optional[int]:
@@ -2096,6 +2308,7 @@ class EchoProWindow(QMainWindow):
         self.refresh_alter_section_selector()
         self.update_recording_status_label()
         self._prompt_recovery_for_current_session()
+        self.refresh_recovery_history()
         self.refresh_timeline()
         self.update_status("New project created")
 
@@ -2131,6 +2344,7 @@ class EchoProWindow(QMainWindow):
             self.refresh_alter_section_selector()
             self.update_recording_status_label()
             self._prompt_recovery_for_current_session()
+            self.refresh_recovery_history()
             self.refresh_timeline()
             self.update_status(f"Opened project: {filename}")
         except Exception as e:
@@ -2158,7 +2372,7 @@ class EchoProWindow(QMainWindow):
 
     def browse_projects(self):
         dlg = ProjectBrowserDialog(self)
-        if dlg.exec() == QDialog.Accepted and dlg.selected_path:
+        if dlg.exec() == QDialog.DialogCode.Accepted and dlg.selected_path:
             filename = dlg.selected_path
             try:
                 proj = load_project(Path(filename))
@@ -2290,7 +2504,7 @@ class EchoProWindow(QMainWindow):
 
         progress = QProgressDialog("Preparing stem separation...", "Cancel", 0, 0, self)
         progress.setWindowTitle("Stem separation")
-        progress.setWindowModality(Qt.WindowModal)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(0)
         progress.setValue(0)
         progress.show()
@@ -2359,9 +2573,9 @@ class EchoProWindow(QMainWindow):
                 self,
                 "Missing dependency",
                 f"{e}\n\nRun dependency update now?",
-                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
-            if install_choice == QMessageBox.Yes:
+            if install_choice == QMessageBox.StandardButton.Yes:
                 script_path = Path(__file__).resolve().parent / "install_echo_pro.bat"
                 subprocess.Popen([str(script_path), "update"], cwd=str(script_path.parent))
             self.update_status("Stems dependency issue")

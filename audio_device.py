@@ -6,6 +6,9 @@ Handles input/output device selection, capabilities, and fallback handling.
 import sounddevice as sd
 from typing import List, Optional, Dict, Tuple
 from dataclasses import dataclass
+import shutil
+
+from app_paths import ECHO_ROOT
 
 @dataclass
 class AudioDevice:
@@ -49,20 +52,52 @@ class AudioDeviceManager:
     def refresh_devices(self) -> None:
         """Scan for available audio devices."""
         self.devices = []
+
+        def _coerce_latency_seconds(device: dict) -> float:
+            values = []
+
+            default_latency = device.get('default_latency')
+            if isinstance(default_latency, (list, tuple)):
+                values.extend(v for v in default_latency if isinstance(v, (int, float)))
+            elif isinstance(default_latency, dict):
+                values.extend(v for v in default_latency.values() if isinstance(v, (int, float)))
+            elif isinstance(default_latency, (int, float)):
+                values.append(default_latency)
+
+            for key in (
+                'default_low_input_latency',
+                'default_low_output_latency',
+                'default_high_input_latency',
+                'default_high_output_latency',
+            ):
+                val = device.get(key)
+                if isinstance(val, (int, float)):
+                    values.append(val)
+
+            numeric = [float(v) for v in values if float(v) >= 0.0]
+            if not numeric:
+                return 0.0
+            return min(numeric)
         
         try:
             device_list = sd.query_devices()
-            default_input = sd.default.device[0]
-            default_output = sd.default.device[1]
+            default_pair = sd.default.device
+            default_input = default_pair[0] if isinstance(default_pair, (list, tuple)) and len(default_pair) > 0 else -1
+            default_output = default_pair[1] if isinstance(default_pair, (list, tuple)) and len(default_pair) > 1 else -1
+            if not isinstance(default_input, int):
+                default_input = -1
+            if not isinstance(default_output, int):
+                default_output = -1
             
             for i, device in enumerate(device_list):
+                latency_seconds = _coerce_latency_seconds(device)
                 audio_device = AudioDevice(
                     device_id=i,
                     name=device['name'],
                     max_input_channels=device['max_input_channels'],
                     max_output_channels=device['max_output_channels'],
                     default_sample_rate=device['default_samplerate'],
-                    default_latency_ms=device['default_latency'][0] * 1000 if device['default_latency'] else 0,
+                    default_latency_ms=latency_seconds * 1000.0,
                     is_default_input=(i == default_input),
                     is_default_output=(i == default_output),
                     api=device.get('hostapi', 'Unknown')
@@ -156,6 +191,15 @@ class AudioDeviceManager:
             
             if not input_dev or not output_dev:
                 return False, "Device not found"
+
+            compatible, message = self.check_channel_compatibility(
+                input_device_id=self.selected_input_device,
+                output_device_id=self.selected_output_device,
+                required_input_channels=2,
+                required_output_channels=2,
+            )
+            if not compatible:
+                return False, message
             
             # Try to open a short test stream
             with sd.Stream(
@@ -172,6 +216,91 @@ class AudioDeviceManager:
             
         except Exception as e:
             return False, f"Device error: {str(e)}"
+
+    def check_channel_compatibility(
+        self,
+        input_device_id: Optional[int] = None,
+        output_device_id: Optional[int] = None,
+        required_input_channels: int = 2,
+        required_output_channels: int = 2,
+    ) -> Tuple[bool, str]:
+        input_id = self.selected_input_device if input_device_id is None else int(input_device_id)
+        output_id = self.selected_output_device if output_device_id is None else int(output_device_id)
+
+        input_dev = self.get_device(input_id)
+        output_dev = self.get_device(output_id)
+        if input_dev is None or output_dev is None:
+            return False, "Selected input/output devices are not available"
+
+        if input_dev.max_input_channels < int(required_input_channels):
+            return False, (
+                f"Input device '{input_dev.name}' supports only {input_dev.max_input_channels} channel(s); "
+                f"{required_input_channels} required"
+            )
+
+        if output_dev.max_output_channels < int(required_output_channels):
+            return False, (
+                f"Output device '{output_dev.name}' supports only {output_dev.max_output_channels} channel(s); "
+                f"{required_output_channels} required"
+            )
+
+        return True, "Channel compatibility OK"
+
+    def get_preflight_summary(
+        self,
+        required_input_channels: int = 2,
+        required_output_channels: int = 2,
+        min_free_space_gb: float = 1.0,
+    ) -> Dict[str, object]:
+        input_dev = self.get_device(self.selected_input_device) if self.selected_input_device is not None else None
+        output_dev = self.get_device(self.selected_output_device) if self.selected_output_device is not None else None
+
+        compatible, compat_message = self.check_channel_compatibility(
+            required_input_channels=required_input_channels,
+            required_output_channels=required_output_channels,
+        )
+
+        disk = shutil.disk_usage(str(ECHO_ROOT))
+        free_gb = float(disk.free) / (1024.0 ** 3)
+
+        warnings: List[str] = []
+        if not compatible:
+            warnings.append(compat_message)
+        if free_gb < float(min_free_space_gb):
+            warnings.append(
+                f"Low disk space near recording root: {free_gb:.2f} GB free (recommended >= {min_free_space_gb:.2f} GB)"
+            )
+
+        return {
+            "input_device": input_dev.name if input_dev else "None",
+            "output_device": output_dev.name if output_dev else "None",
+            "sample_rate": int(self.selected_sample_rate),
+            "buffer_size": int(self.selected_buffer_size),
+            "input_latency_ms": float(self.get_input_latency()),
+            "output_latency_ms": float(self.get_output_latency()),
+            "total_latency_ms": float(self.get_total_latency()),
+            "disk_free_gb": free_gb,
+            "channel_compatible": bool(compatible),
+            "warnings": warnings,
+        }
+
+    def format_preflight_summary(self, summary: Dict[str, object]) -> str:
+        lines = [
+            f"Input: {summary.get('input_device', 'None')}",
+            f"Output: {summary.get('output_device', 'None')}",
+            f"Sample Rate: {summary.get('sample_rate', 0)} Hz",
+            f"Buffer Size: {summary.get('buffer_size', 0)}",
+            f"Input Latency: {float(summary.get('input_latency_ms', 0.0)):.1f} ms",
+            f"Output Latency: {float(summary.get('output_latency_ms', 0.0)):.1f} ms",
+            f"Round Trip Latency: {float(summary.get('total_latency_ms', 0.0)):.1f} ms",
+            f"Disk Free: {float(summary.get('disk_free_gb', 0.0)):.2f} GB",
+        ]
+        warnings = list(summary.get("warnings", []))
+        if warnings:
+            lines.append("Warnings:")
+            for warning in warnings:
+                lines.append(f"- {warning}")
+        return "\n".join(lines)
     
     def get_device_summary(self) -> Dict:
         """Get summary of current configuration."""

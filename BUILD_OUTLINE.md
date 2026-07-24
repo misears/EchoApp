@@ -1,5 +1,7 @@
 # ECHO PRO BUILD OUTLINE — Complete Phase Breakdown
 
+<!-- markdownlint-disable MD024 MD040 MD060 -->
+
 ## 📋 PREREQUISITES & SETUP
 
 Before starting any phase, ensure you have:
