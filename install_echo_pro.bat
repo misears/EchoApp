@@ -146,9 +146,9 @@ if exist "%FFMPEG_SOURCE%" (
     if defined FFMPEG_SEED_ROOT (
         mkdir "%FFMPEG_ROOT%" 2>nul
         if exist "%FFMPEG_ROOT%\current" rmdir /s /q "%FFMPEG_ROOT%\current"
-        xcopy /E /I /Y "%FFMPEG_SEED_ROOT%" "%FFMPEG_ROOT%\current\" >nul
+        xcopy /E /I /Y "!FFMPEG_SEED_ROOT!" "%FFMPEG_ROOT%\current\" >nul
         if errorlevel 1 (
-            echo Failed to copy ffmpeg seed assets from %FFMPEG_SEED_ROOT%.
+            echo Failed to copy ffmpeg seed assets from !FFMPEG_SEED_ROOT!.
             exit /b 1
         )
         if exist "%FFMPEG_ROOT%\current\bin\ffmpeg.exe" (
