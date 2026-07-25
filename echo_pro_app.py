@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
     QComboBox, QProgressDialog,
     QMessageBox, QDialog, QTextEdit, QListWidget, QListWidgetItem,
     QTabWidget, QScrollArea, QSlider, QDial, QGroupBox, QGridLayout,
-    QFrame, QSizePolicy, QProgressBar
+    QFrame, QSizePolicy, QProgressBar, QSplitter, QMenu
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPainter, QColor, QPen
@@ -199,7 +199,62 @@ QPushButton[channelBtn="solo"]:checked {
     border-top: 3px solid #061806;
     color: #000000;
 }
+QSplitter::handle {
+    background: #0f3460;
+}
+QSplitter::handle:vertical {
+    height: 5px;
+}
+QSplitter::handle:hover {
+    background: #e94560;
+}
 """
+
+
+class CollapsiblePanel(QWidget):
+    """A panel with a toggle button that shows/hides its content widget."""
+
+    def __init__(self, title: str, content: QWidget, *, collapsed: bool = False, parent=None):
+        super().__init__(parent)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        self._content = content
+        self._collapsed = collapsed
+
+        header = QHBoxLayout()
+        header.setContentsMargins(4, 2, 4, 2)
+        self._toggle_btn = QPushButton()
+        self._toggle_btn.setFlat(True)
+        self._toggle_btn.setFixedSize(20, 20)
+        self._toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._toggle_btn.clicked.connect(self.toggle)
+        self._title_lbl = QLabel(title)
+        self._title_lbl.setStyleSheet("font-weight:bold; color:#dde1e7;")
+        header.addWidget(self._toggle_btn)
+        header.addWidget(self._title_lbl)
+        header.addStretch()
+
+        header_frame = QFrame()
+        header_frame.setFrameShape(QFrame.StyledPanel)
+        header_frame.setStyleSheet(
+            "QFrame { background:#0f3460; border-radius:3px; padding:1px; }"
+        )
+        header_frame.setLayout(header)
+        root.addWidget(header_frame)
+        root.addWidget(content)
+
+        self._update_state()
+
+    def toggle(self):
+        self._collapsed = not self._collapsed
+        self._update_state()
+
+    def _update_state(self):
+        self._content.setVisible(not self._collapsed)
+        self._toggle_btn.setText("▶" if self._collapsed else "▼")
+        self._toggle_btn.setToolTip("Expand section" if self._collapsed else "Collapse section")
 
 
 class LevelMeterBar(QProgressBar):
@@ -3587,6 +3642,7 @@ class TabbedEchoProWindow(EchoProWindow):
         self.tabs.addTab(self._wrap_scroll(self._build_voice_tab()), "Voice FX")
         self.tabs.addTab(self._wrap_scroll(self._build_music_tab()), "Music")
         self.tabs.addTab(self._wrap_scroll(self._build_tools_tab()), "Tools")
+        self.tabs.addTab(self._build_help_tab(), "Help")
         root.addWidget(self.tabs, stretch=1)
 
         container = QWidget()
@@ -3605,14 +3661,15 @@ class TabbedEchoProWindow(EchoProWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
+        layout.setSpacing(6)
 
         # ── Master stereo waveform display ───────────────────────────────────
-        master_group = QGroupBox("Master Stereo Output")
-        master_layout = QVBoxLayout(master_group)
-        master_group.setFixedHeight(72)
+        master_content = QWidget()
+        master_layout = QVBoxLayout(master_content)
+        master_layout.setContentsMargins(4, 4, 4, 4)
         master_wave_frame = QFrame()
         master_wave_frame.setFrameShape(QFrame.StyledPanel)
+        master_wave_frame.setFixedHeight(46)
         master_wave_frame.setStyleSheet(
             "QFrame { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
             "stop:0 #0a1020, stop:0.48 #102848, stop:0.52 #102848, stop:1 #0a1020);"
@@ -3626,11 +3683,12 @@ class TabbedEchoProWindow(EchoProWindow):
         master_layout_inner = QVBoxLayout(master_wave_frame)
         master_layout_inner.addWidget(master_wave_lbl)
         master_layout.addWidget(master_wave_frame)
-        layout.addWidget(master_group)
+        layout.addWidget(CollapsiblePanel("Master Stereo Output", master_content))
 
-        project_group = QGroupBox("Project Actions")
-        project_layout = QHBoxLayout(project_group)
+        project_content = QWidget()
+        project_layout = QHBoxLayout(project_content)
         project_layout.setSpacing(8)
+        project_layout.setContentsMargins(4, 4, 4, 4)
         self.track_name_input = QLineEdit()
         self.track_name_input.setPlaceholderText("Track name")
         self.track_name_input.setFixedWidth(180)
@@ -3651,11 +3709,12 @@ class TabbedEchoProWindow(EchoProWindow):
             button.clicked.connect(slot)
             project_layout.addWidget(button)
         project_layout.addStretch()
-        layout.addWidget(project_group)
+        layout.addWidget(CollapsiblePanel("Project Actions", project_content))
 
-        clip_group = QGroupBox("Audio and Track Tools")
-        clip_layout = QGridLayout(clip_group)
+        clip_content = QWidget()
+        clip_layout = QGridLayout(clip_content)
         clip_layout.setSpacing(8)
+        clip_layout.setContentsMargins(4, 4, 4, 4)
         self.clip_track_index_input = QLineEdit()
         self.clip_track_index_input.setPlaceholderText("Track index")
         self.clip_track_index_input.setFixedWidth(90)
@@ -3698,35 +3757,44 @@ class TabbedEchoProWindow(EchoProWindow):
         stems_btn.clicked.connect(self.split_song_into_stems)
         clip_layout.addWidget(play_btn, 2, 4)
         clip_layout.addWidget(stems_btn, 2, 3)
-        layout.addWidget(clip_group)
+        layout.addWidget(CollapsiblePanel("Audio and Track Tools", clip_content))
 
-        tracks_group = QGroupBox("Tracks")
-        tracks_layout = QVBoxLayout(tracks_group)
+        tracks_content = QWidget()
+        tracks_layout = QVBoxLayout(tracks_content)
+        tracks_layout.setContentsMargins(4, 4, 4, 4)
         self.track_list = QListWidget()
+        self.track_list.setMaximumHeight(120)
         self.track_list.setToolTip("List of all tracks in the project — click to select")
         self.track_list.currentRowChanged.connect(self.on_track_selection_changed)
         tracks_layout.addWidget(self.track_list)
-        layout.addWidget(tracks_group)
+        layout.addWidget(CollapsiblePanel("Tracks", tracks_content))
 
-        wave_group = QGroupBox("Waveforms")
-        wave_layout = QVBoxLayout(wave_group)
+        # ── Waveforms + Mixer in a resizable splitter ─────────────────────────
+        wave_content = QWidget()
+        wave_layout = QVBoxLayout(wave_content)
+        wave_layout.setContentsMargins(4, 4, 4, 4)
         self.timeline = TimelineWidget(self.current_project)
         self.timeline.setMinimumHeight(360)
         self.timeline.on_project_changed = self._on_timeline_project_changed
         self.timeline.on_comp_range_selected = self.on_timeline_comp_range_selected
+        self.timeline.on_add_clip_at = self._on_timeline_add_clip_at
         self.timeline_scroll = QScrollArea()
         self.timeline_scroll.setWidgetResizable(False)
         self.timeline_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.timeline_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        self.timeline_scroll.setMinimumHeight(430)
+        self.timeline_scroll.setMinimumHeight(380)
         self.timeline_scroll.setWidget(self.timeline)
+        wave_hint = QLabel("Right-click on the timeline to add a clip at any position. "
+                           "Click a clip to select it; Del/Backspace to delete.")
+        wave_hint.setStyleSheet("color:#aab4be; font-style:italic; font-size:10px;")
+        wave_layout.addWidget(wave_hint)
         wave_layout.addWidget(self.timeline_scroll)
-        layout.addWidget(wave_group, stretch=2)
+        wave_panel = CollapsiblePanel("Waveforms", wave_content)
 
         # ── Studio Mixer – horizontal channel strips ─────────────────────────
-        mixer_group = QGroupBox("Studio Mixer")
-        mixer_layout_outer = QVBoxLayout(mixer_group)
-        mixer_group.setMinimumHeight(560)
+        mixer_content = QWidget()
+        mixer_layout_outer = QVBoxLayout(mixer_content)
+        mixer_layout_outer.setContentsMargins(4, 4, 4, 4)
         mixer_header = QLabel("Vertical channel strips — scroll horizontally to view all channels")
         mixer_header.setStyleSheet("color:#aab4be; font-style:italic;")
         mixer_layout_outer.addWidget(mixer_header)
@@ -3734,7 +3802,7 @@ class TabbedEchoProWindow(EchoProWindow):
         self.mixer_scroll.setWidgetResizable(True)
         self.mixer_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.mixer_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        self.mixer_scroll.setMinimumHeight(520)
+        self.mixer_scroll.setMinimumHeight(400)
         self.mixer_inner = QWidget()
         self.mixer_layout = QHBoxLayout(self.mixer_inner)
         self.mixer_layout.setContentsMargins(4, 4, 4, 4)
@@ -3746,9 +3814,52 @@ class TabbedEchoProWindow(EchoProWindow):
         self.mixer_layout.addStretch()
         self.mixer_scroll.setWidget(self.mixer_inner)
         mixer_layout_outer.addWidget(self.mixer_scroll)
-        layout.addWidget(mixer_group, stretch=3)
+        mixer_panel = CollapsiblePanel("Studio Mixer", mixer_content)
+
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter.addWidget(wave_panel)
+        splitter.addWidget(mixer_panel)
+        splitter.setStretchFactor(0, 2)
+        splitter.setStretchFactor(1, 3)
+        splitter.setSizes([420, 520])
+        layout.addWidget(splitter, stretch=1)
 
         return tab
+
+    def _on_timeline_add_clip_at(self, track_index: int, start_ms: int) -> None:
+        """Handle a request from the timeline to add a clip at a given position."""
+        if track_index < 0 or track_index >= len(self.current_project.tracks):
+            QMessageBox.warning(self, "Add Clip", "No valid track at that position.")
+            return
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "Choose audio file for clip",
+            "",
+            "Audio Files (*.wav *.mp3 *.flac *.ogg);;All Files (*)"
+        )
+        if not filename:
+            return
+        file_path = Path(filename)
+        if not file_path.exists():
+            QMessageBox.warning(self, "Input error", "Selected file does not exist.")
+            return
+        try:
+            length_ms = get_audio_length_ms(str(file_path))
+            clip = Clip(
+                id=self.next_clip_id,
+                track_index=track_index,
+                file_path=str(file_path),
+                start_ms=start_ms,
+                length_ms=length_ms,
+            )
+            self.current_project.clips.append(clip)
+            self.next_clip_id += 1
+            self.refresh_timeline()
+            self.update_status(f"Added clip on track {track_index} at {start_ms / 1000:.2f}s from {file_path.name}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to add clip:\n{e}")
+
+
 
     def _build_recording_tab(self) -> QWidget:
         tab = QWidget()
@@ -4115,6 +4226,215 @@ class TabbedEchoProWindow(EchoProWindow):
         layout.addWidget(regen_group)
         layout.addStretch()
         return tab
+
+    def _build_help_tab(self) -> QWidget:
+        """Build the built-in user's guide tab."""
+        tab = QWidget()
+        root = QVBoxLayout(tab)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(8)
+
+        # Search bar
+        search_row = QHBoxLayout()
+        search_lbl = QLabel("Search:")
+        search_row.addWidget(search_lbl)
+        self._help_search = QLineEdit()
+        self._help_search.setPlaceholderText("Type to search the guide…")
+        self._help_search.setToolTip("Filter the guide to show only sections matching your search term")
+        self._help_search.textChanged.connect(self._filter_help_text)
+        search_row.addWidget(self._help_search, stretch=1)
+        clear_btn = QPushButton("Clear")
+        clear_btn.setFixedWidth(60)
+        clear_btn.setToolTip("Clear the search filter")
+        clear_btn.clicked.connect(self._help_search.clear)
+        search_row.addWidget(clear_btn)
+        root.addLayout(search_row)
+
+        self._help_view = QTextEdit()
+        self._help_view.setReadOnly(True)
+        self._help_view.setStyleSheet(
+            "QTextEdit { background:#0d1b2a; color:#dde1e7; border:1px solid #0f3460; "
+            "font-size:12px; line-height:1.4; }"
+        )
+        self._help_full_html = self._help_guide_html()
+        self._help_view.setHtml(self._help_full_html)
+        root.addWidget(self._help_view, stretch=1)
+        return tab
+
+    def _filter_help_text(self, query: str) -> None:
+        query = query.strip()
+        if not query:
+            self._help_view.setHtml(self._help_full_html)
+            return
+        lower_q = query.lower()
+        # Split into paragraphs and show only those that contain the query
+        import re
+        sections = re.split(r'(?=<h[23])', self._help_full_html)
+        matching = [s for s in sections if lower_q in s.lower()]
+        if matching:
+            self._help_view.setHtml("".join(matching))
+        else:
+            self._help_view.setHtml(
+                f'<p style="color:#e94560;">No sections found matching "<b>{query}</b>". '
+                f'Try a different keyword.</p>'
+            )
+
+    @staticmethod
+    def _help_guide_html() -> str:
+        return """
+<style>
+  body  { background:#0d1b2a; color:#dde1e7; font-family:'Segoe UI',Arial,sans-serif; font-size:12px; }
+  h2    { color:#e94560; border-bottom:1px solid #0f3460; padding-bottom:4px; margin-top:18px; }
+  h3    { color:#64b5f6; margin-top:12px; margin-bottom:4px; }
+  p     { margin:4px 0 8px 0; }
+  ul    { margin:4px 0 8px 16px; }
+  li    { margin-bottom:3px; }
+  code  { background:#0f3460; color:#80cbc4; padding:1px 4px; border-radius:3px; }
+  kbd   { background:#0f3460; border:1px solid #1a4080; border-radius:3px;
+          padding:1px 5px; font-size:11px; }
+  .tip  { background:#0f3460; border-left:3px solid #e94560; padding:6px 10px; margin:8px 0; }
+</style>
+
+<h2>Echo Pro — User Guide</h2>
+<p>Welcome to <b>Echo Pro</b>, an integrated digital audio workstation for recording,
+mixing, voice cloning, and AI-assisted music generation.</p>
+
+<h2>Getting Started</h2>
+<h3>First Launch</h3>
+<ul>
+  <li>On first launch the <b>First Run Setup</b> dialog helps you verify audio drivers and
+      install optional AI backends (Demucs for stem separation, music generation models).</li>
+  <li>You can rerun setup at any time via <b>Tools → Install / Update Dependencies</b>.</li>
+</ul>
+<h3>Creating a Project</h3>
+<ul>
+  <li>Click <b>New</b> in the top toolbar to start a fresh project.</li>
+  <li>Use <b>Open</b> to load a previously saved <code>.json</code> project file.</li>
+  <li>Click <b>Save</b> to write the current project to disk.</li>
+  <li><b>Browse</b> opens the projects folder in a file-picker so you can switch between sessions.</li>
+</ul>
+
+<h2>Home Tab</h2>
+<p>The Home tab is your main mixing and arrangement workspace.</p>
+<h3>Master Stereo Output</h3>
+<p>Shows a symbolic stereo waveform for the master bus. A live level meter is available
+after playback.</p>
+<h3>Project Actions</h3>
+<p>Add, rename, delete, reorder, mute, solo, and arm tracks from this panel. Type a name in
+the text box first, then click <b>Add Track</b>.</p>
+<h3>Audio and Track Tools</h3>
+<ul>
+  <li><b>Add Clip from File</b> — enter a track index and optional start time, then browse
+      for a WAV/MP3/FLAC/OGG file.</li>
+  <li><b>Set Track Volume</b> — enter a track index and a dB value (e.g. <code>-6</code>,
+      <code>0</code>, <code>+3</code>) and click the button.</li>
+  <li><b>Play Project</b> — mix and play all unmuted tracks.</li>
+  <li><b>Split Song into Stems</b> — separate a song into vocals, drums, bass, and other
+      using Demucs (requires the AI backend).</li>
+</ul>
+<div class="tip"><b>Tip:</b> All sections on the Home tab can be collapsed with the
+<b>▼ / ▶</b> toggle button on their header bar, giving you more room for the waveform
+editor and mixer. The waveform and mixer panels are separated by a draggable splitter —
+drag it to resize.</div>
+<h3>Waveforms (Timeline)</h3>
+<ul>
+  <li>Each track row shows its clips with a waveform preview.</li>
+  <li><b>Left-click</b> a clip to select it; selected clips are highlighted in yellow.</li>
+  <li><b>Drag</b> a selected clip to move it along the timeline.</li>
+  <li><b>Right-click</b> on an empty part of a track row to add a new clip at that
+      position — a file browser will open automatically.</li>
+  <li><b>Right-click</b> on an existing clip to select or delete it.</li>
+  <li>Press <kbd>Del</kbd> or <kbd>Backspace</kbd> to delete the selected clip.</li>
+  <li>Click-drag on an empty area of the currently selected track to define a
+      <b>comp range</b> for take comping.</li>
+</ul>
+<h3>Studio Mixer</h3>
+<p>Each track has its own vertical channel strip containing:</p>
+<ul>
+  <li><b>7-band EQ sliders</b> (40 Hz – 16 kHz, ±12 dB)</li>
+  <li><b>Vertical gain fader</b> (−60 dB to +6 dB)</li>
+  <li><b>Pan knob</b> (left ↔ right)</li>
+  <li><b>Punch / Mute / Solo</b> buttons</li>
+  <li><b>Stereo L/R level meters</b></li>
+</ul>
+<p>Scroll horizontally to see all channel strips when you have many tracks.</p>
+
+<h2>Recording Tab</h2>
+<h3>Audio Devices</h3>
+<ul>
+  <li>Select your <b>Input</b> (microphone/interface) and <b>Output</b> (speakers/headphones)
+      from the dropdowns.</li>
+  <li>Choose a <b>Sample Rate</b> (44.1 kHz, 48 kHz, 88.2 kHz, or 96 kHz).</li>
+  <li>Click <b>Check Audio Devices</b> to verify the selected devices are working.</li>
+</ul>
+<h3>Recording Controls</h3>
+<ul>
+  <li>Set the <b>BPM</b> and <b>Time Signature</b> before recording.</li>
+  <li>Select a target track from the <b>Record Track</b> dropdown and click
+      <b>Start Recording</b>.</li>
+  <li>Click <b>Stop Recording</b> to finish. Each recording becomes a <em>take</em>.</li>
+  <li>Enable <b>Punch In / Punch Out</b> to record only within a defined time range.</li>
+</ul>
+<h3>Take Review</h3>
+<p>After recording you can listen to each take, mark one as active, or comp multiple takes
+together using the <b>Comp Range</b> tool in the timeline.</p>
+
+<h2>Voice FX Tab</h2>
+<h3>Voice Manager</h3>
+<p>Click <b>Manage Voices</b> to open the Voice Manager dialog:</p>
+<ul>
+  <li>Enter a <b>profile name</b>.</li>
+  <li>Choose a <b>clip duration</b> (longer recordings improve model accuracy).</li>
+  <li>Optionally paste a <b>speaking script</b> to read aloud during recording.</li>
+  <li>Click <b>Record</b> to capture your voice, or <b>Import Audio File</b> to use an
+      existing WAV/MP3.</li>
+</ul>
+<h3>Applying Voice Effects</h3>
+<ul>
+  <li>Select a voice profile from the editable <b>Voice Profile</b> combo box (or type
+      a custom name).</li>
+  <li>Choose the target clip and click <b>Apply Voice Effect</b>.</li>
+</ul>
+
+<h2>Music Tab</h2>
+<ul>
+  <li>Enter a text <b>prompt</b> describing the style or mood of the music.</li>
+  <li>Set the desired <b>duration</b> in seconds (10–30 s recommended).</li>
+  <li>Click <b>Generate Music</b>. A progress dialog will appear while the AI backend
+      creates the clip.</li>
+  <li>Use <b>Plan Song Sections</b> to have the AI suggest a multi-section arrangement.</li>
+  <li>Generated clips are automatically added to the project for mixing.</li>
+</ul>
+
+<h2>Tools Tab</h2>
+<ul>
+  <li><b>Split Song into Stems</b> — same as the Home tab button; runs Demucs.</li>
+  <li><b>Run P5A / P5B Checks</b> — internal regression tests for developers.</li>
+  <li><b>Install / Update Dependencies</b> — re-runs the installer for AI backends.</li>
+</ul>
+
+<h2>Keyboard Shortcuts</h2>
+<ul>
+  <li><kbd>Del</kbd> / <kbd>Backspace</kbd> — delete selected timeline clip</li>
+  <li><b>Left-click drag</b> on a clip — move clip along the timeline</li>
+  <li><b>Right-click</b> on timeline — context menu (add clip / delete clip)</li>
+  <li><b>▼ / ▶</b> buttons — collapse / expand any panel on the Home tab</li>
+</ul>
+
+<h2>Tips &amp; Best Practices</h2>
+<ul>
+  <li>Record longer voice samples (30 s or more) for better voice cloning quality.</li>
+  <li>Use a phonetically rich script in the Voice Manager for more accurate models.</li>
+  <li>Keep individual track volumes near 0 dB and adjust the master output instead to
+      avoid clipping.</li>
+  <li>Use <b>Solo</b> to listen to a single track in isolation while mixing.</li>
+  <li>Stem separation works best on full-mix stereo WAV files at 44.1 kHz or 48 kHz.</li>
+  <li>Save your project frequently — use <kbd>Ctrl+S</kbd> if your OS forwards it,
+      or click the <b>Save</b> button in the toolbar.</li>
+</ul>
+"""
+
+
 
     def _rebuild_mixer_rows(self):
         # Remove all items except the trailing stretch
