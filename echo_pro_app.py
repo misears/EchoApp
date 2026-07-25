@@ -210,6 +210,12 @@ QSplitter::handle:hover {
 }
 """
 
+# Symbolic stereo waveform placeholder shown in the Master Output section.
+_MASTER_WAVEFORM_PLACEHOLDER = (
+    "\u25ac\u25ac\u2580\u2584\u2580\u2588\u2580\u2584\u2580\u25ac  MASTER L  \u25ac\u25ac\u25ac  "
+    "MASTER R  \u25ac\u2580\u2584\u2580\u2588\u2580\u2584\u2580\u25ac\u25ac"
+)
+
 
 class CollapsiblePanel(QWidget):
     """A panel with a toggle button that shows/hides its content widget."""
@@ -3675,8 +3681,7 @@ class TabbedEchoProWindow(EchoProWindow):
             "stop:0 #0a1020, stop:0.48 #102848, stop:0.52 #102848, stop:1 #0a1020);"
             " border:1px solid #1a4080; border-radius:4px; }"
         )
-        master_wave_lbl = QLabel("\u25ac\u25ac\u2580\u2584\u2580\u2588\u2580\u2584\u2580\u25ac  MASTER L  \u25ac\u25ac\u25ac  "
-                                 "MASTER R  \u25ac\u2580\u2584\u2580\u2588\u2580\u2584\u2580\u25ac\u25ac")
+        master_wave_lbl = QLabel(_MASTER_WAVEFORM_PLACEHOLDER)
         master_wave_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         master_wave_lbl.setStyleSheet("color:#22ee44; font-family: monospace; font-size:11px; letter-spacing:2px;")
         master_wave_lbl.setToolTip("Master stereo waveform display (live view available after playback)")
@@ -4267,7 +4272,8 @@ class TabbedEchoProWindow(EchoProWindow):
             self._help_view.setHtml(self._help_full_html)
             return
         lower_q = query.lower()
-        # Split into paragraphs and show only those that contain the query
+        # Split HTML into sections at each h2/h3 opening tag. The positive lookahead
+        # (?=<h[23]) keeps the tag itself in each section rather than consuming it.
         import re
         sections = re.split(r'(?=<h[23])', self._help_full_html)
         matching = [s for s in sections if lower_q in s.lower()]
@@ -4440,7 +4446,7 @@ together using the <b>Comp Range</b> tool in the timeline.</p>
         # Remove all items except the trailing stretch
         while self.mixer_layout.count() > 1:
             item = self.mixer_layout.takeAt(0)
-            if item is None:
+            if item is None:  # safety guard: Qt should never return None here, but guard defensively
                 continue
             widget = item.widget()
             if widget:
