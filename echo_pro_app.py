@@ -2,6 +2,7 @@
 # pyright: reportAttributeAccessIssue=false, reportArgumentType=false
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -137,10 +138,66 @@ QScrollBar:vertical {
 QScrollBar::handle:vertical {
     background: #0f3460; border-radius: 4px; min-height: 20px;
 }
+QScrollBar:horizontal {
+    background: #0d1b2a; height: 8px; border-radius: 4px;
+}
+QScrollBar::handle:horizontal {
+    background: #0f3460; border-radius: 4px; min-width: 20px;
+}
 QStatusBar {
     background-color: #0a1020;
     color: #aab4be;
     border-top: 1px solid #0f3460;
+}
+QPushButton[channelBtn="punch"] {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #c07000, stop:0.45 #e09010, stop:0.55 #b06000, stop:1 #803000);
+    color: #fff8e0;
+    border: 1px solid #a05000;
+    border-bottom: 3px solid #501800;
+    border-radius: 4px;
+    font-weight: bold;
+    padding: 3px 6px;
+}
+QPushButton[channelBtn="punch"]:checked {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #ff9900, stop:1 #cc6600);
+    border-bottom: 1px solid #501800;
+    border-top: 3px solid #501800;
+}
+QPushButton[channelBtn="mute"] {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #3a6090, stop:0.45 #4a80b0, stop:0.55 #2a5080, stop:1 #1a3060);
+    color: #d0e8ff;
+    border: 1px solid #2a5080;
+    border-bottom: 3px solid #0a1840;
+    border-radius: 4px;
+    font-weight: bold;
+    padding: 3px 6px;
+}
+QPushButton[channelBtn="mute"]:checked {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #e94560, stop:1 #a02040);
+    border-bottom: 1px solid #0a1840;
+    border-top: 3px solid #0a1840;
+    color: #ffffff;
+}
+QPushButton[channelBtn="solo"] {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #206020, stop:0.45 #308030, stop:0.55 #185018, stop:1 #0e3010);
+    color: #c8ffc8;
+    border: 1px solid #185018;
+    border-bottom: 3px solid #061806;
+    border-radius: 4px;
+    font-weight: bold;
+    padding: 3px 6px;
+}
+QPushButton[channelBtn="solo"]:checked {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #40e040, stop:1 #20a020);
+    border-bottom: 1px solid #061806;
+    border-top: 3px solid #061806;
+    color: #000000;
 }
 """
 
@@ -158,7 +215,34 @@ class LevelMeterBar(QProgressBar):
         self.setValue(int(normalized * 100))
 
 
+class VerticalLevelMeter(QProgressBar):
+    """Narrow vertical level meter for L/R stereo display inside a channel strip."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setRange(0, 100)
+        self.setValue(0)
+        self.setTextVisible(False)
+        self.setOrientation(Qt.Orientation.Vertical)
+        self.setFixedWidth(10)
+        self.setMinimumHeight(60)
+        self.setStyleSheet(
+            "QProgressBar:vertical { border:1px solid #0f3460; border-radius:3px; background:#0d1b2a; }"
+            "QProgressBar::chunk:vertical { background: qlineargradient(x1:0,y1:1,x2:0,y2:0,"
+            "stop:0 #22aa22, stop:0.7 #aaaa00, stop:1 #ee2222); border-radius:2px; }"
+        )
+
+    def set_db(self, db_value: float) -> None:
+        normalized = max(0.0, min(1.0, (db_value + 60.0) / 60.0))
+        self.setValue(int(normalized * 100))
+
+
+_EQ_BANDS = ["40", "200", "500", "1k", "3k", "8k", "16k"]
+
+
 class TrackMixerRow(QFrame):
+    """Vertical channel strip: EQ sliders, gain fader, pan, and Punch/Mute/Solo buttons."""
+
     def __init__(self, track_index: int, track_name: str, *, on_volume_change=None, on_mute_toggle=None, on_solo_toggle=None, parent=None):
         super().__init__(parent)
         self.track_index = track_index
@@ -168,79 +252,159 @@ class TrackMixerRow(QFrame):
 
         self.setObjectName("TrackMixerRow")
         self.setFrameShape(QFrame.StyledPanel)
-        self.setMinimumHeight(76)
+        self.setFixedWidth(130)
+        self.setMinimumHeight(520)
+        self.setStyleSheet("QFrame#TrackMixerRow { background:#0d1b2a; border:1px solid #1a4080; border-radius:6px; }")
 
-        root = QHBoxLayout(self)
-        root.setContentsMargins(10, 6, 10, 6)
-        root.setSpacing(10)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(6, 6, 6, 8)
+        root.setSpacing(4)
 
+        # ── Header: badge + name ─────────────────────────────────────────────
+        header_row = QHBoxLayout()
+        header_row.setSpacing(4)
         badge = QLabel(str(track_index + 1))
-        badge.setFixedSize(22, 22)
+        badge.setFixedSize(20, 20)
         badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        badge.setStyleSheet("background:#0f3460; border-radius:11px; color:#e94560; font-weight:bold;")
-        root.addWidget(badge)
-
+        badge.setStyleSheet("background:#0f3460; border-radius:10px; color:#e94560; font-weight:bold; font-size:9px;")
+        header_row.addWidget(badge)
         self.name_label = QLabel(track_name)
-        self.name_label.setMinimumWidth(100)
-        self.name_label.setMaximumWidth(140)
-        root.addWidget(self.name_label)
+        self.name_label.setStyleSheet("font-size:9px; font-weight:bold;")
+        self.name_label.setWordWrap(True)
+        header_row.addWidget(self.name_label, stretch=1)
+        root.addLayout(header_row)
 
-        self.solo_btn = QPushButton("S")
-        self.solo_btn.setCheckable(True)
-        self.solo_btn.setFixedSize(26, 26)
-        self.solo_btn.clicked.connect(self._solo_clicked)
-        root.addWidget(self.solo_btn)
+        # ── Stereo L/R meters ────────────────────────────────────────────────
+        meter_lbl = QLabel("L/R")
+        meter_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        meter_lbl.setStyleSheet("font-size:8px; color:#aab4be;")
+        root.addWidget(meter_lbl)
 
-        self.mute_btn = QPushButton("M")
-        self.mute_btn.setCheckable(True)
-        self.mute_btn.setFixedSize(26, 26)
-        self.mute_btn.clicked.connect(self._mute_clicked)
-        root.addWidget(self.mute_btn)
+        meter_row = QHBoxLayout()
+        meter_row.setSpacing(3)
+        meter_row.setContentsMargins(4, 0, 4, 0)
+        self.meter_l = VerticalLevelMeter()
+        self.meter_r = VerticalLevelMeter()
+        self.peak_label = QLabel("-\u221e")
+        self.peak_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.peak_label.setStyleSheet("font-size:8px; color:#aab4be;")
+        meter_row.addStretch()
+        meter_row.addWidget(self.meter_l)
+        meter_row.addWidget(self.meter_r)
+        meter_row.addStretch()
+        root.addLayout(meter_row)
+        root.addWidget(self.peak_label)
 
-        vol_col = QVBoxLayout()
-        vol_col.setSpacing(2)
-        vol_col.setContentsMargins(0, 0, 0, 0)
+        # ── 7-Band EQ sliders ────────────────────────────────────────────────
+        eq_lbl = QLabel("EQ")
+        eq_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        eq_lbl.setStyleSheet("font-size:8px; color:#aab4be;")
+        root.addWidget(eq_lbl)
 
-        vol_top = QHBoxLayout()
-        vol_top.setContentsMargins(0, 0, 0, 0)
-        vol_top.addWidget(QLabel("VOL"))
-        vol_top.addStretch()
+        eq_row = QHBoxLayout()
+        eq_row.setSpacing(2)
+        eq_row.setContentsMargins(2, 0, 2, 0)
+        self.eq_sliders: list = []
+        for band in _EQ_BANDS:
+            col = QVBoxLayout()
+            col.setSpacing(1)
+            col.setContentsMargins(0, 0, 0, 0)
+            sl = QSlider(Qt.Orientation.Vertical)
+            sl.setRange(-12, 12)
+            sl.setValue(0)
+            sl.setFixedWidth(12)
+            sl.setFixedHeight(56)
+            sl.setToolTip(f"EQ {band}Hz: \u00b112 dB")
+            col.addWidget(sl, alignment=Qt.AlignmentFlag.AlignHCenter)
+            lbl = QLabel(band)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl.setStyleSheet("font-size:7px; color:#aab4be;")
+            col.addWidget(lbl)
+            eq_row.addLayout(col)
+            self.eq_sliders.append(sl)
+        root.addLayout(eq_row)
+
+        root.addSpacing(2)
+
+        # ── Gain (Volume) fader – vertical ────────────────────────────────────
+        gain_row = QHBoxLayout()
+        gain_row.setSpacing(4)
+
+        fader_col = QVBoxLayout()
+        fader_col.setSpacing(2)
         self.db_label = QLabel("0 dB")
-        self.db_label.setMinimumWidth(54)
-        self.db_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        vol_top.addWidget(self.db_label)
-        vol_col.addLayout(vol_top)
+        self.db_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.db_label.setStyleSheet("font-size:9px;")
+        fader_col.addWidget(self.db_label)
 
-        self.vol_slider = QSlider(Qt.Orientation.Horizontal)
+        self.vol_slider = QSlider(Qt.Orientation.Vertical)
         self.vol_slider.setRange(-60, 6)
         self.vol_slider.setValue(0)
+        self.vol_slider.setMinimumHeight(90)
+        self.vol_slider.setFixedWidth(20)
+        self.vol_slider.setToolTip("Track gain: -60 dB to +6 dB")
         self.vol_slider.valueChanged.connect(self._volume_changed)
-        vol_col.addWidget(self.vol_slider)
-        root.addLayout(vol_col, stretch=1)
+        fader_col.addWidget(self.vol_slider, alignment=Qt.AlignmentFlag.AlignHCenter)
+        fader_lbl = QLabel("GAIN")
+        fader_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        fader_lbl.setStyleSheet("font-size:8px; color:#aab4be;")
+        fader_col.addWidget(fader_lbl)
+        gain_row.addStretch()
+        gain_row.addLayout(fader_col)
+        gain_row.addStretch()
+        root.addLayout(gain_row)
 
+        root.addSpacing(2)
+
+        # ── Pan knob ─────────────────────────────────────────────────────────
         pan_col = QVBoxLayout()
         pan_col.setSpacing(1)
-        pan_col.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.pan_knob = QDial()
         self.pan_knob.setRange(-100, 100)
         self.pan_knob.setValue(0)
         self.pan_knob.setFixedSize(36, 36)
         self.pan_knob.setNotchesVisible(True)
+        self.pan_knob.setToolTip("Pan: left (L) to right (R)")
         pan_col.addWidget(self.pan_knob, alignment=Qt.AlignmentFlag.AlignCenter)
         pan_lbl = QLabel("PAN")
         pan_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pan_lbl.setStyleSheet("font-size:8px; color:#aab4be;")
         pan_col.addWidget(pan_lbl)
         root.addLayout(pan_col)
 
-        meter_col = QVBoxLayout()
-        meter_col.setSpacing(1)
-        self.level_meter = LevelMeterBar()
-        self.level_meter.setMinimumWidth(90)
-        meter_col.addWidget(self.level_meter)
-        self.peak_label = QLabel("-inf")
-        self.peak_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        meter_col.addWidget(self.peak_label)
-        root.addLayout(meter_col)
+        root.addSpacing(2)
+
+        # ── Punch / Mute / Solo buttons ───────────────────────────────────────
+        pms_row = QHBoxLayout()
+        pms_row.setSpacing(3)
+
+        self.punch_btn = QPushButton("P")
+        self.punch_btn.setCheckable(True)
+        self.punch_btn.setFixedSize(28, 22)
+        self.punch_btn.setProperty("channelBtn", "punch")
+        self.punch_btn.setToolTip("Punch-in arm: enable punch recording on this channel")
+        pms_row.addWidget(self.punch_btn)
+
+        self.mute_btn = QPushButton("M")
+        self.mute_btn.setCheckable(True)
+        self.mute_btn.setFixedSize(28, 22)
+        self.mute_btn.setProperty("channelBtn", "mute")
+        self.mute_btn.setToolTip("Mute this channel")
+        self.mute_btn.clicked.connect(self._mute_clicked)
+        pms_row.addWidget(self.mute_btn)
+
+        self.solo_btn = QPushButton("S")
+        self.solo_btn.setCheckable(True)
+        self.solo_btn.setFixedSize(28, 22)
+        self.solo_btn.setProperty("channelBtn", "solo")
+        self.solo_btn.setToolTip("Solo this channel (silences all others)")
+        self.solo_btn.clicked.connect(self._solo_clicked)
+        pms_row.addWidget(self.solo_btn)
+
+        root.addLayout(pms_row)
+        root.addStretch()
+
+    # ── Internal helpers ────────────────────────────────────────────────────
 
     def _volume_changed(self, value: int):
         self.db_label.setText(f"{value:+d} dB" if value != 0 else "0 dB")
@@ -255,6 +419,8 @@ class TrackMixerRow(QFrame):
         if self._on_solo_toggle:
             self._on_solo_toggle(self.track_index, checked)
 
+    # ── Public API ──────────────────────────────────────────────────────────
+
     def set_volume_db(self, db: float):
         self.vol_slider.blockSignals(True)
         self.vol_slider.setValue(int(db))
@@ -262,7 +428,8 @@ class TrackMixerRow(QFrame):
         self.vol_slider.blockSignals(False)
 
     def update_meter(self, current_db: float, peak_db: float):
-        self.level_meter.set_db(current_db)
+        self.meter_l.set_db(current_db)
+        self.meter_r.set_db(current_db)
         self.peak_label.setText(f"{peak_db:.0f}")
 
     def set_mute(self, muted: bool) -> None:
@@ -345,32 +512,81 @@ class VoiceManagerDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Voice Manager")
+        self.setMinimumWidth(540)
 
         layout = QVBoxLayout()
 
-        layout.addWidget(QLabel(
+        consent_lbl = QLabel(
             "Voice profiles are recordings of voices you own or have permission to use.\n"
             "Do not use other people's voices without their consent."
-        ))
+        )
+        consent_lbl.setStyleSheet("color:#e94560; font-style:italic;")
+        layout.addWidget(consent_lbl)
 
         self.voice_list = QListWidget()
+        self.voice_list.setToolTip("Double-click a profile to select it")
         self.refresh_voice_list()
         layout.addWidget(self.voice_list)
 
-        name_layout = QHBoxLayout()
+        # ── Name row ─────────────────────────────────────────────────────────
+        name_row = QHBoxLayout()
+        name_lbl = QLabel("Profile name:")
+        name_row.addWidget(name_lbl)
         self.new_voice_name = QLineEdit()
         self.new_voice_name.setPlaceholderText("New voice profile name")
-        name_layout.addWidget(self.new_voice_name)
+        self.new_voice_name.setToolTip("Enter a unique name for this voice profile")
+        name_row.addWidget(self.new_voice_name, stretch=1)
+        layout.addLayout(name_row)
 
-        record_btn = QPushButton("Record New Voice (10s)")
+        # ── Duration row ─────────────────────────────────────────────────────
+        dur_row = QHBoxLayout()
+        dur_lbl = QLabel("Clip duration (sec):")
+        dur_lbl.setToolTip("How many seconds to record for voice training (longer = better match)")
+        dur_row.addWidget(dur_lbl)
+        self.duration_combo = QComboBox()
+        for secs in [10, 20, 30, 60, 90, 120]:
+            self.duration_combo.addItem(f"{secs} s", secs)
+        self.duration_combo.setToolTip(
+            "Recording duration. Longer clips improve voice model quality.\n"
+            "A short script is provided below to help guide the recording."
+        )
+        dur_row.addWidget(self.duration_combo)
+        dur_row.addStretch()
+        layout.addLayout(dur_row)
+
+        # ── Optional script ───────────────────────────────────────────────────
+        script_group = QGroupBox("Optional Speaking Script (read aloud during recording)")
+        script_layout = QVBoxLayout(script_group)
+        self.script_text = QTextEdit()
+        self.script_text.setFixedHeight(90)
+        self.script_text.setPlaceholderText(
+            "Leave blank to record freely, or paste a script here to read aloud.\n\n"
+            "Example: \"The quick brown fox jumps over the lazy dog. "
+            "She sells sea shells by the seashore. How much wood would a woodchuck chuck…\""
+        )
+        self.script_text.setToolTip(
+            "Reading a phonetically rich script improves voice model accuracy.\n"
+            "This is optional — you may speak or sing freely instead."
+        )
+        script_layout.addWidget(self.script_text)
+        layout.addWidget(script_group)
+
+        # ── Action buttons ────────────────────────────────────────────────────
+        btn_row = QHBoxLayout()
+        record_btn = QPushButton("Record New Voice")
+        record_btn.setToolTip("Start recording a new voice profile using the microphone")
         record_btn.clicked.connect(self.record_new_voice)
-        name_layout.addWidget(record_btn)
+        btn_row.addWidget(record_btn)
 
-        layout.addLayout(name_layout)
+        import_btn = QPushButton("Import Audio File")
+        import_btn.setToolTip("Use an existing WAV/MP3 file as a voice profile instead of recording")
+        import_btn.clicked.connect(self.import_voice_file)
+        btn_row.addWidget(import_btn)
 
         close_btn = QPushButton("Close")
         close_btn.clicked.connect(self.accept)
-        layout.addWidget(close_btn)
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
 
         self.setLayout(layout)
 
@@ -378,7 +594,7 @@ class VoiceManagerDialog(QDialog):
         self.voice_list.clear()
         profiles = load_voice_profiles()
         for p in profiles:
-            item = QListWidgetItem(f"{p.name} [{p.file_path}]")
+            item = QListWidgetItem(f"{p.name}  [{p.file_path}]")
             item.setData(Qt.ItemDataRole.UserRole, p)
             self.voice_list.addItem(item)
 
@@ -387,6 +603,8 @@ class VoiceManagerDialog(QDialog):
         if not name:
             QMessageBox.warning(self, "Input error", "Please enter a name for the voice profile.")
             return
+
+        duration_sec = self.duration_combo.currentData() or 10
 
         confirm = QMessageBox.question(
             self,
@@ -400,13 +618,60 @@ class VoiceManagerDialog(QDialog):
 
         output_wav = VOICES_DIR / f"{name.replace(' ', '_')}.wav"
         try:
-            record_voice_to_wav(output_wav, duration_sec=10)
+            record_voice_to_wav(output_wav, duration_sec=duration_sec)
             add_voice_profile(name, output_wav)
             self.new_voice_name.clear()
             self.refresh_voice_list()
             QMessageBox.information(self, "Voice recorded", f"Saved voice profile: {name}")
         except Exception as e:
             QMessageBox.critical(self, "Recording error", f"Failed to record voice:\n{e}")
+
+    def import_voice_file(self):
+        """Import an existing audio file as a voice profile."""
+        name = self.new_voice_name.text().strip()
+        if not name:
+            QMessageBox.warning(self, "Input error", "Please enter a profile name before importing.")
+            return
+
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import voice audio file",
+            "",
+            "Audio Files (*.wav *.mp3 *.flac *.ogg);;All Files (*)"
+        )
+        if not filename:
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Consent confirmation",
+            "You should only import voice recordings of yourself or voices you have explicit permission to use.\n\n"
+            "Do you confirm this?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            src = Path(filename)
+            dest = VOICES_DIR / f"{name.replace(' ', '_')}.wav"
+            if src.suffix.lower() == ".wav":
+                shutil.copy2(src, dest)
+            else:
+                # Try to convert using soundfile if available; otherwise copy raw
+                try:
+                    import soundfile as sf
+                    import numpy as np
+                    data, sr = sf.read(str(src))
+                    sf.write(str(dest), data, sr)
+                except Exception:
+                    shutil.copy2(src, dest)
+            add_voice_profile(name, dest)
+            self.new_voice_name.clear()
+            self.refresh_voice_list()
+            QMessageBox.information(self, "Voice imported", f"Imported voice profile: {name}")
+        except Exception as e:
+            QMessageBox.critical(self, "Import error", f"Failed to import voice file:\n{e}")
 
 class EchoProWindow(QMainWindow):
     def __init__(self):
@@ -3003,21 +3268,31 @@ class EchoProWindow(QMainWindow):
 
             project_id = self.current_project.name.replace(" ", "_") or "default_project"
 
-            result = generate_music_clip(
-                style=style,
-                genre=genre,
-                mood=mood,
-                lyrics=lyrics,
-                duration_seconds=duration_sec,
-                key="",
-                chords="",
-                time_signature="4/4",
-                tempo_bpm=120,
-                section_name=f"clip_{self.next_clip_id}",
-                seed=None,
-                project_id=project_id,
-                use_cloud=use_cloud
-            )
+            progress = QProgressDialog("Generating music clip…", None, 0, 0, self)
+            progress.setWindowTitle("Music Generation")
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setMinimumDuration(0)
+            progress.setValue(0)
+            progress.show()
+            QApplication.processEvents()
+            try:
+                result = generate_music_clip(
+                    style=style,
+                    genre=genre,
+                    mood=mood,
+                    lyrics=lyrics,
+                    duration_seconds=duration_sec,
+                    key="",
+                    chords="",
+                    time_signature="4/4",
+                    tempo_bpm=120,
+                    section_name=f"clip_{self.next_clip_id}",
+                    seed=None,
+                    project_id=project_id,
+                    use_cloud=use_cloud
+                )
+            finally:
+                progress.close()
 
             length_ms = get_audio_length_ms(str(result.audio_path))
 
@@ -3080,20 +3355,32 @@ class EchoProWindow(QMainWindow):
             genre = self.gen_genre.text()
             mood = self.gen_mood.text()
 
-            clip_paths = generate_song_sections(
-                lyrics=lyrics,
-                structure=structure,
-                total_length_sec=total_length_sec,
-                key=key,
-                chords=chords,
-                time_signature=time_sig,
-                tempo=tempo,
-                style=style,
-                genre=genre,
-                mood=mood,
-                project_id=project_id,
-                use_cloud=use_cloud
+            progress = QProgressDialog(
+                f"Generating song ({len(structure)} sections)…", None, 0, 0, self
             )
+            progress.setWindowTitle("Song Generation")
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setMinimumDuration(0)
+            progress.setValue(0)
+            progress.show()
+            QApplication.processEvents()
+            try:
+                clip_paths = generate_song_sections(
+                    lyrics=lyrics,
+                    structure=structure,
+                    total_length_sec=total_length_sec,
+                    key=key,
+                    chords=chords,
+                    time_signature=time_sig,
+                    tempo=tempo,
+                    style=style,
+                    genre=genre,
+                    mood=mood,
+                    project_id=project_id,
+                    use_cloud=use_cloud
+                )
+            finally:
+                progress.close()
 
             section_snapshots = []
 
@@ -3320,15 +3607,47 @@ class TabbedEchoProWindow(EchoProWindow):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
 
+        # ── Master stereo waveform display ───────────────────────────────────
+        master_group = QGroupBox("Master Stereo Output")
+        master_layout = QVBoxLayout(master_group)
+        master_group.setFixedHeight(72)
+        master_wave_frame = QFrame()
+        master_wave_frame.setFrameShape(QFrame.StyledPanel)
+        master_wave_frame.setStyleSheet(
+            "QFrame { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            "stop:0 #0a1020, stop:0.48 #102848, stop:0.52 #102848, stop:1 #0a1020);"
+            " border:1px solid #1a4080; border-radius:4px; }"
+        )
+        master_wave_lbl = QLabel("\u25ac\u25ac\u2580\u2584\u2580\u2588\u2580\u2584\u2580\u25ac  MASTER L  \u25ac\u25ac\u25ac  "
+                                 "MASTER R  \u25ac\u2580\u2584\u2580\u2588\u2580\u2584\u2580\u25ac\u25ac")
+        master_wave_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        master_wave_lbl.setStyleSheet("color:#22ee44; font-family: monospace; font-size:11px; letter-spacing:2px;")
+        master_wave_lbl.setToolTip("Master stereo waveform display (live view available after playback)")
+        master_layout_inner = QVBoxLayout(master_wave_frame)
+        master_layout_inner.addWidget(master_wave_lbl)
+        master_layout.addWidget(master_wave_frame)
+        layout.addWidget(master_group)
+
         project_group = QGroupBox("Project Actions")
         project_layout = QHBoxLayout(project_group)
         project_layout.setSpacing(8)
         self.track_name_input = QLineEdit()
         self.track_name_input.setPlaceholderText("Track name")
         self.track_name_input.setFixedWidth(180)
+        self.track_name_input.setToolTip("Enter a name for the new or selected track")
         project_layout.addWidget(self.track_name_input)
-        for label, slot in [("Add Track", self.add_track), ("Rename Selected", self.rename_selected_track), ("Delete Selected", self.delete_selected_track), ("Move Up", lambda: self.move_selected_track(-1)), ("Move Down", lambda: self.move_selected_track(1)), ("Mute", self.toggle_selected_track_mute), ("Solo", self.toggle_selected_track_solo), ("Arm/Disarm", self.toggle_arm_selected_track)]:
+        for label, slot, tip in [
+            ("Add Track", self.add_track, "Add a new empty track to the project"),
+            ("Rename Selected", self.rename_selected_track, "Rename the currently selected track"),
+            ("Delete Selected", self.delete_selected_track, "Remove the selected track from the project"),
+            ("Move Up", lambda: self.move_selected_track(-1), "Move selected track up in the list"),
+            ("Move Down", lambda: self.move_selected_track(1), "Move selected track down in the list"),
+            ("Mute", self.toggle_selected_track_mute, "Toggle mute on the selected track"),
+            ("Solo", self.toggle_selected_track_solo, "Toggle solo on the selected track"),
+            ("Arm/Disarm", self.toggle_arm_selected_track, "Arm or disarm the selected track for recording"),
+        ]:
             button = QPushButton(label)
+            button.setToolTip(tip)
             button.clicked.connect(slot)
             project_layout.addWidget(button)
         project_layout.addStretch()
@@ -3340,34 +3659,42 @@ class TabbedEchoProWindow(EchoProWindow):
         self.clip_track_index_input = QLineEdit()
         self.clip_track_index_input.setPlaceholderText("Track index")
         self.clip_track_index_input.setFixedWidth(90)
+        self.clip_track_index_input.setToolTip("Zero-based index of the track to add the clip to")
         clip_layout.addWidget(QLabel("Clip Track"), 0, 0)
         clip_layout.addWidget(self.clip_track_index_input, 0, 1)
         self.clip_start_sec_input = QLineEdit()
         self.clip_start_sec_input.setPlaceholderText("Start sec")
         self.clip_start_sec_input.setFixedWidth(90)
+        self.clip_start_sec_input.setToolTip("Start position of the clip in seconds")
         clip_layout.addWidget(QLabel("Start"), 0, 2)
         clip_layout.addWidget(self.clip_start_sec_input, 0, 3)
         add_clip_btn = QPushButton("Add Clip from File")
+        add_clip_btn.setToolTip("Browse for an audio file and add it as a clip")
         add_clip_btn.clicked.connect(self.add_clip_from_file)
         clip_layout.addWidget(add_clip_btn, 0, 4)
 
         self.volume_track_index_input = QLineEdit()
         self.volume_track_index_input.setPlaceholderText("Track index")
         self.volume_track_index_input.setFixedWidth(90)
+        self.volume_track_index_input.setToolTip("Zero-based index of the track to adjust volume for")
         clip_layout.addWidget(QLabel("Volume Track"), 1, 0)
         clip_layout.addWidget(self.volume_track_index_input, 1, 1)
         self.volume_db_input = QLineEdit()
         self.volume_db_input.setPlaceholderText("dB")
         self.volume_db_input.setFixedWidth(90)
+        self.volume_db_input.setToolTip("Volume level in decibels (e.g. -6, 0, +3)")
         clip_layout.addWidget(QLabel("Volume dB"), 1, 2)
         clip_layout.addWidget(self.volume_db_input, 1, 3)
         set_vol_btn = QPushButton("Set Track Volume")
+        set_vol_btn.setToolTip("Apply the specified volume to the selected track")
         set_vol_btn.clicked.connect(self.set_track_volume)
         clip_layout.addWidget(set_vol_btn, 1, 4)
 
         play_btn = QPushButton("Play Project")
+        play_btn.setToolTip("Play back all tracks in the current project")
         play_btn.clicked.connect(self.play_current_project)
         stems_btn = QPushButton("Split Song into Stems")
+        stems_btn.setToolTip("Separate a song file into vocal, drums, bass, and other stems using Demucs")
         stems_btn.clicked.connect(self.split_song_into_stems)
         clip_layout.addWidget(play_btn, 2, 4)
         clip_layout.addWidget(stems_btn, 2, 3)
@@ -3376,6 +3703,7 @@ class TabbedEchoProWindow(EchoProWindow):
         tracks_group = QGroupBox("Tracks")
         tracks_layout = QVBoxLayout(tracks_group)
         self.track_list = QListWidget()
+        self.track_list.setToolTip("List of all tracks in the project — click to select")
         self.track_list.currentRowChanged.connect(self.on_track_selection_changed)
         tracks_layout.addWidget(self.track_list)
         layout.addWidget(tracks_group)
@@ -3395,28 +3723,30 @@ class TabbedEchoProWindow(EchoProWindow):
         wave_layout.addWidget(self.timeline_scroll)
         layout.addWidget(wave_group, stretch=2)
 
+        # ── Studio Mixer – horizontal channel strips ─────────────────────────
         mixer_group = QGroupBox("Studio Mixer")
-        mixer_layout = QVBoxLayout(mixer_group)
-        mixer_group.setMinimumHeight(320)
-        mixer_header = QLabel("Channel strips, volume faders, mute/solo, pan, and live meters")
+        mixer_layout_outer = QVBoxLayout(mixer_group)
+        mixer_group.setMinimumHeight(560)
+        mixer_header = QLabel("Vertical channel strips — scroll horizontally to view all channels")
         mixer_header.setStyleSheet("color:#aab4be; font-style:italic;")
-        mixer_layout.addWidget(mixer_header)
+        mixer_layout_outer.addWidget(mixer_header)
         self.mixer_scroll = QScrollArea()
         self.mixer_scroll.setWidgetResizable(True)
-        self.mixer_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        self.mixer_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.mixer_scroll.setMinimumHeight(260)
+        self.mixer_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.mixer_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.mixer_scroll.setMinimumHeight(520)
         self.mixer_inner = QWidget()
-        self.mixer_layout = QVBoxLayout(self.mixer_inner)
+        self.mixer_layout = QHBoxLayout(self.mixer_inner)
         self.mixer_layout.setContentsMargins(4, 4, 4, 4)
-        self.mixer_layout.setSpacing(4)
+        self.mixer_layout.setSpacing(6)
+        self.mixer_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.mixer_empty_label = QLabel("Add or load tracks to populate the mixer board.")
         self.mixer_empty_label.setStyleSheet("padding:12px; color:#dde1e7; background:#0d1b2a; border:1px solid #1a4080;")
         self.mixer_layout.addWidget(self.mixer_empty_label)
         self.mixer_layout.addStretch()
         self.mixer_scroll.setWidget(self.mixer_inner)
-        mixer_layout.addWidget(self.mixer_scroll)
-        layout.addWidget(mixer_group, stretch=2)
+        mixer_layout_outer.addWidget(self.mixer_scroll)
+        layout.addWidget(mixer_group, stretch=3)
 
         return tab
 
@@ -3429,13 +3759,29 @@ class TabbedEchoProWindow(EchoProWindow):
         device_group = QGroupBox("Audio Devices and Checks")
         device_layout = QHBoxLayout(device_group)
         self.input_device_combo = QComboBox()
+        self.input_device_combo.setToolTip("Select the audio input device for recording")
         self.output_device_combo = QComboBox()
+        self.output_device_combo.setToolTip("Select the audio output device for playback")
         device_layout.addWidget(QLabel("Input"))
         device_layout.addWidget(self.input_device_combo)
         device_layout.addWidget(QLabel("Output"))
         device_layout.addWidget(self.output_device_combo)
-        for label, slot in [("Refresh Devices", self.refresh_audio_device_selectors), ("Test Devices", self.test_audio_devices), ("Run P5A Checks", self.run_p5a_regression_checks), ("Run P5B Checks", self.run_p5b_regression_checks)]:
+
+        device_layout.addWidget(QLabel("Sample Rate"))
+        self.sample_rate_combo = QComboBox()
+        for sr_label, sr_value in [("44.1 kHz", 44100), ("48 kHz", 48000), ("88.2 kHz", 88200), ("96 kHz", 96000)]:
+            self.sample_rate_combo.addItem(sr_label, sr_value)
+        self.sample_rate_combo.setToolTip("Recording sample rate (applies to new sessions)")
+        device_layout.addWidget(self.sample_rate_combo)
+
+        for label, slot, tip in [
+            ("Refresh Devices", self.refresh_audio_device_selectors, "Re-scan available audio devices"),
+            ("Test Devices", self.test_audio_devices, "Play a test tone to verify output device"),
+            ("Run P5A Checks", self.run_p5a_regression_checks, "Run Phase 5A regression checks"),
+            ("Run P5B Checks", self.run_p5b_regression_checks, "Run Phase 5B regression checks"),
+        ]:
             button = QPushButton(label)
+            button.setToolTip(tip)
             button.clicked.connect(slot)
             device_layout.addWidget(button)
         device_layout.addStretch()
@@ -3454,30 +3800,42 @@ class TabbedEchoProWindow(EchoProWindow):
         self.record_track_input = QLineEdit()
         self.record_track_input.setPlaceholderText("Arm track")
         self.record_track_input.setFixedWidth(90)
+        self.record_track_input.setToolTip("Track index to arm for recording (0-based)")
         transport_layout.addWidget(self.record_track_input)
-        for label, slot in [("Arm Track", self.arm_recording_track), ("Arm All", self.arm_all_recording_tracks), ("Clear Armed", self.clear_armed_recording_tracks)]:
+        for label, slot, tip in [
+            ("Arm Track", self.arm_recording_track, "Arm the specified track for recording"),
+            ("Arm All", self.arm_all_recording_tracks, "Arm all tracks for recording"),
+            ("Clear Armed", self.clear_armed_recording_tracks, "Disarm all armed tracks"),
+        ]:
             button = QPushButton(label)
+            button.setToolTip(tip)
             button.clicked.connect(slot)
             transport_layout.addWidget(button)
         self.record_tempo_input = QLineEdit()
         self.record_tempo_input.setPlaceholderText("BPM")
         self.record_tempo_input.setFixedWidth(80)
+        self.record_tempo_input.setToolTip("Recording tempo in beats per minute")
         transport_layout.addWidget(self.record_tempo_input)
         tempo_btn = QPushButton("Set Tempo")
+        tempo_btn.setToolTip("Apply the entered BPM as the recording tempo")
         tempo_btn.clicked.connect(self.set_recording_tempo)
         transport_layout.addWidget(tempo_btn)
         self.record_time_sig_input = QLineEdit()
         self.record_time_sig_input.setPlaceholderText("4/4")
         self.record_time_sig_input.setFixedWidth(70)
+        self.record_time_sig_input.setToolTip("Time signature for recording (e.g. 4/4, 3/4, 6/8)")
         transport_layout.addWidget(self.record_time_sig_input)
         time_btn = QPushButton("Set Time Sig")
+        time_btn.setToolTip("Apply the entered time signature")
         time_btn.clicked.connect(self.set_recording_time_signature)
         transport_layout.addWidget(time_btn)
         self.record_count_in_input = QLineEdit()
         self.record_count_in_input.setPlaceholderText("Count-in")
         self.record_count_in_input.setFixedWidth(80)
+        self.record_count_in_input.setToolTip("Number of count-in bars before recording starts")
         transport_layout.addWidget(self.record_count_in_input)
         count_btn = QPushButton("Set Count-In")
+        count_btn.setToolTip("Apply the count-in bar setting")
         count_btn.clicked.connect(self.set_recording_count_in)
         transport_layout.addWidget(count_btn)
         layout.addWidget(transport_group)
@@ -3596,22 +3954,49 @@ class TabbedEchoProWindow(EchoProWindow):
         effect_group = QGroupBox("Voice Conversion")
         effect_layout = QGridLayout(effect_group)
         self.voice_track_index_input = QLineEdit()
+        self.voice_track_index_input.setToolTip("Zero-based track index containing the clip to process")
         self.voice_clip_id_input = QLineEdit()
-        self.voice_profile_name_input = QLineEdit()
+        self.voice_clip_id_input.setToolTip("Numeric ID of the clip to apply voice conversion to")
+
+        # Editable ComboBox pre-populated with available voice profiles
+        self.voice_profile_combo = QComboBox()
+        self.voice_profile_combo.setEditable(True)
+        self.voice_profile_combo.setToolTip("Select an existing voice profile or type a name")
+        self._populate_voice_profile_combo()
+        # Expose as voice_profile_name_input so the base class apply_voice_effect_to_clip works
+        self.voice_profile_name_input = self.voice_profile_combo.lineEdit()
+
         effect_layout.addWidget(QLabel("Track"), 0, 0)
         effect_layout.addWidget(self.voice_track_index_input, 0, 1)
         effect_layout.addWidget(QLabel("Clip ID"), 0, 2)
         effect_layout.addWidget(self.voice_clip_id_input, 0, 3)
         effect_layout.addWidget(QLabel("Voice Profile"), 1, 0)
-        effect_layout.addWidget(self.voice_profile_name_input, 1, 1, 1, 3)
+        effect_layout.addWidget(self.voice_profile_combo, 1, 1, 1, 3)
         apply_btn = QPushButton("Apply Voice Effect")
+        apply_btn.setToolTip("Apply the selected voice conversion to the specified clip")
         apply_btn.clicked.connect(self.apply_voice_effect_to_clip)
         manage_btn = QPushButton("Manage Voices")
+        manage_btn.setToolTip("Open the Voice Manager to record or import voice profiles")
         manage_btn.clicked.connect(self.open_voice_manager)
         effect_layout.addWidget(apply_btn, 2, 2)
         effect_layout.addWidget(manage_btn, 2, 3)
         layout.addWidget(effect_group)
         return tab
+
+    def _populate_voice_profile_combo(self) -> None:
+        """Refresh the voice profile ComboBox from stored profiles."""
+        current_text = self.voice_profile_combo.currentText()
+        self.voice_profile_combo.blockSignals(True)
+        self.voice_profile_combo.clear()
+        for profile in load_voice_profiles():
+            self.voice_profile_combo.addItem(profile.name)
+        self.voice_profile_combo.blockSignals(False)
+        if current_text:
+            idx = self.voice_profile_combo.findText(current_text)
+            if idx >= 0:
+                self.voice_profile_combo.setCurrentIndex(idx)
+            else:
+                self.voice_profile_combo.setCurrentText(current_text)
 
     def _build_music_tab(self) -> QWidget:
         tab = QWidget()
@@ -3622,11 +4007,17 @@ class TabbedEchoProWindow(EchoProWindow):
         gen_group = QGroupBox("Music Generator")
         gen_layout = QGridLayout(gen_group)
         self.gen_style = QLineEdit()
+        self.gen_style.setToolTip("Musical style (e.g. lofi, cinematic, chill)")
         self.gen_genre = QLineEdit()
+        self.gen_genre.setToolTip("Genre (e.g. rock, EDM, orchestral, jazz)")
         self.gen_mood = QLineEdit()
+        self.gen_mood.setToolTip("Mood or energy (e.g. calm, energetic, melancholic)")
         self.gen_lyrics = QLineEdit()
+        self.gen_lyrics.setToolTip("Optional lyrics snippet to guide generation")
         self.gen_duration = QLineEdit()
+        self.gen_duration.setToolTip("Duration in seconds (10–300)")
         self.cloud_enabled = QLineEdit("no")
+        self.cloud_enabled.setToolTip("Type 'yes' to use the cloud backend; 'no' for local ACE Step 1.5")
         gen_layout.addWidget(QLabel("Style"), 0, 0)
         gen_layout.addWidget(self.gen_style, 0, 1)
         gen_layout.addWidget(QLabel("Genre"), 0, 2)
@@ -3640,6 +4031,7 @@ class TabbedEchoProWindow(EchoProWindow):
         gen_layout.addWidget(QLabel("Cloud"), 2, 2)
         gen_layout.addWidget(self.cloud_enabled, 2, 3)
         gen_btn = QPushButton("Generate Clip")
+        gen_btn.setToolTip("Generate a single music clip with the specified parameters")
         gen_btn.clicked.connect(self.generate_single_clip)
         gen_layout.addWidget(gen_btn, 2, 4)
         layout.addWidget(gen_group)
@@ -3647,12 +4039,19 @@ class TabbedEchoProWindow(EchoProWindow):
         plan_group = QGroupBox("Song Planner")
         plan_layout = QGridLayout(plan_group)
         self.plan_total_length = QLineEdit()
+        self.plan_total_length.setToolTip("Total song duration in seconds")
         self.plan_structure = QLineEdit()
+        self.plan_structure.setToolTip("Comma-separated song sections, e.g. Intro,Verse,Chorus,Bridge,Outro")
         self.plan_key = QLineEdit()
+        self.plan_key.setToolTip("Musical key, e.g. C major, A minor")
         self.plan_chords = QLineEdit()
+        self.plan_chords.setToolTip("Chord progression, e.g. C-G-Am-F")
         self.plan_time_sig = QLineEdit()
+        self.plan_time_sig.setToolTip("Time signature, e.g. 4/4, 3/4, 6/8")
         self.plan_tempo = QLineEdit()
+        self.plan_tempo.setToolTip("Tempo in beats per minute (BPM)")
         self.plan_lyrics = QTextEdit()
+        self.plan_lyrics.setToolTip("Full lyrics for the song — used to match sections")
         plan_layout.addWidget(QLabel("Total Length"), 0, 0)
         plan_layout.addWidget(self.plan_total_length, 0, 1)
         plan_layout.addWidget(QLabel("Structure"), 0, 2)
@@ -3668,6 +4067,7 @@ class TabbedEchoProWindow(EchoProWindow):
         plan_layout.addWidget(QLabel("Lyrics"), 3, 0)
         plan_layout.addWidget(self.plan_lyrics, 3, 1, 1, 3)
         plan_btn = QPushButton("Generate Full Song")
+        plan_btn.setToolTip("Generate audio clips for all sections and add them to the project")
         plan_btn.clicked.connect(self.generate_full_song)
         plan_layout.addWidget(plan_btn, 4, 3)
         layout.addWidget(plan_group)
@@ -3675,13 +4075,17 @@ class TabbedEchoProWindow(EchoProWindow):
         alter_group = QGroupBox("Section Tweaks")
         alter_layout = QHBoxLayout(alter_group)
         self.alter_section_selector = QComboBox()
+        self.alter_section_selector.setToolTip("Select a generated section to regenerate")
         self.alter_section_selector.currentIndexChanged.connect(self.on_alter_section_selector_changed)
         self.alter_section_index_input = QLineEdit()
+        self.alter_section_index_input.setToolTip("Section index (auto-filled from the dropdown above)")
         self.alter_section_lyrics_input = QLineEdit()
+        self.alter_section_lyrics_input.setToolTip("Optional replacement lyrics for just this section")
         alter_layout.addWidget(self.alter_section_selector)
         alter_layout.addWidget(self.alter_section_index_input)
         alter_layout.addWidget(self.alter_section_lyrics_input)
         alter_btn = QPushButton("Alter Section")
+        alter_btn.setToolTip("Regenerate only the selected section without re-generating the whole song")
         alter_btn.clicked.connect(self.alter_generated_song_section)
         alter_layout.addWidget(alter_btn)
         layout.addWidget(alter_group)
@@ -3713,16 +4117,19 @@ class TabbedEchoProWindow(EchoProWindow):
         return tab
 
     def _rebuild_mixer_rows(self):
+        # Remove all items except the trailing stretch
         while self.mixer_layout.count() > 1:
             item = self.mixer_layout.takeAt(0)
+            if item is None:
+                break
             widget = item.widget()
             if widget:
                 widget.deleteLater()
         self.mixer_rows = []
         has_tracks = bool(self.current_project.tracks)
-        self.mixer_empty_label = QLabel("Add or load tracks to populate the mixer board.")
-        self.mixer_empty_label.setStyleSheet("padding:12px; color:#dde1e7; background:#0d1b2a; border:1px solid #1a4080;")
         if not has_tracks:
+            self.mixer_empty_label = QLabel("Add or load tracks to populate the mixer board.")
+            self.mixer_empty_label.setStyleSheet("padding:12px; color:#dde1e7; background:#0d1b2a; border:1px solid #1a4080;")
             self.mixer_layout.insertWidget(0, self.mixer_empty_label)
         for idx, track in enumerate(self.current_project.tracks):
             row = TrackMixerRow(
@@ -3759,6 +4166,11 @@ class TabbedEchoProWindow(EchoProWindow):
     def refresh_track_list(self):
         super().refresh_track_list()
         self._rebuild_mixer_rows()
+
+    def open_voice_manager(self):
+        super().open_voice_manager()
+        if hasattr(self, "voice_profile_combo"):
+            self._populate_voice_profile_combo()
 
     def refresh_recording_meters(self):
         super().refresh_recording_meters()
