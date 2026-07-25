@@ -5,11 +5,11 @@ Summary: A python implementation of GNU readline.
 Author-email: Bassem Girgis <brgirgis@gmail.com>, Jorgen Stenarson <jorgen.stenarson@kroywen.se>, Gary Bishop <unknwon@unknown.com>, Jack Trainor <unknwon@unknown.com>
 Maintainer-email: Bassem Girgis <brgirgis@gmail.com>
 License: BSD
-Project-URL: Homepage, https://github.com/pyreadline3/pyreadline3
-Project-URL: Documentation, https://github.com/pyreadline3/pyreadline3
-Project-URL: Repository, https://github.com/pyreadline3/pyreadline3.git
-Project-URL: Issues, https://github.com/pyreadline3/pyreadline3/issues
-Project-URL: Changelog, https://github.com/pyreadline3/pyreadline3/blob/master/doc/ChangeLog
+Project-URL: Homepage, <https://github.com/pyreadline3/pyreadline3>
+Project-URL: Documentation, <https://github.com/pyreadline3/pyreadline3>
+Project-URL: Repository, <https://github.com/pyreadline3/pyreadline3.git>
+Project-URL: Issues, <https://github.com/pyreadline3/pyreadline3/issues>
+Project-URL: Changelog, <https://github.com/pyreadline3/pyreadline3/blob/master/doc/ChangeLog>
 Keywords: readline,pyreadline,pyreadline3
 Classifier: Development Status :: 5 - Production/Stable
 Classifier: Environment :: Console
