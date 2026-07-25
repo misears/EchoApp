@@ -1,6 +1,8 @@
 
 import subprocess
 import os
+import queue
+import threading
 from pathlib import Path
 import shutil
 import time
@@ -83,6 +85,7 @@ def separate_stems(
     output_dir: Path,
     *,
     demucs_executable: str = "demucs",
+    demucs_repo: Optional[str] = None,
     ffmpeg_executable: Optional[str] = None,
     progress_callback: Optional[Callable[[str], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
@@ -96,7 +99,10 @@ def separate_stems(
     input_file = Path(input_path)
     demucs_input, original_length_ms = _prepare_demucs_input(input_file)
 
-    cmd = [demucs_executable, "-o", str(output_dir), str(demucs_input)]
+    cmd = [demucs_executable]
+    if demucs_repo:
+        cmd.extend(["--repo", demucs_repo])
+    cmd.extend(["-o", str(output_dir), str(demucs_input)])
     env = os.environ.copy()
     if ffmpeg_executable:
         env["FFMPEG_BINARY"] = ffmpeg_executable
@@ -108,17 +114,33 @@ def separate_stems(
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
             env=env,
+            bufsize=1,
         )
     except FileNotFoundError as exc:
         raise StemDependencyError(
             "Demucs executable was not found. Run install_echo_pro.bat install (or update)."
         ) from exc
 
-    stderr_chunks = []
-    while process.poll() is None:
+    output_chunks: list[str] = []
+    output_queue: queue.Queue[str] = queue.Queue()
+
+    def _pump_output(pipe) -> None:
+        if pipe is None:
+            return
+        try:
+            for line in iter(pipe.readline, ""):
+                output_queue.put(line)
+        finally:
+            pipe.close()
+
+    output_thread = threading.Thread(target=_pump_output, args=(process.stdout,), daemon=True)
+    output_thread.start()
+
+    last_status_at = 0.0
+    while process.poll() is None or not output_queue.empty():
         if cancel_check is not None and cancel_check():
             process.terminate()
             try:
@@ -127,16 +149,39 @@ def separate_stems(
                 process.kill()
                 process.wait(timeout=3)
             raise StemCancelledError("Stem separation was cancelled.")
-        if progress_callback is not None:
-            progress_callback("Demucs processing in progress...")
+
+        saw_output = False
+        while True:
+            try:
+                line = output_queue.get_nowait()
+            except queue.Empty:
+                break
+            saw_output = True
+            text = line.strip()
+            if not text:
+                continue
+            output_chunks.append(text)
+            if progress_callback is not None:
+                progress_callback(text)
+
+        if not saw_output and progress_callback is not None:
+            now = time.monotonic()
+            if now - last_status_at >= 0.5:
+                progress_callback("Demucs processing in progress...")
+                last_status_at = now
         time.sleep(0.2)
 
-    stdout_data, stderr_data = process.communicate()
-    if stdout_data:
-        stderr_chunks.append(stdout_data)
-    if stderr_data:
-        stderr_chunks.append(stderr_data)
-    stderr_text = "\n".join(stderr_chunks)
+    output_thread.join(timeout=1.0)
+    while True:
+        try:
+            line = output_queue.get_nowait()
+        except queue.Empty:
+            break
+        text = line.strip()
+        if text:
+            output_chunks.append(text)
+
+    stderr_text = "\n".join(output_chunks)
 
     if process.returncode != 0:
         raise _normalize_failure(stderr_text)

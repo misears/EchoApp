@@ -22,6 +22,11 @@ if not defined ECHO_HOME set "ECHO_HOME=%LOCALAPPDATA%\EchoProData"
 set "TOOLS=%ECHO_HOME%\tools"
 set "VENV_DIR=%ECHO_HOME%\runtime\venv"
 set "MODELS_DIR=%ECHO_HOME%\models"
+set "HF_HOME=%ECHO_HOME%\runtime\hf_cache"
+set "TORCH_HOME=%ECHO_HOME%\runtime\torch_cache"
+set "DEMUCS_MODEL_DIR=%MODELS_DIR%\demucs"
+set "DEMUCS_MODEL_REPO=%DEMUCS_MODEL_DIR%\repo"
+set "DEMUCS_MODEL_SENTINEL=%DEMUCS_MODEL_DIR%\htdemucs.ready"
 
 set "SEEDS_DIR=%APP_ROOT%\seeds"
 if defined ECHO_SEEDS_DIR set "SEEDS_DIR=%ECHO_SEEDS_DIR%"
@@ -30,6 +35,7 @@ set "RVC_SOURCE=%SEEDS_DIR%\Retrieval-based-Voice-Conversion-WebUI-main"
 if not exist "%RVC_SOURCE%" set "RVC_SOURCE=%SEEDS_DIR%\rvc"
 set "DEMUCS_SOURCE=%SEEDS_DIR%\demucs-main"
 if not exist "%DEMUCS_SOURCE%" set "DEMUCS_SOURCE=%SEEDS_DIR%\demucs"
+set "DEMUCS_MODEL_SEED=%SEEDS_DIR%\demucs-model-repo"
 set "FFMPEG_SOURCE=%SEEDS_DIR%\FFmpeg-master"
 if not exist "%FFMPEG_SOURCE%" set "FFMPEG_SOURCE=%SEEDS_DIR%\ffmpeg"
 set "ACE_SOURCE=%SEEDS_DIR%\ACE-Step-1.5-main"
@@ -50,6 +56,10 @@ mkdir "%ECHO_HOME%\projects" "%ECHO_HOME%\voices" "%ECHO_HOME%\generated" 2>nul
 mkdir "%TOOLS%" 2>nul
 mkdir "%ECHO_HOME%\runtime" 2>nul
 mkdir "%MODELS_DIR%" 2>nul
+mkdir "%HF_HOME%" 2>nul
+mkdir "%TORCH_HOME%" 2>nul
+mkdir "%DEMUCS_MODEL_DIR%" 2>nul
+mkdir "%DEMUCS_MODEL_REPO%" 2>nul
 
 call :ensure_ffmpeg
 if errorlevel 1 goto :fail
@@ -58,6 +68,9 @@ call :ensure_python
 if errorlevel 1 goto :fail
 
 call :ensure_demucs
+if errorlevel 1 goto :fail
+
+call :ensure_demucs_model_assets
 if errorlevel 1 goto :fail
 
 call :ensure_rvc_model
@@ -70,6 +83,8 @@ echo.
 echo Dependencies are ready.
 echo ffmpeg: %TOOLS%\ffmpeg\current\bin\ffmpeg.exe
 echo demucs: %VENV_DIR%\Scripts\demucs.exe
+echo demucs model repo: %DEMUCS_MODEL_REPO%
+echo demucs model: %DEMUCS_MODEL_SENTINEL%
 echo rvc: %MODELS_DIR%\rvc\current
 echo ace-step-1.5: %MODELS_DIR%\ace_step_1_5\current
 echo.
@@ -120,6 +135,11 @@ if errorlevel 1 (
 "%PY_CMD%" -m pip install --upgrade setuptools wheel hatchling
 if errorlevel 1 (
     echo Failed to install local Python build tooling.
+    exit /b 1
+)
+"%PY_CMD%" -m pip install --upgrade numpy
+if errorlevel 1 (
+    echo Failed to install local runtime prerequisites.
     exit /b 1
 )
 exit /b 0
@@ -222,6 +242,74 @@ if not exist "%VENV_DIR%\Scripts\demucs.exe" (
 )
 
 echo demucs ready: %VENV_DIR%\Scripts\demucs.exe
+exit /b 0
+
+:ensure_demucs_model_assets
+echo.
+echo Checking Demucs model assets...
+if exist "%DEMUCS_MODEL_SENTINEL%" if exist "%DEMUCS_MODEL_REPO%\htdemucs.yaml" (
+    echo Demucs model assets already cached.
+    exit /b 0
+)
+
+if exist "%DEMUCS_MODEL_REPO%" rmdir /s /q "%DEMUCS_MODEL_REPO%"
+mkdir "%DEMUCS_MODEL_REPO%" 2>nul
+
+if exist "%DEMUCS_MODEL_SEED%\htdemucs.yaml" (
+    echo Found Demucs model seed assets: %DEMUCS_MODEL_SEED%
+    xcopy /E /I /Y "%DEMUCS_MODEL_SEED%" "%DEMUCS_MODEL_REPO%\" >nul
+    if errorlevel 1 (
+        echo Failed to copy Demucs model seed assets from %DEMUCS_MODEL_SEED%.
+        exit /b 1
+    )
+    goto validate_demucs_model_repo
+)
+
+echo Downloading and caching Demucs model assets...
+set "DEMUCS_PREFETCH_SCRIPT=%TEMP%\echopro_demucs_prefetch_%RANDOM%%RANDOM%.py"
+(
+    echo from demucs.pretrained import get_model
+    echo from pathlib import Path
+    echo import shutil
+    echo import torch
+    echo model = get_model^("htdemucs"^)
+    echo repo = Path^("%DEMUCS_MODEL_REPO:\=\\%"^)
+    echo remote_yaml = Path^("%DEMUCS_SOURCE:\=\\%"^) / "demucs" / "remote" / "htdemucs.yaml"
+    echo repo.mkdir^(parents=True, exist_ok=True^)
+    echo shutil.copy2^(remote_yaml, repo / "htdemucs.yaml"^)
+    echo state = model.models[0].state_dict^(^)
+    echo torch.save^(state, repo / "955717e8-8726e21a.th"^)
+    echo print^("Demucs model cache ready"^)
+) > "%DEMUCS_PREFETCH_SCRIPT%"
+
+set "HF_HOME=%HF_HOME%"
+set "TORCH_HOME=%TORCH_HOME%"
+"%PY_CMD%" "%DEMUCS_PREFETCH_SCRIPT%"
+set "DEMUCS_PREFETCH_RESULT=%ERRORLEVEL%"
+del "%DEMUCS_PREFETCH_SCRIPT%" >nul 2>&1
+if not "%DEMUCS_PREFETCH_RESULT%"=="0" (
+    echo Failed to cache Demucs model assets.
+    exit /b 1
+)
+
+:validate_demucs_model_repo
+set "DEMUCS_VALIDATE_SCRIPT=%TEMP%\echopro_demucs_validate_%RANDOM%%RANDOM%.py"
+(
+    echo from pathlib import Path
+    echo from demucs.pretrained import get_model
+    echo get_model^("htdemucs", repo=Path^("%DEMUCS_MODEL_REPO:\=\\%"^)^)
+    echo print^("Validated local Demucs model repo"^)
+) > "%DEMUCS_VALIDATE_SCRIPT%"
+"%PY_CMD%" "%DEMUCS_VALIDATE_SCRIPT%"
+set "DEMUCS_VALIDATE_RESULT=%ERRORLEVEL%"
+del "%DEMUCS_VALIDATE_SCRIPT%" >nul 2>&1
+if not "%DEMUCS_VALIDATE_RESULT%"=="0" (
+    echo Local Demucs model repo validation failed.
+    exit /b 1
+)
+
+> "%DEMUCS_MODEL_SENTINEL%" echo htdemucs
+echo Demucs model assets ready: %DEMUCS_MODEL_SENTINEL%
 exit /b 0
 
 :ensure_rvc_model

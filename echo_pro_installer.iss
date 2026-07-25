@@ -26,6 +26,7 @@ Name: "{group}\Echo Pro"; Filename: "{app}\EchoPro_Desktop.bat"; Tasks: desktopm
 Name: "{commondesktop}\Echo Pro"; Filename: "{app}\EchoPro_Desktop.bat"; Tasks: desktopicon desktopmode
 Name: "{group}\Echo Pro (Portable Launcher)"; Filename: "{app}\EchoPro_Portable.bat"; Tasks: portablemode
 Name: "{group}\Update Echo Pro Dependencies"; Filename: "{cmd}"; Parameters: "/C ""{app}\install_echo_pro.bat"" update"; WorkingDir: "{app}"
+Name: "{group}\Uninstall Echo Pro"; Filename: "{uninstallexe}"
 Name: "{group}\Open Echo Pro Folder"; Filename: "{app}"
 
 [Tasks]
@@ -34,7 +35,7 @@ Name: "portablemode"; Description: "Install portable launcher"; Flags: unchecked
 Name: "desktopicon"; Description: "Create a desktop icon"; Flags: unchecked
 
 [Run]
-Filename: "{cmd}"; Parameters: "/C ""{app}\install_echo_pro.bat"" install"; WorkingDir: "{app}"; Flags: runhidden waituntilterminated
+Filename: "{cmd}"; Parameters: "/C ""{app}\install_echo_pro.bat"" install"; WorkingDir: "{app}"; Flags: waituntilterminated
 Filename: "{app}\EchoPro_Desktop.bat"; Description: "Launch Echo Pro"; Flags: nowait postinstall skipifsilent; Check: WizardIsTaskSelected('desktopmode')
 Filename: "{app}\EchoPro_Portable.bat"; Description: "Launch Echo Pro Portable Launcher"; Flags: nowait postinstall skipifsilent; Check: (not WizardIsTaskSelected('desktopmode')) and WizardIsTaskSelected('portablemode')
 

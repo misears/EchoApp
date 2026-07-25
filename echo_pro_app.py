@@ -2444,6 +2444,7 @@ class EchoProWindow(QMainWindow):
                 if bool(region.enabled)
             ]
             self.timeline.set_comp_regions_for_track(int(track_id), serialized)
+        self.timeline.updateGeometry()
         self.timeline.update()
 
     def _parse_int_field(self, text: str, *, field_name: str, allow_empty: bool = False, default_value: Optional[int] = None) -> Optional[int]:
@@ -2698,16 +2699,87 @@ class EchoProWindow(QMainWindow):
             QMessageBox.critical(self, "Playback error", f"Could not play project:\n{e}")
             self.update_status("Playback error")
 
-    def split_song_into_stems(self):
-        filename, _ = QFileDialog.getOpenFileName(
-            self,
-            "Choose song to split into stems",
-            "",
-            "Audio Files (*.wav *.mp3 *.flac *.ogg);;All Files (*)"
-        )
-        if not filename:
-            return
-        song_path = Path(filename)
+    def _run_dependency_update_dialog(self, action: str = "update") -> bool:
+        script_path = Path(__file__).resolve().parent / "install_echo_pro.bat"
+        if not script_path.exists():
+            QMessageBox.critical(self, "Dependency update", f"Installer script not found:\n{script_path}")
+            return False
+
+        progress = QProgressDialog("Preparing dependency update...", "Cancel", 0, 6, self)
+        progress.setWindowTitle("Dependency setup")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        progress.show()
+
+        step_value = 0
+        step_markers = [
+            ("Checking ffmpeg...", 0),
+            ("ffmpeg ready", 1),
+            ("Using existing runtime Python", 2),
+            ("Creating local runtime venv...", 2),
+            ("Installing/updating demucs", 3),
+            ("demucs ready", 3),
+            ("Checking Demucs model assets...", 4),
+            ("Demucs model assets ready", 4),
+            ("Installing RVC reference model", 5),
+            ("RVC ready", 5),
+            ("Installing ACE Step 1.5 model assets", 6),
+            ("ACE Step 1.5 ready", 6),
+            ("Dependencies are ready.", 6),
+        ]
+
+        try:
+            process = subprocess.Popen(
+                [str(script_path), action],
+                cwd=str(script_path.parent),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+        except Exception as exc:
+            progress.close()
+            QMessageBox.critical(self, "Dependency update", f"Could not start dependency update:\n{exc}")
+            return False
+
+        output_lines: list[str] = []
+        try:
+            assert process.stdout is not None
+            for raw_line in process.stdout:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                output_lines.append(line)
+                progress.setLabelText(line)
+                for marker, value in step_markers:
+                    if marker in line:
+                        step_value = max(step_value, value)
+                        progress.setValue(step_value)
+                        break
+                QApplication.processEvents()
+                if progress.wasCanceled():
+                    process.terminate()
+                    try:
+                        process.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=3)
+                    QMessageBox.information(self, "Dependency update", "Dependency update was cancelled.")
+                    return False
+            process.wait()
+        finally:
+            progress.close()
+
+        if process.returncode != 0:
+            message = "\n".join(output_lines[-20:]) if output_lines else "Dependency update failed."
+            QMessageBox.critical(self, "Dependency update", message)
+            return False
+
+        self.update_status("Dependencies updated.")
+        return True
+
+    def _split_song_into_stems_for_path(self, song_path: Path, *, allow_dependency_prompt: bool = True) -> None:
         if not song_path.exists():
             QMessageBox.warning(self, "Stems", "Selected song file does not exist.")
             return
@@ -2724,14 +2796,12 @@ class EchoProWindow(QMainWindow):
             song_stems_dir = stems_root / song_path.stem
             app_root = Path(__file__).resolve().parent
             local_demucs = RUNTIME_DIR / "venv" / "Scripts" / "demucs.exe"
+            local_demucs_repo = MODELS_DIR / "demucs" / "repo"
             local_ffmpeg = TOOLS_DIR / "ffmpeg" / "current" / "bin" / "ffmpeg.exe"
-            seed_demucs = app_root / "seeds" / "demucs" / "demucs.exe"
-            seed_ffmpeg = app_root / "seeds" / "ffmpeg" / "bin" / "ffmpeg.exe"
+            seed_ffmpeg = app_root / "seeds" / "FFmpeg-master" / "bin" / "ffmpeg.exe"
 
             if local_demucs.exists():
                 demucs_executable = str(local_demucs)
-            elif seed_demucs.exists():
-                demucs_executable = str(seed_demucs)
             else:
                 demucs_executable = "demucs"
 
@@ -2741,6 +2811,11 @@ class EchoProWindow(QMainWindow):
                 ffmpeg_executable = str(seed_ffmpeg)
             else:
                 ffmpeg_executable = None
+
+            if local_demucs_repo.exists():
+                demucs_repo = str(local_demucs_repo)
+            else:
+                demucs_repo = None
 
             self.update_status("Running Demucs... this may take a while.")
             QApplication.processEvents()
@@ -2753,6 +2828,7 @@ class EchoProWindow(QMainWindow):
                 str(song_path),
                 song_stems_dir,
                 demucs_executable=demucs_executable,
+                demucs_repo=demucs_repo,
                 ffmpeg_executable=ffmpeg_executable,
                 progress_callback=_progress_message,
                 cancel_check=progress.wasCanceled,
@@ -2779,21 +2855,33 @@ class EchoProWindow(QMainWindow):
             QMessageBox.information(self, "Stems", str(e))
             self.update_status("Stems cancelled")
         except StemDependencyError as e:
-            install_choice = QMessageBox.question(
-                self,
-                "Missing dependency",
-                f"{e}\n\nRun dependency update now?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if install_choice == QMessageBox.StandardButton.Yes:
-                script_path = Path(__file__).resolve().parent / "install_echo_pro.bat"
-                subprocess.Popen([str(script_path), "update"], cwd=str(script_path.parent))
+            if allow_dependency_prompt:
+                install_choice = QMessageBox.question(
+                    self,
+                    "Missing dependency",
+                    f"{e}\n\nRun dependency update now?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                )
+                if install_choice == QMessageBox.StandardButton.Yes and self._run_dependency_update_dialog("update"):
+                    self._split_song_into_stems_for_path(song_path, allow_dependency_prompt=False)
+                    return
             self.update_status("Stems dependency issue")
         except StemSeparationError as e:
             QMessageBox.critical(self, "Error", f"Failed to split stems:\n{e}")
             self.update_status("Stems error")
         finally:
             progress.close()
+
+    def split_song_into_stems(self):
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "Choose song to split into stems",
+            "",
+            "Audio Files (*.wav *.mp3 *.flac *.ogg);;All Files (*)"
+        )
+        if not filename:
+            return
+        self._split_song_into_stems_for_path(Path(filename))
 
     def open_voice_manager(self):
         dlg = VoiceManagerDialog(self)
@@ -3221,6 +3309,8 @@ class TabbedEchoProWindow(EchoProWindow):
     def _wrap_scroll(self, content: QWidget) -> QScrollArea:
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         scroll.setWidget(content)
         return scroll
 
@@ -3296,22 +3386,37 @@ class TabbedEchoProWindow(EchoProWindow):
         self.timeline.setMinimumHeight(360)
         self.timeline.on_project_changed = self._on_timeline_project_changed
         self.timeline.on_comp_range_selected = self.on_timeline_comp_range_selected
-        wave_layout.addWidget(self.timeline)
+        self.timeline_scroll = QScrollArea()
+        self.timeline_scroll.setWidgetResizable(False)
+        self.timeline_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.timeline_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.timeline_scroll.setMinimumHeight(430)
+        self.timeline_scroll.setWidget(self.timeline)
+        wave_layout.addWidget(self.timeline_scroll)
         layout.addWidget(wave_group, stretch=2)
 
         mixer_group = QGroupBox("Studio Mixer")
         mixer_layout = QVBoxLayout(mixer_group)
+        mixer_group.setMinimumHeight(320)
+        mixer_header = QLabel("Channel strips, volume faders, mute/solo, pan, and live meters")
+        mixer_header.setStyleSheet("color:#aab4be; font-style:italic;")
+        mixer_layout.addWidget(mixer_header)
         self.mixer_scroll = QScrollArea()
         self.mixer_scroll.setWidgetResizable(True)
+        self.mixer_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.mixer_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.mixer_scroll.setMinimumHeight(260)
         self.mixer_inner = QWidget()
         self.mixer_layout = QVBoxLayout(self.mixer_inner)
         self.mixer_layout.setContentsMargins(4, 4, 4, 4)
         self.mixer_layout.setSpacing(4)
+        self.mixer_empty_label = QLabel("Add or load tracks to populate the mixer board.")
+        self.mixer_empty_label.setStyleSheet("padding:12px; color:#dde1e7; background:#0d1b2a; border:1px solid #1a4080;")
+        self.mixer_layout.addWidget(self.mixer_empty_label)
         self.mixer_layout.addStretch()
         self.mixer_scroll.setWidget(self.mixer_inner)
         mixer_layout.addWidget(self.mixer_scroll)
-        layout.addWidget(mixer_group, stretch=1)
+        layout.addWidget(mixer_group, stretch=2)
 
         return tab
 
@@ -3614,6 +3719,11 @@ class TabbedEchoProWindow(EchoProWindow):
             if widget:
                 widget.deleteLater()
         self.mixer_rows = []
+        has_tracks = bool(self.current_project.tracks)
+        self.mixer_empty_label = QLabel("Add or load tracks to populate the mixer board.")
+        self.mixer_empty_label.setStyleSheet("padding:12px; color:#dde1e7; background:#0d1b2a; border:1px solid #1a4080;")
+        if not has_tracks:
+            self.mixer_layout.insertWidget(0, self.mixer_empty_label)
         for idx, track in enumerate(self.current_project.tracks):
             row = TrackMixerRow(
                 idx,

@@ -1,8 +1,12 @@
 
+from pathlib import Path
+from typing import Callable, Dict, List, Optional
+
+import numpy as np
+import soundfile as sf
 from PySide6.QtWidgets import QWidget
 from PySide6.QtGui import QPainter, QColor, QPen
-from PySide6.QtCore import Qt, QRect, QPoint
-from typing import Callable, Dict, List, Optional
+from PySide6.QtCore import Qt, QRect, QPoint, QSize
 
 from project_model import Project
 
@@ -33,17 +37,38 @@ class TimelineWidget(QWidget):
         self._comp_select_start_ms: Optional[int] = None
         self._comp_select_end_ms: Optional[int] = None
         self._comp_select_track_index: Optional[int] = None
+        self._waveform_cache: Dict[str, tuple[int, int, np.ndarray]] = {}
         self.setMinimumHeight(300)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
+        self._sync_view_size()
 
     def set_project(self, project: Project):
         self.project = project
+        self._sync_view_size()
         self.update()
 
     def set_selected_track(self, track_index):
         self.selected_track_index = track_index
+        self._sync_view_size()
         self.update()
+
+    def _content_width(self) -> int:
+        max_end_ms = max((int(clip.start_ms) + int(clip.length_ms) for clip in self.project.clips), default=30000)
+        return max(1200, self.time_to_x(max_end_ms) + 180)
+
+    def _content_height(self) -> int:
+        row_height = TRACK_HEIGHT + TRACK_GAP
+        return max(320, len(self.project.tracks) * row_height + 40)
+
+    def _sync_view_size(self) -> None:
+        width = self._content_width()
+        height = self._content_height()
+        self.setMinimumSize(width, height)
+        self.resize(width, height)
+
+    def sizeHint(self) -> QSize:
+        return QSize(self._content_width(), self._content_height())
 
     def set_hide_inactive_take_clips(self, hide: bool):
         self.hide_inactive_take_clips = bool(hide)
@@ -77,6 +102,64 @@ class TimelineWidget(QWidget):
     def time_to_x(self, ms: int) -> int:
         seconds = ms / 1000.0
         return int(seconds * PIXELS_PER_SECOND)
+
+    def _read_waveform_peaks(self, file_path: str, target_points: int = 512) -> Optional[np.ndarray]:
+        path = Path(file_path)
+        if not path.exists():
+            return None
+        try:
+            stat = path.stat()
+        except OSError:
+            return None
+
+        cache_key = str(path.resolve())
+        cache_entry = self._waveform_cache.get(cache_key)
+        signature = (int(stat.st_mtime_ns), int(stat.st_size))
+        if cache_entry is not None and cache_entry[0] == signature[0] and cache_entry[1] == signature[1]:
+            return cache_entry[2]
+
+        try:
+            with sf.SoundFile(str(path)) as audio_file:
+                if audio_file.frames <= 0:
+                    return None
+                block_size = max(1, int(audio_file.frames // target_points))
+                peaks: list[float] = []
+                while True:
+                    block = audio_file.read(block_size, dtype="float32", always_2d=True)
+                    if block.size == 0:
+                        break
+                    mono = np.mean(np.abs(block), axis=1)
+                    peaks.append(float(np.max(mono)) if mono.size else 0.0)
+        except Exception:
+            return None
+
+        if not peaks:
+            return None
+
+        peak_array = np.clip(np.asarray(peaks, dtype=np.float32), 0.0, 1.0)
+        self._waveform_cache[cache_key] = (signature[0], signature[1], peak_array)
+        return peak_array
+
+    def _draw_clip_waveform(self, painter: QPainter, clip_rect: QRect, file_path: str) -> None:
+        inner = clip_rect.adjusted(3, 3, -3, -3)
+        if inner.width() < 4 or inner.height() < 4:
+            return
+
+        peaks = self._read_waveform_peaks(file_path)
+        if peaks is None or peaks.size == 0:
+            return
+
+        column_count = max(1, inner.width())
+        sample_positions = np.linspace(0, peaks.size - 1, column_count, dtype=np.int32)
+        sampled = peaks[sample_positions]
+        center_y = inner.center().y()
+        max_amp = max(1, inner.height() // 2)
+
+        painter.setPen(QPen(QColor(216, 238, 255, 210), 1))
+        for offset, peak in enumerate(sampled):
+            height = max(1, int(round(float(peak) * max_amp)))
+            x = inner.left() + offset
+            painter.drawLine(x, center_y - height, x, center_y + height)
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -114,6 +197,7 @@ class TimelineWidget(QWidget):
                 painter.setBrush(CLIP_COLOR)
                 painter.drawRect(clip_rect)
                 self._clip_rects.append((clip.id, clip_rect))
+                self._draw_clip_waveform(painter, clip_rect, clip.file_path)
 
                 if self.selected_clip_id == clip.id:
                     painter.setPen(QPen(QColor(255, 230, 120), 3))
