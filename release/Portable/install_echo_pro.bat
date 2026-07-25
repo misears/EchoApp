@@ -16,11 +16,12 @@ set "APP_ROOT=%~dp0"
 if "%APP_ROOT:~-1%"=="\" set "APP_ROOT=%APP_ROOT:~0,-1%"
 
 set "ECHO_HOME=%ECHO_PRO_HOME%"
-if not defined ECHO_HOME set "ECHO_HOME=%APP_ROOT%"
+if not defined ECHO_HOME if exist "%APP_ROOT%\echo_home.txt" set /p ECHO_HOME=<"%APP_ROOT%\echo_home.txt"
+if not defined ECHO_HOME set "ECHO_HOME=%LOCALAPPDATA%\EchoProData"
 
-set "TOOLS=%APP_ROOT%\tools"
-set "VENV_DIR=%APP_ROOT%\runtime\venv"
-set "MODELS_DIR=%APP_ROOT%\models"
+set "TOOLS=%ECHO_HOME%\tools"
+set "VENV_DIR=%ECHO_HOME%\runtime\venv"
+set "MODELS_DIR=%ECHO_HOME%\models"
 
 set "SEEDS_DIR=%APP_ROOT%\seeds"
 if defined ECHO_SEEDS_DIR set "SEEDS_DIR=%ECHO_SEEDS_DIR%"
@@ -47,6 +48,7 @@ echo Seeds root: %SEEDS_DIR%
 echo Creating directories...
 mkdir "%ECHO_HOME%\projects" "%ECHO_HOME%\voices" "%ECHO_HOME%\generated" 2>nul
 mkdir "%TOOLS%" 2>nul
+mkdir "%ECHO_HOME%\runtime" 2>nul
 mkdir "%MODELS_DIR%" 2>nul
 
 call :ensure_ffmpeg
@@ -115,6 +117,11 @@ if errorlevel 1 (
     echo Failed to upgrade pip in local runtime.
     exit /b 1
 )
+"%PY_CMD%" -m pip install --upgrade setuptools wheel hatchling
+if errorlevel 1 (
+    echo Failed to install local Python build tooling.
+    exit /b 1
+)
 exit /b 0
 
 :ensure_ffmpeg
@@ -158,9 +165,9 @@ if exist "%FFMPEG_SOURCE%" (
 
 :download_ffmpeg
 echo Downloading portable ffmpeg build...
-set "FFMPEG_ZIP=%TEMP%\ffmpeg-release-essentials.zip"
+set "FFMPEG_ZIP=%TEMP%\ffmpeg-release-essentials-%RANDOM%%RANDOM%.zip"
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $zip=$env:FFMPEG_ZIP; $root=$env:FFMPEG_ROOT; New-Item -ItemType Directory -Force -Path $root | Out-Null; Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile $zip; Expand-Archive -Path $zip -DestinationPath $root -Force;"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $zip=$env:FFMPEG_ZIP; $root=$env:FFMPEG_ROOT; New-Item -ItemType Directory -Force -Path $root | Out-Null; Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile $zip; Expand-Archive -Path $zip -DestinationPath $root -Force; Remove-Item $zip -Force -ErrorAction SilentlyContinue;"
 if errorlevel 1 (
     echo Failed to download or extract ffmpeg.
     exit /b 1
@@ -192,21 +199,11 @@ echo.
 echo Installing/updating demucs in local runtime...
 if exist "%DEMUCS_SOURCE%" (
     echo Found demucs seed assets: %DEMUCS_SOURCE%
+    echo Installing demucs from bundled seed source...
     if /I "%ACTION%"=="update" (
-        "%PY_CMD%" -m pip install --upgrade --no-index --find-links "%DEMUCS_SOURCE%" demucs
+        "%PY_CMD%" -m pip install --upgrade --no-build-isolation "%DEMUCS_SOURCE%"
     ) else (
-        "%PY_CMD%" -m pip install --no-index --find-links "%DEMUCS_SOURCE%" demucs
-    )
-    if errorlevel 1 (
-        if exist "%DEMUCS_SOURCE%\requirements.txt" (
-            "%PY_CMD%" -m pip install -r "%DEMUCS_SOURCE%\requirements.txt"
-        ) else (
-            if /I "%ACTION%"=="update" (
-                "%PY_CMD%" -m pip install --upgrade "%DEMUCS_SOURCE%"
-            ) else (
-                "%PY_CMD%" -m pip install "%DEMUCS_SOURCE%"
-            )
-        )
+        "%PY_CMD%" -m pip install --no-build-isolation "%DEMUCS_SOURCE%"
     )
 ) else (
     if /I "%ACTION%"=="update" (

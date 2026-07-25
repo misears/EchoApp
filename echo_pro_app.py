@@ -44,7 +44,7 @@ from stems_engine import (
     separate_stems,
 )
 
-from app_paths import ECHO_ROOT, PROJECTS_DIR, VOICES_DIR, ensure_dirs
+from app_paths import ECHO_ROOT, PROJECTS_DIR, VOICES_DIR, TOOLS_DIR, RUNTIME_DIR, ensure_dirs
 from first_run import is_first_run, mark_first_run_done
 
 from voice_store import load_voice_profiles, add_voice_profile
@@ -290,7 +290,7 @@ class FirstRunDialog(QDialog):
             "- Create and save multitrack projects\n"
             "- Split songs into stems\n"
             "- Record and manage your own voice profiles\n"
-            "- Generate music clips with the local music backend\n\n"
+            "- Generate music clips with the installed local music backend\n\n"
             "Projects will be stored in:\n"
             f"{PROJECTS_DIR}\n\n"
             "Click 'Close' to start using Echo Pro."
@@ -824,7 +824,7 @@ class EchoProWindow(QMainWindow):
         self.voice_profile_name_input.setPlaceholderText("Voice profile name")
         voice_layout.addWidget(self.voice_profile_name_input)
 
-        apply_voice_btn = QPushButton("Apply Voice Effect (Placeholder)")
+        apply_voice_btn = QPushButton("Apply Voice Effect")
         apply_voice_btn.clicked.connect(self.apply_voice_effect_to_clip)
         voice_layout.addWidget(apply_voice_btn)
 
@@ -2723,8 +2723,8 @@ class EchoProWindow(QMainWindow):
             stems_root = song_path.parent / "echo_stems"
             song_stems_dir = stems_root / song_path.stem
             app_root = Path(__file__).resolve().parent
-            local_demucs = app_root / "runtime" / "venv" / "Scripts" / "demucs.exe"
-            local_ffmpeg = app_root / "tools" / "ffmpeg" / "current" / "bin" / "ffmpeg.exe"
+            local_demucs = RUNTIME_DIR / "venv" / "Scripts" / "demucs.exe"
+            local_ffmpeg = TOOLS_DIR / "ffmpeg" / "current" / "bin" / "ffmpeg.exe"
             seed_demucs = app_root / "seeds" / "demucs" / "demucs.exe"
             seed_ffmpeg = app_root / "seeds" / "ffmpeg" / "bin" / "ffmpeg.exe"
 
@@ -2954,7 +2954,7 @@ class EchoProWindow(QMainWindow):
                 QMessageBox.information(
                     self,
                     "Music backend status",
-                    f"{capability['reason']}\n\nGenerated clip uses the current local preview backend until assets are available.",
+                    f"{capability['reason']}\n\nGenerated clip uses the current installed local backend until all optional assets are available.",
                 )
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to generate clip:\n{e}")
@@ -3056,7 +3056,7 @@ class EchoProWindow(QMainWindow):
             self.sync_project_tracks_to_recording_engine()
             self.refresh_track_list()
             self.refresh_timeline()
-            self.update_status("Full song generated with preview clips.")
+            self.update_status("Full song generated with local audio clips.")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to generate full song:\n{e}")
 

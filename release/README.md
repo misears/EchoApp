@@ -6,17 +6,21 @@ Echo Pro is a local desktop audio production app with waveform editing, recordin
 
 ### Option A: Installer build (recommended for most users)
 1. Run `EchoProInstaller.exe`.
-2. Launch Echo Pro from the Start Menu shortcut.
-3. On first run, use **Update Dependencies** if prompted.
+2. Choose the app install folder, then choose the separate Echo Pro data folder when prompted.
+3. Select which launcher style to install: desktop, portable, or both.
+4. Finish setup and let the installer run the dependency bootstrap automatically.
+5. Launch Echo Pro from the Start Menu or desktop shortcut.
 
 ### Option B: Portable / source folder run
 1. Run `install_echo_pro.bat`.
 2. Wait for setup to finish (FFmpeg, Demucs, RVC, ACE Step dependencies).
 3. Start the app with `echo_pro_app.py` (dev) or `EchoPro_Portable.bat` (portable mode).
 
-## 2) First run notes
+## 2) Data location and first run notes
 
-- Audio files and projects are created under the app/project directories.
+- App program files stay in the install folder you choose.
+- Projects, models, runtime tools, and generated content stay in the separate Echo Pro data folder.
+- If you do not choose a custom data folder, Echo Pro uses `%LOCALAPPDATA%\EchoProData`.
 - Use valid input/output audio devices before recording.
 - Voice conversion should only be used with voices you own or have permission to use.
 
@@ -52,7 +56,7 @@ Echo Pro uses tabbed navigation:
 
 - If stems fail due to missing tools, run `install_echo_pro.bat update`.
 - If recording fails, verify selected audio input/output devices in **Recording**.
-- If a model-dependent feature is unavailable, run the installer/update again to refresh local assets.
+- If a model-dependent feature is unavailable, rerun `install_echo_pro.bat update` to refresh local assets.
 
 ## 6) Developer utilities location
 

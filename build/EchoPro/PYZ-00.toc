@@ -817,14 +817,6 @@
    'PYMODULE'),
   ('opcode', 'C:\\Program Files\\Python310\\lib\\opcode.py', 'PYMODULE'),
   ('optparse', 'C:\\Program Files\\Python310\\lib\\optparse.py', 'PYMODULE'),
-  ('p5a_regression_runner',
-   'C:\\Users\\misea\\OneDrive\\Documents\\AI Project '
-   'Folders\\EchoApp\\p5a_regression_runner.py',
-   'PYMODULE'),
-  ('p5b_regression_runner',
-   'C:\\Users\\misea\\OneDrive\\Documents\\AI Project '
-   'Folders\\EchoApp\\p5b_regression_runner.py',
-   'PYMODULE'),
   ('pathlib', 'C:\\Program Files\\Python310\\lib\\pathlib.py', 'PYMODULE'),
   ('pdb', 'C:\\Program Files\\Python310\\lib\\pdb.py', 'PYMODULE'),
   ('pickle', 'C:\\Program Files\\Python310\\lib\\pickle.py', 'PYMODULE'),
@@ -1078,6 +1070,22 @@
    'PYMODULE'),
   ('token', 'C:\\Program Files\\Python310\\lib\\token.py', 'PYMODULE'),
   ('tokenize', 'C:\\Program Files\\Python310\\lib\\tokenize.py', 'PYMODULE'),
+  ('tools',
+   'C:\\Users\\misea\\OneDrive\\Documents\\AI Project '
+   'Folders\\EchoApp\\tools\\__init__.py',
+   'PYMODULE'),
+  ('tools.dev',
+   'C:\\Users\\misea\\OneDrive\\Documents\\AI Project '
+   'Folders\\EchoApp\\tools\\dev\\__init__.py',
+   'PYMODULE'),
+  ('tools.dev.p5a_regression_runner',
+   'C:\\Users\\misea\\OneDrive\\Documents\\AI Project '
+   'Folders\\EchoApp\\tools\\dev\\p5a_regression_runner.py',
+   'PYMODULE'),
+  ('tools.dev.p5b_regression_runner',
+   'C:\\Users\\misea\\OneDrive\\Documents\\AI Project '
+   'Folders\\EchoApp\\tools\\dev\\p5b_regression_runner.py',
+   'PYMODULE'),
   ('tracemalloc',
    'C:\\Program Files\\Python310\\lib\\tracemalloc.py',
    'PYMODULE'),

@@ -8,20 +8,37 @@ def _portable_base_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
+def _read_home_override_file() -> Path | None:
+    override_file = _portable_base_dir() / "echo_home.txt"
+    if not override_file.exists():
+        return None
+    try:
+        value = override_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if not value:
+        return None
+    return Path(value).expanduser()
+
+
 def resolve_echo_root() -> Path:
     override = os.environ.get("ECHO_PRO_HOME", "").strip()
     if override:
         return Path(override)
+
+    file_override = _read_home_override_file()
+    if file_override is not None:
+        return file_override
 
     portable_marker_dir = _portable_base_dir()
     portable_marker = portable_marker_dir / ".echo_portable"
     if portable_marker.exists():
         return portable_marker_dir / "data"
 
-    if getattr(sys, "frozen", False):
-        return portable_marker_dir
-
-    return Path(os.environ["APPDATA"]) / "EchoPro"
+    local_app_data = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+    if not local_app_data:
+        return Path.home() / "EchoProData"
+    return Path(local_app_data) / "EchoProData"
 
 
 ECHO_ROOT = resolve_echo_root()
