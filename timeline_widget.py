@@ -4,7 +4,7 @@ from typing import Callable, Dict, List, Optional
 
 import numpy as np
 import soundfile as sf
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QWidget, QMenu
 from PySide6.QtGui import QPainter, QColor, QPen
 from PySide6.QtCore import Qt, QRect, QPoint, QSize
 
@@ -27,6 +27,7 @@ class TimelineWidget(QWidget):
         self.hide_inactive_take_clips = False
         self.on_project_changed: Optional[Callable[[], None]] = None
         self.on_comp_range_selected: Optional[Callable[[int, int, int], None]] = None
+        self.on_add_clip_at: Optional[Callable[[int, int], None]] = None
         self._clip_rects = []
         self._dragging_clip_id = None
         self._drag_start_point = None
@@ -41,6 +42,8 @@ class TimelineWidget(QWidget):
         self.setMinimumHeight(300)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._show_context_menu)
         self._sync_view_size()
 
     def set_project(self, project: Project):
@@ -367,3 +370,40 @@ class TimelineWidget(QWidget):
                 self.update()
             return
         return super().keyPressEvent(event)
+
+    def _show_context_menu(self, pos: QPoint) -> None:
+        """Show a context menu for adding or removing clips at the clicked position."""
+        clip_id = self._find_clip_at_point(pos)
+        track_index = self._track_index_for_y(pos.y())
+        start_ms = self._x_to_ms(pos.x())
+
+        menu = QMenu(self)
+
+        if clip_id is not None:
+            select_act = menu.addAction("Select clip")
+            select_act.triggered.connect(lambda: self._select_clip(clip_id))
+            delete_act = menu.addAction("Delete clip")
+            delete_act.triggered.connect(lambda: self._delete_clip(clip_id))
+        elif track_index is not None and self.on_add_clip_at is not None:
+            track_name = self.project.tracks[track_index].name
+            add_act = menu.addAction(f'Add clip at {start_ms / 1000:.2f}s on \u201c{track_name}\u201d')
+            add_act.setToolTip("Open a file browser and place an audio clip at this position")
+            add_act.triggered.connect(lambda: self.on_add_clip_at(track_index, start_ms))  # type: ignore[misc]
+        else:
+            menu.addAction("(No track at this position)").setEnabled(False)
+
+        menu.exec(self.mapToGlobal(pos))
+
+    def _select_clip(self, clip_id: int) -> None:
+        self.selected_clip_id = clip_id
+        self.update()
+
+    def _delete_clip(self, clip_id: int) -> None:
+        before_count = len(self.project.clips)
+        self.project.clips = [c for c in self.project.clips if c.id != clip_id]
+        if len(self.project.clips) != before_count:
+            if self.selected_clip_id == clip_id:
+                self.selected_clip_id = None
+            if self.on_project_changed is not None:
+                self.on_project_changed()
+            self.update()
