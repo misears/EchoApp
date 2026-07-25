@@ -63,8 +63,8 @@ from recording_ui_components import (
     TransportPunchLoopWidget,
 )
 from audio_device import device_manager
-from p5a_regression_runner import format_regression_summary, run_phase5a_regression_checks
-from p5b_regression_runner import format_regression_summary as format_p5b_regression_summary, run_phase5b_regression_checks
+from tools.dev.p5a_regression_runner import format_regression_summary, run_phase5a_regression_checks
+from tools.dev.p5b_regression_runner import format_regression_summary as format_p5b_regression_summary, run_phase5b_regression_checks
 from recording_recovery import RecoverySnapshotManager
 from input_validation import parse_float, parse_int, parse_time_signature, run_common_validation_checks
 

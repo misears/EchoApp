@@ -4,7 +4,7 @@
     {
       "label": "Run P5A Regression Checks",
       "type": "shell",
-      "command": "${workspaceFolder}/run_p5a_checks.bat",
+      "command": "${workspaceFolder}/tools/dev/run_p5a_checks.bat",
       "group": "test",
       "problemMatcher": []
     }
