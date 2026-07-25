@@ -594,7 +594,7 @@ class VoiceManagerDialog(QDialog):
         self.voice_list.clear()
         profiles = load_voice_profiles()
         for p in profiles:
-            item = QListWidgetItem(f"{p.name}  [{p.file_path}]")
+            item = QListWidgetItem(f"{p.name} [{p.file_path}]")
             item.setData(Qt.ItemDataRole.UserRole, p)
             self.voice_list.addItem(item)
 
@@ -4121,15 +4121,14 @@ class TabbedEchoProWindow(EchoProWindow):
         while self.mixer_layout.count() > 1:
             item = self.mixer_layout.takeAt(0)
             if item is None:
-                break
+                continue
             widget = item.widget()
             if widget:
                 widget.deleteLater()
         self.mixer_rows = []
         has_tracks = bool(self.current_project.tracks)
         if not has_tracks:
-            self.mixer_empty_label = QLabel("Add or load tracks to populate the mixer board.")
-            self.mixer_empty_label.setStyleSheet("padding:12px; color:#dde1e7; background:#0d1b2a; border:1px solid #1a4080;")
+            self.mixer_empty_label.setParent(self.mixer_inner)
             self.mixer_layout.insertWidget(0, self.mixer_empty_label)
         for idx, track in enumerate(self.current_project.tracks):
             row = TrackMixerRow(
