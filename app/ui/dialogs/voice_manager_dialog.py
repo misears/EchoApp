@@ -171,7 +171,6 @@ class VoiceManagerDialog(QDialog):
             else:
                 try:
                     import soundfile as sf
-                    import numpy as np
                     data, sr = sf.read(str(src))
                     sf.write(str(dest), data, sr)
                 except Exception:
