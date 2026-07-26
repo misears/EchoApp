@@ -39,14 +39,18 @@ from audio_info import get_audio_length_ms
 from timeline_widget import TimelineWidget
 from playback_mixer import is_playback_active, play_project, project_duration_ms, stop_playback
 from stems_engine import (
+    DEFAULT_DEMUCS_MODEL,
+    DEMUCS_MODEL_OPTIONS,
     StemCancelledError,
     StemDependencyError,
     StemSeparationError,
     add_stems_to_project,
+    get_stem_backend_capability,
+    resolve_stem_runtime,
     separate_stems,
 )
 
-from app_paths import ECHO_ROOT, PROJECTS_DIR, VOICES_DIR, TOOLS_DIR, RUNTIME_DIR, ensure_dirs
+from app_paths import ECHO_ROOT, PROJECTS_DIR, VOICES_DIR, ensure_dirs
 from first_run import is_first_run, mark_first_run_done
 
 from voice_store import load_voice_profiles, add_voice_profile
@@ -86,10 +90,7 @@ _MASTER_WAVEFORM_PLACEHOLDER = (
 
 
 class EchoProWindow(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Echo Pro")
-
+    def _initialize_shared_window_state(self) -> None:
         self.current_project: Project = new_empty_project("Untitled")
         self.next_clip_id = 1
         self.recording_controller = RecordingController("default_session", self.current_project.name)
@@ -105,18 +106,31 @@ class EchoProWindow(QMainWindow):
         self._project_playback_start_ms = 0
         self._project_playback_end_ms = 0
         self._project_playback_manual_stop = False
+        self.stem_source_path: Optional[Path] = None
+        self.stem_output_dir: Optional[Path] = None
+        self._stem_activity_lines: list[str] = []
 
-        self.status = QStatusBar()
-        self.setStatusBar(self.status)
-
+    def _initialize_shared_window_timers(self, *, start_recording_timer: bool) -> None:
         self.recording_timer = QTimer(self)
         self.recording_timer.setInterval(100)
         self.recording_timer.timeout.connect(self.refresh_recording_meters)
-        self.recording_timer.start()
+        if start_recording_timer:
+            self.recording_timer.start()
 
         self.project_playback_timer = QTimer(self)
         self.project_playback_timer.setInterval(75)
         self.project_playback_timer.timeout.connect(self._poll_project_playback)
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Echo Pro")
+
+        self._initialize_shared_window_state()
+
+        self.status = QStatusBar()
+        self.setStatusBar(self.status)
+
+        self._initialize_shared_window_timers(start_recording_timer=True)
 
         layout = QVBoxLayout()
 
@@ -681,6 +695,101 @@ class EchoProWindow(QMainWindow):
         value = self.alter_section_selector.currentData()
         if value is not None:
             self.alter_section_index_input.setText(str(value))
+
+    def _append_stem_activity(self, text: str, *, reset: bool = False) -> None:
+        if not hasattr(self, "stem_activity_view"):
+            return
+        message = text.strip()
+        if reset:
+            self._stem_activity_lines = []
+        if not message:
+            self.stem_activity_view.setPlainText("\n".join(self._stem_activity_lines))
+            return
+        if self._stem_activity_lines and self._stem_activity_lines[-1] == message:
+            return
+        self._stem_activity_lines.append(message)
+        self._stem_activity_lines = self._stem_activity_lines[-10:]
+        self.stem_activity_view.setPlainText("\n".join(self._stem_activity_lines))
+
+    def _set_stem_status(self, summary: str, *, detail: Optional[str] = None, reset_activity: bool = False) -> None:
+        if hasattr(self, "stem_status_label"):
+            self.stem_status_label.setText(summary)
+        self._append_stem_activity(detail or summary, reset=reset_activity)
+
+    def _update_stem_backend_summary(self) -> None:
+        if not hasattr(self, "stem_backend_label"):
+            return
+        capability = get_stem_backend_capability()
+        backend_text = f"Backend: {capability['backend']}"
+        if capability["ready"]:
+            backend_text += f" ready ({capability['demucs_executable']})"
+        else:
+            backend_text += f" needs setup - {capability['reason']}"
+        self.stem_backend_label.setText(backend_text)
+
+    def _refresh_stem_section_state(self) -> None:
+        self._update_stem_backend_summary()
+        if not hasattr(self, "stem_split_btn"):
+            return
+
+        selected_source = self.stem_source_path
+        source_exists = selected_source is not None and selected_source.exists()
+        self.stem_split_btn.setEnabled(bool(source_exists))
+
+        if hasattr(self, "stem_source_input"):
+            self.stem_source_input.setText(str(selected_source) if selected_source is not None else "")
+
+        if hasattr(self, "stem_output_label"):
+            if selected_source is not None:
+                output_dir = selected_source.parent / "echo_stems" / selected_source.stem
+                self.stem_output_dir = output_dir
+                self.stem_output_label.setText(f"Output folder: {output_dir}")
+            else:
+                self.stem_output_dir = None
+                self.stem_output_label.setText("Output folder: choose source audio to preview the stem folder.")
+
+        if not source_exists and hasattr(self, "stem_status_label"):
+            self.stem_status_label.setText("Choose source audio to enable Demucs splitting.")
+
+    def _set_stem_source_path(self, song_path: Optional[Path]) -> None:
+        self.stem_source_path = song_path.resolve() if song_path is not None else None
+        self._refresh_stem_section_state()
+        if self.stem_source_path is not None:
+            self._set_stem_status(
+                "Stem source ready.",
+                detail=f"Selected source audio: {self.stem_source_path.name}",
+                reset_activity=True,
+            )
+
+    def choose_stem_source_audio(self) -> None:
+        initial_dir = ""
+        if self.stem_source_path is not None:
+            initial_dir = str(self.stem_source_path.parent)
+        elif PROJECTS_DIR.exists():
+            initial_dir = str(PROJECTS_DIR)
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "Choose song to split into stems",
+            initial_dir,
+            "Audio Files (*.wav *.mp3 *.flac *.ogg);;All Files (*)"
+        )
+        if not filename:
+            return
+        self._set_stem_source_path(Path(filename))
+
+    def _selected_demucs_model(self) -> str:
+        if hasattr(self, "stem_model_combo"):
+            model_name = self.stem_model_combo.currentData()
+            if isinstance(model_name, str) and model_name.strip():
+                return model_name
+        return DEFAULT_DEMUCS_MODEL
+
+    def run_selected_stem_split(self) -> None:
+        if self.stem_source_path is None or not self.stem_source_path.exists():
+            self.choose_stem_source_audio()
+            if self.stem_source_path is None or not self.stem_source_path.exists():
+                return
+        self._split_song_into_stems_for_path(self.stem_source_path)
 
     def _build_recording_meters(self):
         while self.meter_container.count():
@@ -2593,7 +2702,10 @@ class EchoProWindow(QMainWindow):
             QMessageBox.warning(self, "Stems", "Selected song file does not exist.")
             return
 
-        progress = QProgressDialog("Preparing stem separation...", "Cancel", 0, 0, self)
+        self._set_stem_source_path(song_path)
+        selected_model = self._selected_demucs_model()
+
+        progress = QProgressDialog("Preparing stem separation...", "Cancel", 0, 5, self)
         progress.setWindowTitle("Stem separation")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(0)
@@ -2603,46 +2715,48 @@ class EchoProWindow(QMainWindow):
         try:
             stems_root = song_path.parent / "echo_stems"
             song_stems_dir = stems_root / song_path.stem
-            app_root = Path(__file__).resolve().parent
-            local_demucs = RUNTIME_DIR / "venv" / "Scripts" / "demucs.exe"
-            local_demucs_repo = MODELS_DIR / "demucs" / "repo"
-            local_ffmpeg = TOOLS_DIR / "ffmpeg" / "current" / "bin" / "ffmpeg.exe"
-            seed_ffmpeg = app_root / "seeds" / "FFmpeg-master" / "bin" / "ffmpeg.exe"
+            runtime = resolve_stem_runtime()
+            progress_steps = {
+                "Starting Demucs separation": 1,
+                "Launching Demucs": 1,
+                "Downloading Demucs assets": 1,
+                "Preparing output folder": 2,
+                "Separating ": 2,
+                "Demucs processing": 2,
+                "Demucs backend": 2,
+                "Collecting separated stem files": 3,
+                "Demucs finished.": 4,
+            }
 
-            if local_demucs.exists():
-                demucs_executable = str(local_demucs)
-            else:
-                demucs_executable = "demucs"
-
-            if local_ffmpeg.exists():
-                ffmpeg_executable = str(local_ffmpeg)
-            elif seed_ffmpeg.exists():
-                ffmpeg_executable = str(seed_ffmpeg)
-            else:
-                ffmpeg_executable = None
-
-            if local_demucs_repo.exists():
-                demucs_repo = str(local_demucs_repo)
-            else:
-                demucs_repo = None
-
+            self._set_stem_status(
+                f"Preparing Demucs split with {selected_model}.",
+                detail=f"Source: {song_path.name}",
+                reset_activity=True,
+            )
             self.update_status("Running Demucs... this may take a while.")
             QApplication.processEvents()
 
             def _progress_message(text: str) -> None:
                 progress.setLabelText(text)
+                for marker, value in progress_steps.items():
+                    if marker in text:
+                        progress.setValue(max(progress.value(), value))
+                        break
+                self._set_stem_status(text, detail=text)
                 QApplication.processEvents()
 
             stems = separate_stems(
                 str(song_path),
                 song_stems_dir,
-                demucs_executable=demucs_executable,
-                demucs_repo=demucs_repo,
-                ffmpeg_executable=ffmpeg_executable,
+                demucs_executable=runtime.demucs_executable,
+                demucs_repo=runtime.demucs_repo,
+                ffmpeg_executable=runtime.ffmpeg_executable,
+                demucs_model=selected_model,
                 progress_callback=_progress_message,
                 cancel_check=progress.wasCanceled,
             )
 
+            progress.setValue(max(progress.value(), 4))
             self.next_clip_id = add_stems_to_project(
                 self.current_project,
                 stems,
@@ -2653,17 +2767,26 @@ class EchoProWindow(QMainWindow):
             self.sync_project_tracks_to_recording_engine()
             self.refresh_track_list()
             self.refresh_timeline()
+            progress.setValue(5)
+            stem_count = len(stems)
+            self._set_stem_status(
+                f"Stem split complete: {stem_count} stems ready from {song_path.name}.",
+                detail=f"Added {stem_count} stems from {selected_model} into the project.",
+            )
             self.update_status("Stems added to project.")
             QMessageBox.information(
                 self,
                 "Stems created",
-                "Stems were created and added as tracks.\n"
+                f"Demucs created {stem_count} stems and added them as tracks.\n"
+                f"Output folder: {song_stems_dir}\n\n"
                 "You can now edit them on the timeline."
             )
         except StemCancelledError as e:
+            self._set_stem_status("Stem split cancelled.", detail=str(e))
             QMessageBox.information(self, "Stems", str(e))
             self.update_status("Stems cancelled")
         except StemDependencyError as e:
+            self._set_stem_status("Stem backend needs setup.", detail=str(e))
             if allow_dependency_prompt:
                 install_choice = QMessageBox.question(
                     self,
@@ -2676,21 +2799,15 @@ class EchoProWindow(QMainWindow):
                     return
             self.update_status("Stems dependency issue")
         except StemSeparationError as e:
+            self._set_stem_status("Stem split failed.", detail=str(e))
             QMessageBox.critical(self, "Error", f"Failed to split stems:\n{e}")
             self.update_status("Stems error")
         finally:
             progress.close()
+            self._refresh_stem_section_state()
 
     def split_song_into_stems(self):
-        filename, _ = QFileDialog.getOpenFileName(
-            self,
-            "Choose song to split into stems",
-            "",
-            "Audio Files (*.wav *.mp3 *.flac *.ogg);;All Files (*)"
-        )
-        if not filename:
-            return
-        self._split_song_into_stems_for_path(Path(filename))
+        self.run_selected_stem_split()
 
     def open_voice_manager(self):
         dlg = VoiceManagerDialog(self)
@@ -3069,33 +3186,13 @@ class TabbedEchoProWindow(EchoProWindow):
         self.setMinimumSize(1280, 900)
         self.setStyleSheet(DARK_STYLE)
 
-        self.current_project: Project = new_empty_project("Untitled")
-        self.next_clip_id = 1
-        self.recording_controller = RecordingController("default_session", self.current_project.name)
-        self.recording_controller.restore_session_preferences()
-        self.recovery_manager = RecoverySnapshotManager()
-        self.recording_meters = {}
+        self._initialize_shared_window_state()
         self.mixer_rows = []
-        self.selected_track_index = None
-        self.selected_input_device_id = None
-        self.selected_output_device_id = None
-        self.last_song_generation = None
-        self.project_playhead_ms = 0
-        self._project_playback_started_at: Optional[float] = None
-        self._project_playback_start_ms = 0
-        self._project_playback_end_ms = 0
-        self._project_playback_manual_stop = False
 
         self.status = QStatusBar()
         self.setStatusBar(self.status)
 
-        self.recording_timer = QTimer(self)
-        self.recording_timer.setInterval(100)
-        self.recording_timer.timeout.connect(self.refresh_recording_meters)
-
-        self.project_playback_timer = QTimer(self)
-        self.project_playback_timer.setInterval(75)
-        self.project_playback_timer.timeout.connect(self._poll_project_playback)
+        self._initialize_shared_window_timers(start_recording_timer=False)
 
         self._build_ui()
         self.update_status("Starting Echo Pro...")
@@ -3272,21 +3369,71 @@ class TabbedEchoProWindow(EchoProWindow):
         self.jump_to_transport_end_btn.clicked.connect(self.jump_to_transport_end)
         self.playback_position_label = QLabel("Playhead 0.00s")
         self.playback_position_label.setToolTip("Current project playhead position")
-        stems_btn = QPushButton("Split Song into Stems")
-        stems_btn.setToolTip("Separate a song file into vocal, drums, bass, and other stems using Demucs")
-        stems_btn.clicked.connect(self.split_song_into_stems)
         self._configure_symbol_button(self.play_project_btn, "\u25b6", "Play project")
         self._configure_symbol_button(self.stop_project_btn, "\u25a0", "Stop playback")
         self._configure_symbol_button(self.jump_to_transport_start_btn, "\u23ee", "Jump to start")
         self._configure_symbol_button(self.jump_to_transport_end_btn, "\u23ed", "Jump to end")
-        self._configure_symbol_button(stems_btn, "\u2702", "Split song into stems")
         clip_layout.addWidget(self.play_project_btn, 2, 1)
         clip_layout.addWidget(self.stop_project_btn, 2, 2)
         clip_layout.addWidget(self.jump_to_transport_start_btn, 2, 3)
         clip_layout.addWidget(self.jump_to_transport_end_btn, 2, 4)
         clip_layout.addWidget(self.playback_position_label, 2, 5)
-        clip_layout.addWidget(stems_btn, 2, 6)
         layout.addWidget(CollapsiblePanel("Audio and Track Tools", clip_content))
+
+        stems_content = QWidget()
+        stems_layout = QGridLayout(stems_content)
+        stems_layout.setSpacing(8)
+        stems_layout.setContentsMargins(4, 4, 4, 4)
+
+        self.stem_backend_label = QLabel()
+        self.stem_backend_label.setWordWrap(True)
+        stems_layout.addWidget(self.stem_backend_label, 0, 0, 1, 4)
+
+        stems_layout.addWidget(QLabel("Source Audio"), 1, 0)
+        self.stem_source_input = QLineEdit()
+        self.stem_source_input.setPlaceholderText("Choose a mix to split with Demucs")
+        self.stem_source_input.setReadOnly(True)
+        self.stem_source_input.setMinimumWidth(320)
+        self.stem_source_input.setToolTip("Selected mix that Demucs will separate into stems")
+        stems_layout.addWidget(self.stem_source_input, 1, 1, 1, 2)
+
+        choose_stem_source_btn = QPushButton("Choose Source Audio")
+        choose_stem_source_btn.setToolTip("Browse for the song or mix that should be split into stems")
+        choose_stem_source_btn.clicked.connect(self.choose_stem_source_audio)
+        stems_layout.addWidget(choose_stem_source_btn, 1, 3)
+
+        stems_layout.addWidget(QLabel("Demucs Model"), 2, 0)
+        self.stem_model_combo = QComboBox()
+        self.stem_model_combo.setToolTip("Choose the Demucs model preset used for the split")
+        for model_name, model_label in DEMUCS_MODEL_OPTIONS:
+            self.stem_model_combo.addItem(f"{model_name} - {model_label}", model_name)
+        default_model_index = self.stem_model_combo.findData(DEFAULT_DEMUCS_MODEL)
+        if default_model_index >= 0:
+            self.stem_model_combo.setCurrentIndex(default_model_index)
+        stems_layout.addWidget(self.stem_model_combo, 2, 1)
+
+        self.stem_output_label = QLabel("Output folder: choose source audio to preview the stem folder.")
+        self.stem_output_label.setWordWrap(True)
+        stems_layout.addWidget(self.stem_output_label, 2, 2, 1, 2)
+
+        self.stem_split_btn = QPushButton("Run Demucs Split")
+        self.stem_split_btn.setToolTip("Start splitting the selected source audio into stems")
+        self.stem_split_btn.clicked.connect(self.run_selected_stem_split)
+        stems_layout.addWidget(self.stem_split_btn, 3, 0)
+
+        self.stem_status_label = QLabel("Choose source audio to enable Demucs splitting.")
+        self.stem_status_label.setWordWrap(True)
+        stems_layout.addWidget(self.stem_status_label, 3, 1, 1, 3)
+
+        self.stem_activity_view = QTextEdit()
+        self.stem_activity_view.setReadOnly(True)
+        self.stem_activity_view.setMaximumHeight(110)
+        self.stem_activity_view.setToolTip("Recent Demucs activity, progress, and completion messages")
+        stems_layout.addWidget(self.stem_activity_view, 4, 0, 1, 4)
+
+        self._refresh_stem_section_state()
+        self._append_stem_activity("Stem splitting is idle.", reset=True)
+        layout.addWidget(CollapsiblePanel("Stem Splitting (Demucs)", stems_content))
 
         tracks_content = QWidget()
         tracks_layout = QVBoxLayout(tracks_content)
@@ -3869,8 +4016,13 @@ the track.</p>
   <li><b>Track volume icon button</b> — enter a track index and a dB value (e.g. <code>-6</code>,
       <code>0</code>, <code>+3</code>) and use the hover-labeled speaker button to apply it.</li>
   <li><b>Transport icon buttons</b> — use the hover labels on the play, stop, jump-start, and jump-end buttons to control playback from the current Home-tab playhead.</li>
-  <li><b>Stem split icon button</b> — hover the scissors button to split a song into vocals, drums, bass, and other
-      using Demucs (requires the AI backend).</li>
+</ul>
+<h3>Stem Splitting (Demucs)</h3>
+<ul>
+  <li><b>Choose Source Audio</b> — select the full mix you want Demucs to split into stems.</li>
+  <li><b>Demucs Model</b> — switch between the balanced 4-stem, fine-tuned 4-stem, and 6-stem presets before starting the split.</li>
+  <li><b>Backend and status area</b> — confirms whether Demucs/ffmpeg are ready and keeps recent launch, progress, and completion messages visible.</li>
+  <li><b>Run Demucs Split</b> — starts the split for the selected source and adds the resulting stems to the current project.</li>
 </ul>
 <div class="tip"><b>Tip:</b> All sections on the Home tab can be collapsed with the
 <b>▼ / ▶</b> toggle button on their header bar, giving you more room for the waveform
@@ -3948,7 +4100,7 @@ together using the <b>Comp Range</b> tool in the timeline. The take review and c
 
 <h2>Tools Tab</h2>
 <ul>
-  <li><b>Split Song into Stems</b> — same as the Home tab button; runs Demucs.</li>
+  <li><b>Split Song into Stems</b> — reuses the selected Home-tab source audio when available, or prompts for one before running Demucs.</li>
   <li><b>Install / Update Dependencies</b> — re-runs the installer for AI backends.</li>
 </ul>
 

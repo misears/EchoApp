@@ -20,6 +20,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import sys
 from typing import Callable, Dict, List
+from unittest.mock import patch
 
 import numpy as np
 
@@ -37,6 +38,7 @@ except ImportError:
 from recording_controller import RecordingController
 from recording_recovery import RecoverySnapshotManager
 from recording_session import RecordingSession
+import stems_engine
 
 
 @dataclass
@@ -378,6 +380,92 @@ def _check_clip_silence_warnings_non_blocking() -> None:
     assert elapsed_silence < 1.0, f"Silence detection loop took too long: {elapsed_silence:.4f}s (threshold: 1.0s)"
 
 
+def _check_stem_progress_reporting_and_model_selection() -> None:
+    with TemporaryDirectory() as tmp_dir:
+        temp_root = Path(tmp_dir)
+        input_path = temp_root / "mix.wav"
+        input_path.write_bytes(b"fake-audio")
+
+        output_dir = temp_root / "stem_output"
+        model_output = output_dir / "htdemucs_ft" / input_path.stem
+        model_output.mkdir(parents=True, exist_ok=True)
+        for stem_name in ("vocals", "drums"):
+            (model_output / f"{stem_name}.wav").write_bytes(b"fake-stem")
+
+        captured_commands: List[List[str]] = []
+        captured_messages: List[str] = []
+
+        class _MockStdout:
+            def __init__(self, lines: List[str]):
+                self._lines = list(lines)
+                self._index = 0
+                self.exhausted = False
+
+            def readline(self) -> str:
+                if self._index >= len(self._lines):
+                    self.exhausted = True
+                    return ""
+                line = self._lines[self._index]
+                self._index += 1
+                return line
+
+            def close(self) -> None:
+                self.exhausted = True
+
+        class _MockProcess:
+            def __init__(self, cmd: List[str], **_kwargs):
+                captured_commands.append(list(cmd))
+                self.stdout = _MockStdout(
+                    [
+                        "Selected model is htdemucs_ft\n",
+                        "Separated tracks will be stored in stem_output\n",
+                    ]
+                )
+                self.returncode = None
+
+            def poll(self):
+                if self.stdout.exhausted:
+                    self.returncode = 0
+                    return 0
+                return None
+
+            def wait(self, timeout=None):
+                self.stdout.exhausted = True
+                self.returncode = 0
+                return 0
+
+            def terminate(self) -> None:
+                self.stdout.exhausted = True
+                self.returncode = 1
+
+            def kill(self) -> None:
+                self.stdout.exhausted = True
+                self.returncode = 1
+
+        with (
+            patch("stems_engine._prepare_demucs_input", return_value=(input_path, 12000)),
+            patch("stems_engine.subprocess.Popen", side_effect=_MockProcess),
+            patch("stems_engine.time.sleep", return_value=None),
+        ):
+            stems = stems_engine.separate_stems(
+                str(input_path),
+                output_dir,
+                demucs_executable="demucs",
+                demucs_model="htdemucs_ft",
+                progress_callback=captured_messages.append,
+            )
+
+        assert captured_commands, "Expected a Demucs command to be launched"
+        command = captured_commands[0]
+        assert "-n" in command, "Demucs command should include the selected model flag"
+        model_flag_index = command.index("-n")
+        assert command[model_flag_index + 1] == "htdemucs_ft", "Selected Demucs model should be forwarded"
+        assert captured_messages[0] == "Starting Demucs separation (htdemucs_ft)...", "Expected startup status"
+        assert "Collecting separated stem files..." in captured_messages, "Expected collection status"
+        assert captured_messages[-1] == "Demucs finished. 2 stems ready.", "Expected completion status"
+        assert set(stems.keys()) == {"vocals", "drums"}, "Expected the moved stems to be returned"
+
+
 def run_phase5b_regression_checks() -> Dict[str, object]:
     ensure_dirs()
 
@@ -393,6 +481,7 @@ def run_phase5b_regression_checks() -> Dict[str, object]:
         ("restore-session-take-pointers", _check_restore_session_take_pointers),
         ("discard-recovery-clean-startup", _check_discard_recovery_clean_startup),
         ("clip-silence-warnings-non-blocking", _check_clip_silence_warnings_non_blocking),
+        ("stem-progress-reporting-model-selection", _check_stem_progress_reporting_and_model_selection),
     ]
 
     results: List[RegressionCheckResult] = [_run_check(name, fn) for name, fn in checks]

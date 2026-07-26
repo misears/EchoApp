@@ -1,16 +1,19 @@
 
-import subprocess
 import os
 import queue
-import threading
-from pathlib import Path
+import re
 import shutil
+import subprocess
+import threading
 import time
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Optional
 
 import numpy as np
 import soundfile as sf
 
+from app_paths import MODELS_DIR, RUNTIME_DIR, TOOLS_DIR
 from project_model import Clip, Track, Project
 from audio_info import get_audio_length_ms
 
@@ -25,6 +28,74 @@ class StemDependencyError(StemSeparationError):
 
 class StemCancelledError(StemSeparationError):
     pass
+
+
+DEFAULT_DEMUCS_MODEL = "htdemucs"
+DEMUCS_MODEL_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("htdemucs", "Balanced 4-stem"),
+    ("htdemucs_ft", "Fine-tuned 4-stem"),
+    ("htdemucs_6s", "6-stem (adds guitar/piano)"),
+)
+
+_DEMUCS_PROGRESS_PERCENT = re.compile(r"(?P<pct>\d{1,3})%\|")
+
+
+@dataclass(frozen=True)
+class StemRuntimeConfig:
+    demucs_executable: str
+    demucs_repo: Optional[str]
+    ffmpeg_executable: Optional[str]
+
+
+def resolve_stem_runtime() -> StemRuntimeConfig:
+    app_root = Path(__file__).resolve().parent
+    local_demucs = RUNTIME_DIR / "venv" / "Scripts" / "demucs.exe"
+    local_demucs_repo = MODELS_DIR / "demucs" / "repo"
+    local_ffmpeg = TOOLS_DIR / "ffmpeg" / "current" / "bin" / "ffmpeg.exe"
+    seed_ffmpeg = app_root / "seeds" / "FFmpeg-master" / "bin" / "ffmpeg.exe"
+
+    if local_demucs.exists():
+        demucs_executable = str(local_demucs)
+    else:
+        demucs_executable = shutil.which("demucs") or "demucs"
+
+    if local_ffmpeg.exists():
+        ffmpeg_executable = str(local_ffmpeg)
+    elif seed_ffmpeg.exists():
+        ffmpeg_executable = str(seed_ffmpeg)
+    else:
+        ffmpeg_executable = shutil.which("ffmpeg")
+
+    demucs_repo = str(local_demucs_repo) if local_demucs_repo.exists() else None
+    return StemRuntimeConfig(
+        demucs_executable=demucs_executable,
+        demucs_repo=demucs_repo,
+        ffmpeg_executable=ffmpeg_executable,
+    )
+
+
+def get_stem_backend_capability() -> dict:
+    runtime = resolve_stem_runtime()
+    demucs_ready = Path(runtime.demucs_executable).exists() or shutil.which(runtime.demucs_executable) is not None
+    ffmpeg_ready = bool(runtime.ffmpeg_executable) and (
+        Path(runtime.ffmpeg_executable).exists() or shutil.which(runtime.ffmpeg_executable) is not None
+    )
+
+    if not demucs_ready:
+        reason = "Demucs runtime is not installed yet. Run install_echo_pro.bat install/update."
+    elif not ffmpeg_ready:
+        reason = "ffmpeg is not available yet. Run install_echo_pro.bat install/update."
+    else:
+        reason = ""
+
+    return {
+        "backend": "Demucs",
+        "ready": demucs_ready and ffmpeg_ready,
+        "reason": reason,
+        "demucs_executable": runtime.demucs_executable,
+        "demucs_repo": runtime.demucs_repo,
+        "ffmpeg_executable": runtime.ffmpeg_executable or "",
+    }
 
 
 def _normalize_failure(stderr_text: str) -> StemSeparationError:
@@ -80,6 +151,30 @@ def _trim_audio_file(path: Path, max_frames: int) -> None:
     sf.write(str(path), trimmed, sample_rate)
 
 
+def _format_progress_message(raw_text: str, *, model_name: str, source_name: str) -> str:
+    text = raw_text.strip()
+    if not text:
+        return ""
+    lowered = text.lower()
+
+    percent_match = _DEMUCS_PROGRESS_PERCENT.search(text)
+    if percent_match:
+        return f"Demucs processing {percent_match.group('pct')}% ({model_name})..."
+    if "downloading" in lowered:
+        return f"Downloading Demucs assets for {model_name}..."
+    if "separating track" in lowered:
+        return f"Separating {source_name} with {model_name}..."
+    if "separated tracks will be stored in" in lowered:
+        return "Preparing output folder for stem files..."
+    if "selected model is" in lowered:
+        return text
+    if "model" in lowered and ("htdemucs" in lowered or "mdx" in lowered):
+        return f"Using Demucs model {model_name}..."
+    if "cpu" in lowered or "cuda" in lowered or "mps" in lowered:
+        return f"Demucs backend: {text}"
+    return f"Demucs: {text}"
+
+
 def separate_stems(
     input_path: str,
     output_dir: Path,
@@ -87,6 +182,7 @@ def separate_stems(
     demucs_executable: str = "demucs",
     demucs_repo: Optional[str] = None,
     ffmpeg_executable: Optional[str] = None,
+    demucs_model: str = DEFAULT_DEMUCS_MODEL,
     progress_callback: Optional[Callable[[str], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
 ) -> dict:
@@ -102,13 +198,16 @@ def separate_stems(
     cmd = [demucs_executable]
     if demucs_repo:
         cmd.extend(["--repo", demucs_repo])
+    if demucs_model:
+        cmd.extend(["-n", demucs_model])
     cmd.extend(["-o", str(output_dir), str(demucs_input)])
     env = os.environ.copy()
     if ffmpeg_executable:
         env["FFMPEG_BINARY"] = ffmpeg_executable
 
     if progress_callback is not None:
-        progress_callback("Starting Demucs separation...")
+        progress_callback(f"Starting Demucs separation ({demucs_model})...")
+        progress_callback(f"Launching Demucs for {input_file.name}...")
 
     try:
         process = subprocess.Popen(
@@ -139,9 +238,14 @@ def separate_stems(
     output_thread = threading.Thread(target=_pump_output, args=(process.stdout,), daemon=True)
     output_thread.start()
 
+    source_name = input_file.name
     last_status_at = 0.0
+    started_at = time.monotonic()
+    last_output_message = ""
     while process.poll() is None or not output_queue.empty():
         if cancel_check is not None and cancel_check():
+            if progress_callback is not None:
+                progress_callback("Cancelling Demucs separation...")
             process.terminate()
             try:
                 process.wait(timeout=3)
@@ -162,12 +266,21 @@ def separate_stems(
                 continue
             output_chunks.append(text)
             if progress_callback is not None:
-                progress_callback(text)
+                message = _format_progress_message(text, model_name=demucs_model, source_name=source_name)
+                if message:
+                    progress_callback(message)
+                    last_output_message = message
 
         if not saw_output and progress_callback is not None:
             now = time.monotonic()
-            if now - last_status_at >= 0.5:
-                progress_callback("Demucs processing in progress...")
+            if now - last_status_at >= 1.5:
+                elapsed_seconds = int(now - started_at)
+                if last_output_message:
+                    progress_callback(
+                        f"Demucs processing... {elapsed_seconds}s elapsed. Last update: {last_output_message}"
+                    )
+                else:
+                    progress_callback(f"Demucs processing... {elapsed_seconds}s elapsed.")
                 last_status_at = now
         time.sleep(0.2)
 
@@ -180,11 +293,18 @@ def separate_stems(
         text = line.strip()
         if text:
             output_chunks.append(text)
+            if progress_callback is not None:
+                message = _format_progress_message(text, model_name=demucs_model, source_name=source_name)
+                if message:
+                    progress_callback(message)
 
     stderr_text = "\n".join(output_chunks)
 
     if process.returncode != 0:
         raise _normalize_failure(stderr_text)
+
+    if progress_callback is not None:
+        progress_callback("Collecting separated stem files...")
 
     stem_folder = None
     for root, dirs, files in os.walk(output_dir):
@@ -215,6 +335,9 @@ def separate_stems(
                 demucs_input.unlink(missing_ok=True)
             except Exception:
                 pass
+
+    if progress_callback is not None:
+        progress_callback(f"Demucs finished. {len(stems)} stems ready.")
 
     return stems
 

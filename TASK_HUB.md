@@ -40,7 +40,7 @@ When work changes the project state in a meaningful way, update this file in the
 - [ ] Run a focused manual QA pass for per-track fade-in, fade-out, loop-region, and starter-effect playback after save/reopen.
 - [ ] Capture any follow-up UX tweaks discovered during track playback QA back into this file before starting implementation.
 - [ ] Run a manual real-device recording sanity pass to complement the existing automated Phase 5 regression coverage.
-- [ ] Re-check long-running generation and stem workflows for progress feedback gaps that still need better UX.
+- [ ] Re-check long-running generation workflows for progress feedback gaps that still need better UX.
 - [ ] Increase the new icon controls to roughly double their current size so they are easier to see and click.
 
 ## Problems
@@ -49,7 +49,6 @@ When work changes the project state in a meaningful way, update this file in the
 - A shell task can start the Echo Pro runtime Python process without reliably surfacing the PySide window, which is why the debug launch path is currently preferred.
 - Echo Pro runtime dependencies live outside the repo under `%LOCALAPPDATA%\\EchoProData\\runtime\\venv`, so launch reliability can drift if that environment gets out of sync.
 - Older internal status docs can drift from the repo's current runtime and launch reality, so this file should be treated as the actively maintained task snapshot.
-- Stem splitting needs its own Home-tab section with Demucs-specific options, and Demucs still does not reliably activate or show clear progress/completion feedback while splitting runs.
 - The Master section appears nonfunctional and still needs its own waveform bars plus a dedicated control/meter panel for levels, peaks, and related master-output monitoring.
 - UI controls should use evenly sized, evenly spaced icon buttons instead of text-heavy buttons, with descriptive text exposed on hover/tooltips.
 - Double-clicking a waveform/track still does not open a dedicated single-track editor for focused editing.
@@ -58,15 +57,6 @@ When work changes the project state in a meaningful way, update this file in the
 - Users still cannot zoom in or out far enough to work directly at the waveform level on a single track.
 
 ## Implementation Briefs
-
-### Stem splitting section and Demucs progress reliability
-
-- **Priority:** P1
-- **Feature definition:** Give stem splitting a dedicated Home-tab surface with Demucs-specific controls and make the Demucs launch/progress/completion flow visibly reliable.
-- **User-visible behavior:** Choosing a song for stem splitting clearly enables the Demucs workflow, exposes the right options, and shows meaningful in-progress and finished states instead of appearing inactive.
-- **Out of scope:** No full model/backend replacement and no broad redesign of unrelated Home-tab sections beyond what stem-splitting UX needs.
-- **Likely affected areas:** [echo_pro_app.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/echo_pro_app.py), [stems_engine.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/stems_engine.py), runtime/bootstrap scripts, and any status/progress dialogs or helper widgets used by the Demucs flow.
-- **Done when:** Stem splitting has its own discoverable section, Demucs activation is visibly tied to the chosen source audio, and users can see clear progress, success, and failure states without guessing whether the process started.
 
 ### Live FX application during playback
 
@@ -167,6 +157,8 @@ When work changes the project state in a meaningful way, update this file in the
 - Fixed the active tabbed Home UI path so playback transport controls actually render and source launches export the Echo Pro data root consistently.
 - Added a root-level [Start_Echo.bat](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/Start_Echo.bat) launcher that bootstraps the runtime venv, ensures core app packages are present, and starts Echo Pro from source.
 - Added Home-tab playback transport controls with non-blocking play/stop, a visible playhead, and jump-to-selection-or-clip navigation.
+- Added a dedicated Home-tab Demucs stem-splitting section with source/model controls plus clearer launch, progress, completion, and dependency feedback.
+- Fixed a startup regression in the active tabbed Echo Pro window by restoring the new stem-workflow state on the real launch path.
 - Added this repo-level task hub file plus a Copilot skill/instruction hook so backlog work has a single default home.
 - Added a dedicated [task-hub prompt](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/.github/prompts/task-hub.prompt.md) for quick backlog review and updates.
 - Added a README pointer so contributors can find [TASK_HUB.md](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/TASK_HUB.md) quickly.
