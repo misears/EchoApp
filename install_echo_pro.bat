@@ -67,6 +67,9 @@ if errorlevel 1 goto :fail
 call :ensure_python
 if errorlevel 1 goto :fail
 
+call :ensure_app_runtime_packages
+if errorlevel 1 goto :fail
+
 call :ensure_demucs
 if errorlevel 1 goto :fail
 
@@ -99,7 +102,7 @@ exit /b 1
 set "PY_CMD="
 if exist "%VENV_DIR%\Scripts\python.exe" (
     set "PY_CMD=%VENV_DIR%\Scripts\python.exe"
-    echo Using existing runtime Python: %PY_CMD%
+    echo Using existing runtime Python: !PY_CMD!
     exit /b 0
 )
 
@@ -140,6 +143,26 @@ if errorlevel 1 (
 "%PY_CMD%" -m pip install --upgrade numpy
 if errorlevel 1 (
     echo Failed to install local runtime prerequisites.
+    exit /b 1
+)
+exit /b 0
+
+:ensure_app_runtime_packages
+echo.
+echo Checking Echo Pro app runtime packages...
+"%PY_CMD%" -c "import PySide6, numpy, sounddevice, soundfile" >nul 2>&1
+if not errorlevel 1 if /I not "%ACTION%"=="update" (
+    echo Echo Pro app runtime packages already available.
+    exit /b 0
+)
+
+if /I "%ACTION%"=="update" (
+    "%PY_CMD%" -m pip install --upgrade PySide6 pydub sounddevice soundfile numpy
+) else (
+    "%PY_CMD%" -m pip install PySide6 pydub sounddevice soundfile numpy
+)
+if errorlevel 1 (
+    echo Failed to install Echo Pro app runtime packages.
     exit /b 1
 )
 exit /b 0

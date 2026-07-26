@@ -9,12 +9,23 @@ _EQ_BANDS = ["40", "200", "500", "1k", "3k", "8k", "16k"]
 class TrackMixerRow(QFrame):
     """Vertical channel strip: EQ sliders, gain fader, pan, and Punch/Mute/Solo buttons."""
 
-    def __init__(self, track_index: int, track_name: str, *, on_volume_change=None, on_mute_toggle=None, on_solo_toggle=None, parent=None):
+    def __init__(
+        self,
+        track_index: int,
+        track_name: str,
+        *,
+        on_volume_change=None,
+        on_mute_toggle=None,
+        on_solo_toggle=None,
+        on_open_playback_settings=None,
+        parent=None,
+    ):
         super().__init__(parent)
         self.track_index = track_index
         self._on_volume_change = on_volume_change
         self._on_mute_toggle = on_mute_toggle
         self._on_solo_toggle = on_solo_toggle
+        self._on_open_playback_settings = on_open_playback_settings
 
         self.setObjectName("TrackMixerRow")
         self.setFrameShape(QFrame.StyledPanel)
@@ -162,6 +173,21 @@ class TrackMixerRow(QFrame):
         pms_row.addWidget(self.solo_btn)
 
         root.addLayout(pms_row)
+        root.addSpacing(4)
+
+        playback_row = QHBoxLayout()
+        playback_row.setSpacing(4)
+        self.fx_btn = QPushButton("FX")
+        self.fx_btn.setFixedSize(40, 22)
+        self.fx_btn.setToolTip("Open playback settings for fades, loop region, and starter effects")
+        self.fx_btn.clicked.connect(self._open_playback_settings)
+        playback_row.addWidget(self.fx_btn)
+
+        self.playback_summary = QLabel("DRY")
+        self.playback_summary.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.playback_summary.setStyleSheet("font-size:8px; color:#aab4be;")
+        playback_row.addWidget(self.playback_summary, stretch=1)
+        root.addLayout(playback_row)
         root.addStretch()
 
     def _volume_changed(self, value: int):
@@ -176,6 +202,10 @@ class TrackMixerRow(QFrame):
     def _solo_clicked(self, checked: bool):
         if self._on_solo_toggle:
             self._on_solo_toggle(self.track_index, checked)
+
+    def _open_playback_settings(self) -> None:
+        if self._on_open_playback_settings:
+            self._on_open_playback_settings(self.track_index)
 
     def set_volume_db(self, db: float):
         self.vol_slider.blockSignals(True)
@@ -197,3 +227,7 @@ class TrackMixerRow(QFrame):
         self.solo_btn.blockSignals(True)
         self.solo_btn.setChecked(bool(soloed))
         self.solo_btn.blockSignals(False)
+
+    def set_playback_summary(self, summary: str, tooltip: str = "") -> None:
+        self.playback_summary.setText(summary)
+        self.playback_summary.setToolTip(tooltip)

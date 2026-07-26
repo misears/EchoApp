@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
@@ -33,10 +34,10 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPainter, QColor, QPen
 
-from project_model import Project, Track, Clip, new_empty_project, save_project, load_project
+from project_model import Clip, Project, Track, TrackPlaybackSettings, new_empty_project, save_project, load_project
 from audio_info import get_audio_length_ms
 from timeline_widget import TimelineWidget
-from playback_mixer import play_project
+from playback_mixer import is_playback_active, play_project, project_duration_ms, stop_playback
 from stems_engine import (
     StemCancelledError,
     StemDependencyError,
@@ -72,6 +73,7 @@ from input_validation import parse_float, parse_int, parse_time_signature, run_c
 from app.styles import DARK_STYLE
 from app.ui.dialogs.first_run_dialog import FirstRunDialog
 from app.ui.dialogs.project_browser_dialog import ProjectBrowserDialog
+from app.ui.dialogs.track_playback_settings_dialog import TrackPlaybackSettingsDialog
 from app.ui.dialogs.voice_manager_dialog import VoiceManagerDialog
 from app.ui.widgets.collapsible_panel import CollapsiblePanel
 from app.ui.widgets.track_mixer_row import TrackMixerRow
@@ -98,6 +100,11 @@ class EchoProWindow(QMainWindow):
         self.selected_input_device_id = None
         self.selected_output_device_id = None
         self.last_song_generation = None
+        self.project_playhead_ms = 0
+        self._project_playback_started_at: Optional[float] = None
+        self._project_playback_start_ms = 0
+        self._project_playback_end_ms = 0
+        self._project_playback_manual_stop = False
 
         self.status = QStatusBar()
         self.setStatusBar(self.status)
@@ -107,28 +114,28 @@ class EchoProWindow(QMainWindow):
         self.recording_timer.timeout.connect(self.refresh_recording_meters)
         self.recording_timer.start()
 
+        self.project_playback_timer = QTimer(self)
+        self.project_playback_timer.setInterval(75)
+        self.project_playback_timer.timeout.connect(self._poll_project_playback)
+
         layout = QVBoxLayout()
 
         # Top bar
         top_layout = QHBoxLayout()
+        top_layout.setSpacing(6)
         self.project_name_label = QLabel("Project: Untitled")
         top_layout.addWidget(self.project_name_label)
 
-        new_btn = QPushButton("New Project")
-        new_btn.clicked.connect(self.new_project)
-        top_layout.addWidget(new_btn)
-
-        open_btn = QPushButton("Open Project")
-        open_btn.clicked.connect(self.open_project)
-        top_layout.addWidget(open_btn)
-
-        save_btn = QPushButton("Save Project")
-        save_btn.clicked.connect(self.save_project_dialog)
-        top_layout.addWidget(save_btn)
-
-        browser_btn = QPushButton("Browse Projects")
-        browser_btn.clicked.connect(self.browse_projects)
-        top_layout.addWidget(browser_btn)
+        for symbol, slot, tip in [
+            ("+", self.new_project, "Create new project"),
+            ("\U0001f4c2", self.open_project, "Open project"),
+            ("\U0001f4be", self.save_project_dialog, "Save project"),
+            ("\U0001f50d", self.browse_projects, "Browse projects"),
+        ]:
+            button = QPushButton(symbol)
+            self._configure_symbol_button(button, symbol, tip, width=34)
+            button.clicked.connect(slot)
+            top_layout.addWidget(button)
 
         layout.addLayout(top_layout)
 
@@ -220,9 +227,29 @@ class EchoProWindow(QMainWindow):
         set_vol_btn.clicked.connect(self.set_track_volume)
         vol_layout.addWidget(set_vol_btn)
 
-        play_btn = QPushButton("Play Project")
-        play_btn.clicked.connect(self.play_current_project)
-        vol_layout.addWidget(play_btn)
+        self.play_project_btn = QPushButton("Play")
+        self.play_project_btn.clicked.connect(self.play_current_project)
+        vol_layout.addWidget(self.play_project_btn)
+
+        self.stop_project_btn = QPushButton("Stop")
+        self.stop_project_btn.clicked.connect(self.stop_current_project_playback)
+        self.stop_project_btn.setEnabled(False)
+        self._configure_symbol_button(self.play_project_btn, "\u25b6", "Play project")
+        self._configure_symbol_button(self.stop_project_btn, "\u25a0", "Stop playback")
+        vol_layout.addWidget(self.stop_project_btn)
+
+        self.jump_to_transport_start_btn = QPushButton("Jump to Start")
+        self.jump_to_transport_start_btn.clicked.connect(self.jump_to_transport_start)
+        self._configure_symbol_button(self.jump_to_transport_start_btn, "\u23ee", "Jump to start")
+        vol_layout.addWidget(self.jump_to_transport_start_btn)
+
+        self.jump_to_transport_end_btn = QPushButton("Jump to End")
+        self.jump_to_transport_end_btn.clicked.connect(self.jump_to_transport_end)
+        self._configure_symbol_button(self.jump_to_transport_end_btn, "\u23ed", "Jump to end")
+        vol_layout.addWidget(self.jump_to_transport_end_btn)
+
+        self.playback_position_label = QLabel("Playhead 0.00s")
+        vol_layout.addWidget(self.playback_position_label)
 
         layout.addLayout(vol_layout)
 
@@ -236,19 +263,14 @@ class EchoProWindow(QMainWindow):
         refresh_devices_btn.clicked.connect(self.refresh_audio_device_selectors)
         test_devices_btn = QPushButton("Test Devices")
         test_devices_btn.clicked.connect(self.test_audio_devices)
-        run_p5a_checks_btn = QPushButton("Run P5A Checks")
-        run_p5a_checks_btn.clicked.connect(self.run_p5a_regression_checks)
-        run_p5b_checks_btn = QPushButton("Run P5B Checks")
-        run_p5b_checks_btn.clicked.connect(self.run_p5b_regression_checks)
-
+        self._configure_symbol_button(refresh_devices_btn, "\u21bb", "Refresh audio devices")
+        self._configure_symbol_button(test_devices_btn, "\U0001f50a", "Test audio devices")
         device_row.addWidget(QLabel("Input"))
         device_row.addWidget(self.input_device_combo)
         device_row.addWidget(QLabel("Output"))
         device_row.addWidget(self.output_device_combo)
         device_row.addWidget(refresh_devices_btn)
         device_row.addWidget(test_devices_btn)
-        device_row.addWidget(run_p5a_checks_btn)
-        device_row.addWidget(run_p5b_checks_btn)
         recording_layout.addLayout(device_row)
 
         transport_row = QHBoxLayout()
@@ -626,6 +648,16 @@ class EchoProWindow(QMainWindow):
 
         self.update_status("Ready")
 
+    def _configure_symbol_button(self, button: QPushButton, symbol: str, tooltip: str, *, width: int = 36, height: int = 28) -> None:
+        button.setText(symbol)
+        button.setToolTip(tooltip)
+        button.setAccessibleName(tooltip)
+        button.setFixedSize(width, height)
+
+    def _sync_metronome_button_state(self, running: bool) -> None:
+        if hasattr(self, "transport_bar") and hasattr(self.transport_bar, "set_metronome_enabled"):
+            self.transport_bar.set_metronome_enabled(running)
+
     def _on_timeline_project_changed(self):
         self.refresh_timeline()
         self.update_status("Timeline updated")
@@ -699,6 +731,13 @@ class EchoProWindow(QMainWindow):
                 flags.append("M")
             if track.soloed:
                 flags.append("S")
+            playback_settings = track.playback_settings
+            if playback_settings.loop_enabled:
+                flags.append("L")
+            if playback_settings.fade_in_ms > 0 or playback_settings.fade_out_ms > 0:
+                flags.append("F")
+            if self._count_enabled_track_effects(track) > 0:
+                flags.append("FX")
             if idx in armed:
                 flags.append("A")
 
@@ -1691,7 +1730,7 @@ class EchoProWindow(QMainWindow):
             self.refresh_take_review_list()
             self.transport_bar.record_button.setEnabled(True)
             self.transport_bar.stop_button.setEnabled(False)
-            self.transport_bar.click_button.setText("Metronome On")
+            self._sync_metronome_button_state(False)
             self.update_status(
                 f"Recording boundary reached: transport auto-stopped @ sample {status_after_stop.last_auto_stop_sample}"
             )
@@ -2009,11 +2048,11 @@ class EchoProWindow(QMainWindow):
     def toggle_metronome(self):
         if self.recording_controller.metronome.is_running:
             self.recording_controller.metronome.stop()
-            self.transport_bar.click_button.setText("Metronome On")
+            self._sync_metronome_button_state(False)
             self.update_status("Metronome stopped")
         else:
             self.recording_controller.metronome.start()
-            self.transport_bar.click_button.setText("Metronome Off")
+            self._sync_metronome_button_state(True)
             self.update_status("Metronome started")
         self.update_recording_status_label()
 
@@ -2071,7 +2110,7 @@ class EchoProWindow(QMainWindow):
 
         self.transport_bar.record_button.setEnabled(True)
         self.transport_bar.stop_button.setEnabled(False)
-        self.transport_bar.click_button.setText("Metronome On")
+        self._sync_metronome_button_state(False)
         self.refresh_take_review_list()
         self.update_status("Recording stopped")
         self.update_recording_status_label()
@@ -2101,9 +2140,83 @@ class EchoProWindow(QMainWindow):
     def update_status(self, text: str):
         self.status.showMessage(text)
 
+    def _update_playback_position_label(self) -> None:
+        self.playback_position_label.setText(f"Playhead {self.project_playhead_ms / 1000.0:.2f}s")
+
+    def _set_project_playhead_ms(self, value_ms: int) -> None:
+        project_end_ms = project_duration_ms(self.current_project)
+        self.project_playhead_ms = max(0, min(int(value_ms), project_end_ms))
+        self.timeline.set_playhead_ms(self.project_playhead_ms)
+        self._update_playback_position_label()
+
+    def _current_transport_target_range(self) -> Tuple[int, int, str]:
+        selected_range = self.timeline.get_selected_time_range_ms()
+        if selected_range is not None:
+            start_ms, end_ms = selected_range
+            return int(start_ms), int(end_ms), "selection"
+
+        clip_range = self.timeline.get_selected_clip_range_ms()
+        if clip_range is not None:
+            start_ms, end_ms = clip_range
+            return int(start_ms), int(end_ms), "clip"
+
+        project_end_ms = project_duration_ms(self.current_project)
+        return 0, int(project_end_ms), "project"
+
+    def jump_to_transport_start(self) -> None:
+        start_ms, _end_ms, source = self._current_transport_target_range()
+        self._set_project_playhead_ms(int(start_ms))
+        self.update_status(f"Moved playhead to {source} start at {start_ms / 1000.0:.2f}s")
+
+    def jump_to_transport_end(self) -> None:
+        _start_ms, end_ms, source = self._current_transport_target_range()
+        self._set_project_playhead_ms(int(end_ms))
+        self.update_status(f"Moved playhead to {source} end at {end_ms / 1000.0:.2f}s")
+
+    def _update_project_playback_controls(self, is_playing: bool) -> None:
+        self.play_project_btn.setEnabled(not is_playing)
+        self.stop_project_btn.setEnabled(is_playing)
+
+    def _finish_project_playback(self, *, stopped_manually: bool) -> None:
+        self.project_playback_timer.stop()
+        if self._project_playback_started_at is not None:
+            elapsed_ms = int(max(0.0, (time.monotonic() - self._project_playback_started_at) * 1000.0))
+            current_ms = min(self._project_playback_end_ms, self._project_playback_start_ms + elapsed_ms)
+            self._set_project_playhead_ms(current_ms)
+        if not stopped_manually:
+            self._set_project_playhead_ms(self._project_playback_end_ms)
+            self.update_status("Playback finished")
+        else:
+            self.update_status(f"Playback stopped at {self.project_playhead_ms / 1000.0:.2f}s")
+        self._project_playback_started_at = None
+        self._project_playback_manual_stop = False
+        self._update_project_playback_controls(False)
+
+    def _poll_project_playback(self) -> None:
+        if self._project_playback_started_at is None:
+            self.project_playback_timer.stop()
+            self._update_project_playback_controls(False)
+            return
+
+        elapsed_ms = int(max(0.0, (time.monotonic() - self._project_playback_started_at) * 1000.0))
+        current_ms = min(self._project_playback_end_ms, self._project_playback_start_ms + elapsed_ms)
+        self._set_project_playhead_ms(current_ms)
+
+        if not is_playback_active():
+            self._finish_project_playback(stopped_manually=self._project_playback_manual_stop)
+
+    def stop_current_project_playback(self) -> None:
+        if self._project_playback_started_at is None and not is_playback_active():
+            self.update_status("Playback is not running")
+            return
+        self._project_playback_manual_stop = True
+        stop_playback()
+        self._finish_project_playback(stopped_manually=True)
+
     def refresh_timeline(self):
         self.timeline.set_project(self.current_project)
         self.timeline.set_selected_track(self.selected_track_index)
+        self._set_project_playhead_ms(self.project_playhead_ms)
         self.timeline.clear_comp_regions()
         for track_id in range(len(self.current_project.tracks)):
             comp_regions = self.recording_controller.session.get_comp_regions_for_track(int(track_id))
@@ -2176,10 +2289,13 @@ class EchoProWindow(QMainWindow):
             self.current_project.metadata.pop("song_generation_state", None)
 
     def new_project(self):
+        if self._project_playback_started_at is not None or is_playback_active():
+            self.stop_current_project_playback()
         self.current_project = new_empty_project("Untitled")
         self.project_name_label.setText("Project: Untitled")
         self.next_clip_id = 1
         self.last_song_generation = None
+        self.project_playhead_ms = 0
         self._persist_song_generation_metadata()
         self.recording_controller = RecordingController("new_session", self.current_project.name)
         self.recording_controller.restore_session_preferences()
@@ -2208,10 +2324,13 @@ class EchoProWindow(QMainWindow):
         if not filename:
             return
         try:
+            if self._project_playback_started_at is not None or is_playback_active():
+                self.stop_current_project_playback()
             proj = load_project(Path(filename))
             self.current_project = proj
             self.project_name_label.setText(f"Project: {proj.name}")
             self._restore_song_generation_metadata()
+            self.project_playhead_ms = 0
             max_id = 0
             for c in proj.clips:
                 if c.id > max_id:
@@ -2261,10 +2380,13 @@ class EchoProWindow(QMainWindow):
         if dlg.exec() == QDialog.DialogCode.Accepted and dlg.selected_path:
             filename = dlg.selected_path
             try:
+                if self._project_playback_started_at is not None or is_playback_active():
+                    self.stop_current_project_playback()
                 proj = load_project(Path(filename))
                 self.current_project = proj
                 self.project_name_label.setText(f"Project: {proj.name}")
                 self._restore_song_generation_metadata()
+                self.project_playhead_ms = 0
                 max_id = 0
                 for c in proj.clips:
                     if c.id > max_id:
@@ -2365,11 +2487,23 @@ class EchoProWindow(QMainWindow):
         self.update_status(f"Track {track_index} volume set to {db} dB")
 
     def play_current_project(self):
-        self.update_status("Mixing and playing project...")
+        if self._project_playback_started_at is not None or is_playback_active():
+            self.stop_current_project_playback()
+
+        start_ms = int(self.project_playhead_ms)
+        self.update_status(f"Mixing and playing project from {start_ms / 1000.0:.2f}s...")
         QApplication.processEvents()
         try:
-            play_project(self.current_project)
-            self.update_status("Playback finished")
+            played_duration_ms = play_project(self.current_project, start_ms=start_ms, blocking=False)
+            if played_duration_ms <= 0:
+                self.update_status("Nothing to play from the current playhead position")
+                return
+            self._project_playback_start_ms = start_ms
+            self._project_playback_end_ms = start_ms + int(played_duration_ms)
+            self._project_playback_manual_stop = False
+            self._project_playback_started_at = time.monotonic()
+            self._update_project_playback_controls(True)
+            self.project_playback_timer.start()
         except Exception as e:
             QMessageBox.critical(self, "Playback error", f"Could not play project:\n{e}")
             self.update_status("Playback error")
@@ -2946,6 +3080,11 @@ class TabbedEchoProWindow(EchoProWindow):
         self.selected_input_device_id = None
         self.selected_output_device_id = None
         self.last_song_generation = None
+        self.project_playhead_ms = 0
+        self._project_playback_started_at: Optional[float] = None
+        self._project_playback_start_ms = 0
+        self._project_playback_end_ms = 0
+        self._project_playback_manual_stop = False
 
         self.status = QStatusBar()
         self.setStatusBar(self.status)
@@ -2953,10 +3092,17 @@ class TabbedEchoProWindow(EchoProWindow):
         self.recording_timer = QTimer(self)
         self.recording_timer.setInterval(100)
         self.recording_timer.timeout.connect(self.refresh_recording_meters)
-        self.recording_timer.start()
+
+        self.project_playback_timer = QTimer(self)
+        self.project_playback_timer.setInterval(75)
+        self.project_playback_timer.timeout.connect(self._poll_project_playback)
 
         self._build_ui()
+        self.update_status("Starting Echo Pro...")
+        QTimer.singleShot(0, self._finish_startup)
 
+    def _finish_startup(self) -> None:
+        self.recording_timer.start()
         self.refresh_track_list()
         self.refresh_audio_device_selectors()
         self.sync_project_tracks_to_recording_engine()
@@ -2970,6 +3116,7 @@ class TabbedEchoProWindow(EchoProWindow):
         self.update_recording_status_label()
         self._prompt_recovery_for_current_session()
         self.refresh_recovery_history()
+        self.refresh_timeline()
         self.update_status("Ready")
 
     def _build_ui(self) -> None:
@@ -2983,9 +3130,14 @@ class TabbedEchoProWindow(EchoProWindow):
         header.addWidget(self.project_name_label)
         header.addStretch()
 
-        for label, slot in [("New", self.new_project), ("Open", self.open_project), ("Save", self.save_project_dialog), ("Browse", self.browse_projects)]:
-            button = QPushButton(label)
-            button.setFixedWidth(78)
+        for symbol, slot, tip in [
+            ("+", self.new_project, "Create new project"),
+            ("\U0001f4c2", self.open_project, "Open project"),
+            ("\U0001f4be", self.save_project_dialog, "Save project"),
+            ("\U0001f50d", self.browse_projects, "Browse projects"),
+        ]:
+            button = QPushButton(symbol)
+            self._configure_symbol_button(button, symbol, tip, width=34)
             button.clicked.connect(slot)
             header.addWidget(button)
 
@@ -3041,25 +3193,25 @@ class TabbedEchoProWindow(EchoProWindow):
 
         project_content = QWidget()
         project_layout = QHBoxLayout(project_content)
-        project_layout.setSpacing(8)
+        project_layout.setSpacing(6)
         project_layout.setContentsMargins(4, 4, 4, 4)
         self.track_name_input = QLineEdit()
         self.track_name_input.setPlaceholderText("Track name")
         self.track_name_input.setFixedWidth(180)
         self.track_name_input.setToolTip("Enter a name for the new or selected track")
         project_layout.addWidget(self.track_name_input)
-        for label, slot, tip in [
-            ("Add Track", self.add_track, "Add a new empty track to the project"),
-            ("Rename Selected", self.rename_selected_track, "Rename the currently selected track"),
-            ("Delete Selected", self.delete_selected_track, "Remove the selected track from the project"),
-            ("Move Up", lambda: self.move_selected_track(-1), "Move selected track up in the list"),
-            ("Move Down", lambda: self.move_selected_track(1), "Move selected track down in the list"),
-            ("Mute", self.toggle_selected_track_mute, "Toggle mute on the selected track"),
-            ("Solo", self.toggle_selected_track_solo, "Toggle solo on the selected track"),
-            ("Arm/Disarm", self.toggle_arm_selected_track, "Arm or disarm the selected track for recording"),
+        for symbol, slot, tip in [
+            ("+", self.add_track, "Add track"),
+            ("\u270e", self.rename_selected_track, "Rename selected track"),
+            ("\u2715", self.delete_selected_track, "Delete selected track"),
+            ("\u2191", lambda: self.move_selected_track(-1), "Move selected track up"),
+            ("\u2193", lambda: self.move_selected_track(1), "Move selected track down"),
+            ("\U0001f507", self.toggle_selected_track_mute, "Toggle mute on selected track"),
+            ("\u25ce", self.toggle_selected_track_solo, "Toggle solo on selected track"),
+            ("\u23fa", self.toggle_arm_selected_track, "Arm or disarm selected track for recording"),
         ]:
-            button = QPushButton(label)
-            button.setToolTip(tip)
+            button = QPushButton(symbol)
+            self._configure_symbol_button(button, symbol, tip, width=34)
             button.clicked.connect(slot)
             project_layout.addWidget(button)
         project_layout.addStretch()
@@ -3084,6 +3236,7 @@ class TabbedEchoProWindow(EchoProWindow):
         add_clip_btn = QPushButton("Add Clip from File")
         add_clip_btn.setToolTip("Browse for an audio file and add it as a clip")
         add_clip_btn.clicked.connect(self.add_clip_from_file)
+        self._configure_symbol_button(add_clip_btn, "\U0001f4c2", "Add clip from file")
         clip_layout.addWidget(add_clip_btn, 0, 4)
 
         self.volume_track_index_input = QLineEdit()
@@ -3101,16 +3254,38 @@ class TabbedEchoProWindow(EchoProWindow):
         set_vol_btn = QPushButton("Set Track Volume")
         set_vol_btn.setToolTip("Apply the specified volume to the selected track")
         set_vol_btn.clicked.connect(self.set_track_volume)
+        self._configure_symbol_button(set_vol_btn, "\U0001f50a", "Set track volume")
         clip_layout.addWidget(set_vol_btn, 1, 4)
 
-        play_btn = QPushButton("Play Project")
-        play_btn.setToolTip("Play back all tracks in the current project")
-        play_btn.clicked.connect(self.play_current_project)
+        self.play_project_btn = QPushButton("Play")
+        self.play_project_btn.setToolTip("Play back all tracks in the current project from the current playhead")
+        self.play_project_btn.clicked.connect(self.play_current_project)
+        self.stop_project_btn = QPushButton("Stop")
+        self.stop_project_btn.setToolTip("Stop project playback")
+        self.stop_project_btn.clicked.connect(self.stop_current_project_playback)
+        self.stop_project_btn.setEnabled(False)
+        self.jump_to_transport_start_btn = QPushButton("Jump to Start")
+        self.jump_to_transport_start_btn.setToolTip("Jump to the start of the current selection, selected clip, or project")
+        self.jump_to_transport_start_btn.clicked.connect(self.jump_to_transport_start)
+        self.jump_to_transport_end_btn = QPushButton("Jump to End")
+        self.jump_to_transport_end_btn.setToolTip("Jump to the end of the current selection, selected clip, or project")
+        self.jump_to_transport_end_btn.clicked.connect(self.jump_to_transport_end)
+        self.playback_position_label = QLabel("Playhead 0.00s")
+        self.playback_position_label.setToolTip("Current project playhead position")
         stems_btn = QPushButton("Split Song into Stems")
         stems_btn.setToolTip("Separate a song file into vocal, drums, bass, and other stems using Demucs")
         stems_btn.clicked.connect(self.split_song_into_stems)
-        clip_layout.addWidget(play_btn, 2, 4)
-        clip_layout.addWidget(stems_btn, 2, 3)
+        self._configure_symbol_button(self.play_project_btn, "\u25b6", "Play project")
+        self._configure_symbol_button(self.stop_project_btn, "\u25a0", "Stop playback")
+        self._configure_symbol_button(self.jump_to_transport_start_btn, "\u23ee", "Jump to start")
+        self._configure_symbol_button(self.jump_to_transport_end_btn, "\u23ed", "Jump to end")
+        self._configure_symbol_button(stems_btn, "\u2702", "Split song into stems")
+        clip_layout.addWidget(self.play_project_btn, 2, 1)
+        clip_layout.addWidget(self.stop_project_btn, 2, 2)
+        clip_layout.addWidget(self.jump_to_transport_start_btn, 2, 3)
+        clip_layout.addWidget(self.jump_to_transport_end_btn, 2, 4)
+        clip_layout.addWidget(self.playback_position_label, 2, 5)
+        clip_layout.addWidget(stems_btn, 2, 6)
         layout.addWidget(CollapsiblePanel("Audio and Track Tools", clip_content))
 
         tracks_content = QWidget()
@@ -3239,14 +3414,12 @@ class TabbedEchoProWindow(EchoProWindow):
         self.sample_rate_combo.setToolTip("Recording sample rate (applies to new sessions)")
         device_layout.addWidget(self.sample_rate_combo)
 
-        for label, slot, tip in [
-            ("Refresh Devices", self.refresh_audio_device_selectors, "Re-scan available audio devices"),
-            ("Test Devices", self.test_audio_devices, "Play a test tone to verify output device"),
-            ("Run P5A Checks", self.run_p5a_regression_checks, "Run Phase 5A regression checks"),
-            ("Run P5B Checks", self.run_p5b_regression_checks, "Run Phase 5B regression checks"),
+        for symbol, slot, tip in [
+            ("\u21bb", self.refresh_audio_device_selectors, "Refresh audio devices"),
+            ("\U0001f50a", self.test_audio_devices, "Test audio devices"),
         ]:
-            button = QPushButton(label)
-            button.setToolTip(tip)
+            button = QPushButton(symbol)
+            self._configure_symbol_button(button, symbol, tip)
             button.clicked.connect(slot)
             device_layout.addWidget(button)
         device_layout.addStretch()
@@ -3267,13 +3440,13 @@ class TabbedEchoProWindow(EchoProWindow):
         self.record_track_input.setFixedWidth(90)
         self.record_track_input.setToolTip("Track index to arm for recording (0-based)")
         transport_layout.addWidget(self.record_track_input)
-        for label, slot, tip in [
-            ("Arm Track", self.arm_recording_track, "Arm the specified track for recording"),
-            ("Arm All", self.arm_all_recording_tracks, "Arm all tracks for recording"),
-            ("Clear Armed", self.clear_armed_recording_tracks, "Disarm all armed tracks"),
+        for symbol, slot, tip in [
+            ("\u23fa", self.arm_recording_track, "Arm selected recording track"),
+            ("\u25c9", self.arm_all_recording_tracks, "Arm all tracks for recording"),
+            ("\u2298", self.clear_armed_recording_tracks, "Clear all armed recording tracks"),
         ]:
-            button = QPushButton(label)
-            button.setToolTip(tip)
+            button = QPushButton(symbol)
+            self._configure_symbol_button(button, symbol, tip)
             button.clicked.connect(slot)
             transport_layout.addWidget(button)
         self.record_tempo_input = QLineEdit()
@@ -3281,8 +3454,8 @@ class TabbedEchoProWindow(EchoProWindow):
         self.record_tempo_input.setFixedWidth(80)
         self.record_tempo_input.setToolTip("Recording tempo in beats per minute")
         transport_layout.addWidget(self.record_tempo_input)
-        tempo_btn = QPushButton("Set Tempo")
-        tempo_btn.setToolTip("Apply the entered BPM as the recording tempo")
+        tempo_btn = QPushButton("\u23f1")
+        self._configure_symbol_button(tempo_btn, "\u23f1", "Set recording tempo")
         tempo_btn.clicked.connect(self.set_recording_tempo)
         transport_layout.addWidget(tempo_btn)
         self.record_time_sig_input = QLineEdit()
@@ -3290,8 +3463,8 @@ class TabbedEchoProWindow(EchoProWindow):
         self.record_time_sig_input.setFixedWidth(70)
         self.record_time_sig_input.setToolTip("Time signature for recording (e.g. 4/4, 3/4, 6/8)")
         transport_layout.addWidget(self.record_time_sig_input)
-        time_btn = QPushButton("Set Time Sig")
-        time_btn.setToolTip("Apply the entered time signature")
+        time_btn = QPushButton("\u2263")
+        self._configure_symbol_button(time_btn, "\u2263", "Set recording time signature")
         time_btn.clicked.connect(self.set_recording_time_signature)
         transport_layout.addWidget(time_btn)
         self.record_count_in_input = QLineEdit()
@@ -3299,8 +3472,8 @@ class TabbedEchoProWindow(EchoProWindow):
         self.record_count_in_input.setFixedWidth(80)
         self.record_count_in_input.setToolTip("Number of count-in bars before recording starts")
         transport_layout.addWidget(self.record_count_in_input)
-        count_btn = QPushButton("Set Count-In")
-        count_btn.setToolTip("Apply the count-in bar setting")
+        count_btn = QPushButton("\u231b")
+        self._configure_symbol_button(count_btn, "\u231b", "Set recording count-in")
         count_btn.clicked.connect(self.set_recording_count_in)
         transport_layout.addWidget(count_btn)
         layout.addWidget(transport_group)
@@ -3351,12 +3524,14 @@ class TabbedEchoProWindow(EchoProWindow):
         self.take_loop_combo.addItem("One-Shot", False)
         self.take_loop_combo.addItem("Loop", True)
         self.take_loop_combo.currentIndexChanged.connect(self.on_take_review_preferences_changed)
-        self.hide_inactive_take_clips_btn = QPushButton("Hide Inactive Takes")
+        self.hide_inactive_take_clips_btn = QPushButton("\U0001f441")
         self.hide_inactive_take_clips_btn.setCheckable(True)
+        self._configure_symbol_button(self.hide_inactive_take_clips_btn, "\U0001f441", "Hide inactive takes")
         self.hide_inactive_take_clips_btn.toggled.connect(self.on_hide_inactive_take_clips_toggled)
         for widget in [QLabel("Track"), self.take_track_combo, self.take_sort_combo, self.take_filter_combo, self.take_view_mode_combo, self.take_loop_combo, self.hide_inactive_take_clips_btn]:
             header.addWidget(widget)
-        refresh_takes_btn = QPushButton("Refresh Takes")
+        refresh_takes_btn = QPushButton("\u21bb")
+        self._configure_symbol_button(refresh_takes_btn, "\u21bb", "Refresh takes")
         refresh_takes_btn.clicked.connect(self.refresh_take_review_list)
         header.addWidget(refresh_takes_btn)
         header.addStretch()
@@ -3367,11 +3542,25 @@ class TabbedEchoProWindow(EchoProWindow):
         self.take_list_widget.on_item_double_clicked(self.audition_selected_take)
         takes_layout.addWidget(self.take_list_widget)
 
-        take_actions = QHBoxLayout()
-        for label, slot in [("Set Active Take", self.set_selected_take_active), ("Audition Selected", self.audition_selected_take), ("Audition Active", self.audition_active_take), ("Stop Audition", self.stop_take_audition), ("Delete Selected Take", self.delete_selected_take), ("Toggle Keeper", self.toggle_selected_take_keeper), ("Toggle Take Mute", self.toggle_selected_take_muted), ("Rate -", lambda: self.rate_selected_take(-1)), ("Rate +", lambda: self.rate_selected_take(1)), ("Use Best Take", self.use_best_take_for_selected_track)]:
-            button = QPushButton(label)
+        take_actions = QGridLayout()
+        take_actions.setHorizontalSpacing(4)
+        take_actions.setVerticalSpacing(4)
+        for index, (symbol, slot, tip) in enumerate([
+            ("\u2713", self.set_selected_take_active, "Set selected take as active"),
+            ("\u25b6", self.audition_selected_take, "Audition selected take"),
+            ("\u25b7", self.audition_active_take, "Audition active take"),
+            ("\u25a0", self.stop_take_audition, "Stop take audition"),
+            ("\u2715", self.delete_selected_take, "Delete selected take"),
+            ("\u2605", self.toggle_selected_take_keeper, "Toggle keeper on selected take"),
+            ("\U0001f507", self.toggle_selected_take_muted, "Toggle mute on selected take"),
+            ("-", lambda: self.rate_selected_take(-1), "Lower selected take rating"),
+            ("+", lambda: self.rate_selected_take(1), "Raise selected take rating"),
+            ("\U0001f3c6", self.use_best_take_for_selected_track, "Use best take for selected track"),
+        ]):
+            button = QPushButton(symbol)
+            self._configure_symbol_button(button, symbol, tip)
             button.clicked.connect(slot)
-            take_actions.addWidget(button)
+            take_actions.addWidget(button, index // 5, index % 5)
         takes_layout.addLayout(take_actions)
         layout.addWidget(takes_group, stretch=1)
 
@@ -3385,14 +3574,16 @@ class TabbedEchoProWindow(EchoProWindow):
         comp_layout.addWidget(QLabel("Comp End"), 0, 2)
         comp_layout.addWidget(self.comp_end_sec_input, 0, 3)
         button_row = QHBoxLayout()
-        for label, slot in [
-            ("Create Comp Region", self.create_comp_region_from_selection),
-            ("Assign Selected Take", self.assign_selected_take_to_comp_region),
-            ("Clear Comp Region", self.clear_comp_region_from_selection),
-            ("Refresh History", self.refresh_recovery_history),
-            ("Restore Selected", self.restore_selected_recovery_snapshot),
+        button_row.setSpacing(4)
+        for symbol, slot, tip in [
+            ("\u239a", self.create_comp_region_from_selection, "Create comp region from selection"),
+            ("\u21a6", self.assign_selected_take_to_comp_region, "Assign selected take to comp region"),
+            ("\u232b", self.clear_comp_region_from_selection, "Clear comp region"),
+            ("\u21bb", self.refresh_recovery_history, "Refresh recovery history"),
+            ("\u21ba", self.restore_selected_recovery_snapshot, "Restore selected recovery snapshot"),
         ]:
-            button = QPushButton(label)
+            button = QPushButton(symbol)
+            self._configure_symbol_button(button, symbol, tip)
             button.clicked.connect(slot)
             button_row.addWidget(button)
         button_row.addStretch()
@@ -3567,17 +3758,10 @@ class TabbedEchoProWindow(EchoProWindow):
         stems_layout = QHBoxLayout(stems_group)
         stems_btn = QPushButton("Split Song into Stems")
         stems_btn.clicked.connect(self.split_song_into_stems)
+        self._configure_symbol_button(stems_btn, "\u2702", "Split song into stems")
         stems_layout.addWidget(stems_btn)
         layout.addWidget(stems_group)
 
-        regen_group = QGroupBox("Checks")
-        regen_layout = QHBoxLayout(regen_group)
-        for label, slot in [("Run P5A Checks", self.run_p5a_regression_checks), ("Run P5B Checks", self.run_p5b_regression_checks)]:
-            button = QPushButton(label)
-            button.clicked.connect(slot)
-            regen_layout.addWidget(button)
-        regen_layout.addStretch()
-        layout.addWidget(regen_group)
         layout.addStretch()
         return tab
 
@@ -3663,10 +3847,10 @@ mixing, voice cloning, and AI-assisted music generation.</p>
 </ul>
 <h3>Creating a Project</h3>
 <ul>
-  <li>Click <b>New</b> in the top toolbar to start a fresh project.</li>
-  <li>Use <b>Open</b> to load a previously saved <code>.json</code> project file.</li>
-  <li>Click <b>Save</b> to write the current project to disk.</li>
-  <li><b>Browse</b> opens the projects folder in a file-picker so you can switch between sessions.</li>
+  <li>Use the hover-labeled top toolbar icons to create, open, save, or browse projects.</li>
+  <li>The <b>+</b> button starts a fresh project.</li>
+  <li>The folder button opens a previously saved <code>.json</code> project file.</li>
+  <li>The disk button writes the current project to disk, and the search button opens the project browser.</li>
 </ul>
 
 <h2>Home Tab</h2>
@@ -3675,16 +3859,17 @@ mixing, voice cloning, and AI-assisted music generation.</p>
 <p>Shows a symbolic stereo waveform for the master bus. A live level meter is available
 after playback.</p>
 <h3>Project Actions</h3>
-<p>Add, rename, delete, reorder, mute, solo, and arm tracks from this panel. Type a name in
-the text box first, then click <b>Add Track</b>.</p>
+<p>Use the hover-labeled icon buttons in this panel to add, rename, delete, reorder, mute,
+solo, and arm tracks. Type a name in the text box first, then use the <b>+</b> button to add
+the track.</p>
 <h3>Audio and Track Tools</h3>
 <ul>
-  <li><b>Add Clip from File</b> — enter a track index and optional start time, then browse
-      for a WAV/MP3/FLAC/OGG file.</li>
-  <li><b>Set Track Volume</b> — enter a track index and a dB value (e.g. <code>-6</code>,
-      <code>0</code>, <code>+3</code>) and click the button.</li>
-  <li><b>Play Project</b> — mix and play all unmuted tracks.</li>
-  <li><b>Split Song into Stems</b> — separate a song into vocals, drums, bass, and other
+  <li><b>Clip import icon button</b> — enter a track index and optional start time, then use the
+      hover-labeled folder button to browse for a WAV/MP3/FLAC/OGG file.</li>
+  <li><b>Track volume icon button</b> — enter a track index and a dB value (e.g. <code>-6</code>,
+      <code>0</code>, <code>+3</code>) and use the hover-labeled speaker button to apply it.</li>
+  <li><b>Transport icon buttons</b> — use the hover labels on the play, stop, jump-start, and jump-end buttons to control playback from the current Home-tab playhead.</li>
+  <li><b>Stem split icon button</b> — hover the scissors button to split a song into vocals, drums, bass, and other
       using Demucs (requires the AI backend).</li>
 </ul>
 <div class="tip"><b>Tip:</b> All sections on the Home tab can be collapsed with the
@@ -3702,6 +3887,7 @@ drag it to resize.</div>
   <li>Press <kbd>Del</kbd> or <kbd>Backspace</kbd> to delete the selected clip.</li>
   <li>Click-drag on an empty area of the currently selected track to define a
       <b>comp range</b> for take comping.</li>
+  <li>The red vertical line shows the current playhead position used by the Home-tab transport controls.</li>
 </ul>
 <h3>Studio Mixer</h3>
 <p>Each track has its own vertical channel strip containing:</p>
@@ -3720,19 +3906,18 @@ drag it to resize.</div>
   <li>Select your <b>Input</b> (microphone/interface) and <b>Output</b> (speakers/headphones)
       from the dropdowns.</li>
   <li>Choose a <b>Sample Rate</b> (44.1 kHz, 48 kHz, 88.2 kHz, or 96 kHz).</li>
-  <li>Click <b>Check Audio Devices</b> to verify the selected devices are working.</li>
+  <li>Use the hover-labeled refresh and speaker buttons to re-scan or test the selected audio devices.</li>
 </ul>
 <h3>Recording Controls</h3>
 <ul>
-  <li>Set the <b>BPM</b> and <b>Time Signature</b> before recording.</li>
-  <li>Select a target track from the <b>Record Track</b> dropdown and click
-      <b>Start Recording</b>.</li>
-  <li>Click <b>Stop Recording</b> to finish. Each recording becomes a <em>take</em>.</li>
+  <li>Use the hover-labeled icon buttons to arm tracks, apply BPM, time signature, and count-in settings.</li>
+  <li>Select a target track in the <b>Arm track</b> field and use the record transport button to start recording.</li>
+  <li>Use the stop transport button to finish. Each recording becomes a <em>take</em>.</li>
   <li>Enable <b>Punch In / Punch Out</b> to record only within a defined time range.</li>
 </ul>
 <h3>Take Review</h3>
 <p>After recording you can listen to each take, mark one as active, or comp multiple takes
-together using the <b>Comp Range</b> tool in the timeline.</p>
+together using the <b>Comp Range</b> tool in the timeline. The take review and comp/recovery action rows now use hover-labeled icon buttons for refresh, audition, rating, keeper/mute, and recovery operations.</p>
 
 <h2>Voice FX Tab</h2>
 <h3>Voice Manager</h3>
@@ -3764,7 +3949,6 @@ together using the <b>Comp Range</b> tool in the timeline.</p>
 <h2>Tools Tab</h2>
 <ul>
   <li><b>Split Song into Stems</b> — same as the Home tab button; runs Demucs.</li>
-  <li><b>Run P5A / P5B Checks</b> — internal regression tests for developers.</li>
   <li><b>Install / Update Dependencies</b> — re-runs the installer for AI backends.</li>
 </ul>
 
@@ -3812,10 +3996,13 @@ together using the <b>Comp Range</b> tool in the timeline.</p>
                 on_volume_change=self._on_track_volume_changed,
                 on_mute_toggle=self._set_track_muted,
                 on_solo_toggle=self._set_track_soloed,
+                on_open_playback_settings=self._open_track_playback_settings,
             )
             row.set_volume_db(track.volume_db)
             row.set_mute(track.muted)
             row.set_solo(track.soloed)
+            summary, tooltip = self._track_playback_summary(track)
+            row.set_playback_summary(summary, tooltip)
             self.mixer_layout.insertWidget(self.mixer_layout.count() - 1, row)
             self.mixer_rows.append(row)
 
@@ -3836,6 +4023,55 @@ together using the <b>Comp Range</b> tool in the timeline.</p>
             self.current_project.tracks[track_index].soloed = bool(soloed)
             self.sync_project_tracks_to_recording_engine()
             self.refresh_track_list()
+
+    def _count_enabled_track_effects(self, track: Track) -> int:
+        effects = track.playback_settings.effects
+        return int(bool(effects.echo_enabled)) + int(bool(effects.distortion_enabled)) + int(bool(effects.chorus_enabled))
+
+    def _track_playback_summary(self, track: Track) -> tuple[str, str]:
+        settings = track.playback_settings
+        parts = []
+        if settings.fade_in_ms > 0 or settings.fade_out_ms > 0:
+            parts.append("FADE")
+        if settings.loop_enabled:
+            parts.append("LOOP")
+        effect_count = self._count_enabled_track_effects(track)
+        if effect_count > 0:
+            parts.append(f"FX{effect_count}")
+        summary = " | ".join(parts) if parts else "DRY"
+        tooltip = (
+            f"Fade in: {settings.fade_in_ms} ms\n"
+            f"Fade out: {settings.fade_out_ms} ms\n"
+            f"Loop: {'on' if settings.loop_enabled else 'off'}"
+        )
+        if settings.loop_enabled:
+            tooltip += f" ({settings.loop_start_ms} ms -> {settings.loop_end_ms} ms)"
+        tooltip += (
+            f"\nEffects: echo={'on' if settings.effects.echo_enabled else 'off'}, "
+            f"distortion={'on' if settings.effects.distortion_enabled else 'off'}, "
+            f"chorus={'on' if settings.effects.chorus_enabled else 'off'}"
+        )
+        return summary, tooltip
+
+    def _open_track_playback_settings(self, track_index: int) -> None:
+        if not (0 <= track_index < len(self.current_project.tracks)):
+            QMessageBox.warning(self, "Track settings", "Select a valid track first.")
+            return
+
+        track = self.current_project.tracks[track_index]
+        dialog = TrackPlaybackSettingsDialog(track.name, track.playback_settings, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        updated_settings = dialog.get_settings()
+        if updated_settings.loop_enabled and updated_settings.loop_end_ms <= updated_settings.loop_start_ms:
+            QMessageBox.warning(self, "Track settings", "Loop end must be greater than loop start.")
+            return
+
+        track.playback_settings = updated_settings
+        self.refresh_track_list()
+        self.refresh_timeline()
+        self.update_status(f"Updated playback settings for track {track_index + 1}")
 
     def refresh_track_list(self):
         super().refresh_track_list()

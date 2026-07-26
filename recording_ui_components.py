@@ -224,15 +224,28 @@ class TransportBar(QWidget):
         super().__init__(parent)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
 
-        self.record_button = QPushButton("Record")
-        self.stop_button = QPushButton("Stop")
-        self.undo_button = QPushButton("Undo Take")
-        self.redo_button = QPushButton("Redo Take")
-        self.click_button = QPushButton("Metronome On")
+        self.record_button = QPushButton("\u25cf")
+        self.stop_button = QPushButton("\u25a0")
+        self.undo_button = QPushButton("\u21b6")
+        self.redo_button = QPushButton("\u21b7")
+        self.click_button = QPushButton("\u266a")
 
         for button in [self.record_button, self.stop_button, self.undo_button, self.redo_button, self.click_button]:
+            button.setFixedSize(36, 28)
             layout.addWidget(button)
+
+        self.record_button.setToolTip("Record")
+        self.stop_button.setToolTip("Stop")
+        self.undo_button.setToolTip("Undo Take")
+        self.redo_button.setToolTip("Redo Take")
+        self.set_metronome_enabled(False)
+
+    def set_metronome_enabled(self, enabled: bool) -> None:
+        tooltip = "Turn metronome off" if enabled else "Turn metronome on"
+        self.click_button.setToolTip(tooltip)
+        self.click_button.setAccessibleName(tooltip)
 
 
 class RecordingDiagnosticsWidget(QFrame):

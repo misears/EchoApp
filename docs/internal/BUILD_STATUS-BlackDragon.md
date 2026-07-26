@@ -1,5 +1,7 @@
 # ECHO PRO BUILD STATUS
 
+> Status note: this document is a build/status snapshot. The actively maintained task backlog and current problems list live in [TASK_HUB.md](../../TASK_HUB.md).
+
 **Last Updated:** 2026-07-24
 **Python Version:** 3.14 (pydub removed — all audio now uses soundfile + ffprobe)
 **Overall Completion:** 94% (Phases 1–4 Complete and Verified, Phase 5A Complete, Phase 5B In Progress)

@@ -1,6 +1,6 @@
 
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import soundfile as sf
@@ -38,7 +38,9 @@ class TimelineWidget(QWidget):
         self._comp_select_start_ms: Optional[int] = None
         self._comp_select_end_ms: Optional[int] = None
         self._comp_select_track_index: Optional[int] = None
+        self._selected_time_range: Optional[Tuple[int, int, int]] = None
         self._waveform_cache: Dict[str, tuple[int, int, np.ndarray]] = {}
+        self.playhead_ms = 0
         self.setMinimumHeight(300)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
@@ -54,6 +56,35 @@ class TimelineWidget(QWidget):
     def set_selected_track(self, track_index):
         self.selected_track_index = track_index
         self._sync_view_size()
+        self.update()
+
+    def set_playhead_ms(self, ms: int) -> None:
+        self.playhead_ms = max(0, int(ms))
+        self.update()
+
+    def get_playhead_ms(self) -> int:
+        return max(0, int(self.playhead_ms))
+
+    def get_selected_clip_range_ms(self) -> Optional[Tuple[int, int]]:
+        if self.selected_clip_id is None:
+            return None
+        clip = self._find_clip_by_id(int(self.selected_clip_id))
+        if clip is None:
+            return None
+        start_ms = max(0, int(clip.start_ms))
+        end_ms = max(start_ms, int(clip.start_ms) + int(clip.length_ms))
+        return start_ms, end_ms
+
+    def get_selected_time_range_ms(self) -> Optional[Tuple[int, int]]:
+        if self._selected_time_range is None:
+            return None
+        _track_index, start_ms, end_ms = self._selected_time_range
+        return int(start_ms), int(end_ms)
+
+    def clear_selected_time_range(self) -> None:
+        if self._selected_time_range is None:
+            return
+        self._selected_time_range = None
         self.update()
 
     def _content_width(self) -> int:
@@ -164,6 +195,71 @@ class TimelineWidget(QWidget):
             x = inner.left() + offset
             painter.drawLine(x, center_y - height, x, center_y + height)
 
+    def _count_enabled_track_effects(self, track) -> int:
+        settings = track.playback_settings
+        effects = settings.effects
+        return int(bool(effects.echo_enabled)) + int(bool(effects.distortion_enabled)) + int(bool(effects.chorus_enabled))
+
+    def _draw_track_playback_badges(self, painter: QPainter, track, top: int) -> None:
+        settings = track.playback_settings
+        badges: list[tuple[str, QColor]] = []
+        if settings.fade_in_ms > 0 or settings.fade_out_ms > 0:
+            badges.append(("FADE", QColor(214, 123, 54)))
+        if settings.loop_enabled and settings.loop_end_ms > settings.loop_start_ms:
+            badges.append(("LOOP", QColor(66, 146, 230)))
+        effect_count = self._count_enabled_track_effects(track)
+        if effect_count > 0:
+            badges.append((f"FX{effect_count}", QColor(134, 90, 214)))
+
+        badge_x = 90
+        for text, color in badges:
+            badge_width = 32 if len(text) <= 4 else 42
+            badge_rect = QRect(badge_x, top + 6, badge_width, 14)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(color)
+            painter.drawRect(badge_rect)
+            painter.setPen(Qt.white)
+            painter.drawText(badge_rect, Qt.AlignCenter, text)
+            badge_x += badge_width + 6
+
+    def _draw_track_playback_markers(self, painter: QPainter, track, track_index: int, top: int) -> None:
+        settings = track.playback_settings
+        lane_top = top + 22
+        lane_bottom = top + TRACK_HEIGHT - 5
+
+        if settings.fade_in_ms > 0:
+            fade_in_x = self.time_to_x(int(settings.fade_in_ms))
+            painter.setPen(QPen(QColor(255, 190, 120), 2, Qt.DashLine))
+            painter.drawLine(fade_in_x, lane_top, fade_in_x, lane_bottom)
+            painter.setPen(QColor(255, 210, 150))
+            painter.drawText(fade_in_x + 4, top + 34, "FI")
+
+        if settings.fade_out_ms > 0:
+            track_end_ms = max(
+                (
+                    int(clip.start_ms) + int(clip.length_ms)
+                    for clip in self.project.clips
+                    if clip.track_index == track_index
+                ),
+                default=0,
+            )
+            fade_out_start_ms = max(0, track_end_ms - int(settings.fade_out_ms))
+            fade_out_x = self.time_to_x(fade_out_start_ms)
+            painter.setPen(QPen(QColor(255, 190, 120), 2, Qt.DashLine))
+            painter.drawLine(fade_out_x, lane_top, fade_out_x, lane_bottom)
+            painter.setPen(QColor(255, 210, 150))
+            painter.drawText(fade_out_x + 4, top + 46, "FO")
+
+        if settings.loop_enabled and settings.loop_end_ms > settings.loop_start_ms:
+            loop_start_x = self.time_to_x(int(settings.loop_start_ms))
+            loop_end_x = self.time_to_x(int(settings.loop_end_ms))
+            loop_rect = QRect(min(loop_start_x, loop_end_x), top + 24, max(abs(loop_end_x - loop_start_x), 2), TRACK_HEIGHT - 31)
+            painter.setPen(QPen(QColor(90, 175, 255), 2, Qt.DashDotLine))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRect(loop_rect)
+            painter.setPen(QColor(185, 225, 255))
+            painter.drawText(loop_rect.adjusted(4, 0, -4, 0), Qt.AlignLeft | Qt.AlignTop, "LOOP")
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor(30, 30, 30))  # background
@@ -180,6 +276,8 @@ class TimelineWidget(QWidget):
                 painter.fillRect(track_rect, QColor(40, 40, 40))
             painter.setPen(Qt.white)
             painter.drawText(5, top + 20, track.name)
+            self._draw_track_playback_badges(painter, track, top)
+            self._draw_track_playback_markers(painter, track, track_index, top)
 
             # Draw clips on this track
             for clip in self.project.clips:
@@ -245,6 +343,16 @@ class TimelineWidget(QWidget):
                 painter.setPen(Qt.white)
                 painter.drawText(overlay.adjusted(4, 0, -4, 0), Qt.AlignLeft | Qt.AlignVCenter, f"R{int(region.get('region_id', 0))}")
 
+            if self._selected_time_range is not None:
+                selection_track_index, start_ms, end_ms = self._selected_time_range
+                if int(selection_track_index) == int(track_index) and end_ms > start_ms:
+                    x1 = self.time_to_x(int(start_ms))
+                    x2 = self.time_to_x(int(end_ms))
+                    selected_rect = QRect(min(x1, x2), top + 22, max(abs(x2 - x1), 2), TRACK_HEIGHT - 29)
+                    painter.setPen(QPen(QColor(112, 190, 255), 2, Qt.DashLine))
+                    painter.setBrush(QColor(112, 190, 255, 40))
+                    painter.drawRect(selected_rect)
+
         # Draw in-progress range selection on top for immediate feedback.
         if self._comp_selecting and self._comp_select_track_index is not None and self._comp_select_start_ms is not None and self._comp_select_end_ms is not None:
             top = int(self._comp_select_track_index) * (TRACK_HEIGHT + TRACK_GAP)
@@ -254,6 +362,10 @@ class TimelineWidget(QWidget):
             painter.setPen(QPen(QColor(112, 190, 255), 2))
             painter.setBrush(QColor(112, 190, 255, 55))
             painter.drawRect(sel_rect)
+
+        playhead_x = self.time_to_x(self.playhead_ms)
+        painter.setPen(QPen(QColor(255, 92, 92), 2))
+        painter.drawLine(playhead_x, 0, playhead_x, self.height())
 
         painter.end()
 
@@ -298,6 +410,8 @@ class TimelineWidget(QWidget):
                 self._comp_select_track_index = int(track_index)
                 self._comp_select_start_ms = self._x_to_ms(event.position().toPoint().x())
                 self._comp_select_end_ms = self._comp_select_start_ms
+            else:
+                self._selected_time_range = None
             self._dragging_clip_id = None
             self._drag_start_point = None
             self._drag_origin_start_ms = None
@@ -306,6 +420,7 @@ class TimelineWidget(QWidget):
 
         selected_clip = self._find_clip_by_id(clip_id)
         if selected_clip is not None:
+            self._selected_time_range = None
             self._dragging_clip_id = clip_id
             self._drag_start_point = event.position().toPoint()
             self._drag_origin_start_ms = int(selected_clip.start_ms)
@@ -348,7 +463,10 @@ class TimelineWidget(QWidget):
                 range_start = min(int(start_ms), int(end_ms))
                 range_end = max(int(start_ms), int(end_ms))
                 if range_end - range_start >= 50 and self.on_comp_range_selected is not None:
+                    self._selected_time_range = (int(track_index), range_start, range_end)
                     self.on_comp_range_selected(int(track_index), range_start, range_end)
+                elif range_end - range_start < 50:
+                    self._selected_time_range = None
             self.update()
             return super().mouseReleaseEvent(event)
 

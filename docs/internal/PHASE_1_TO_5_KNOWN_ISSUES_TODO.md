@@ -1,7 +1,9 @@
 # Echo Pro Phase 1-5 Known Issues and Fix TODO
 
+> Status note: this document is now a historical/internal snapshot. The actively maintained backlog, ideas, todos, and problems list lives in [TASK_HUB.md](../../TASK_HUB.md).
+
 Last updated: 2026-07-23
-Purpose: single source of truth for active issues, errors, and fix tasks across Phases 1-5.
+Purpose: historical snapshot of issues, errors, and fix tasks across Phases 1-5.
 
 ## Current Error Snapshot
 

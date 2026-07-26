@@ -7,6 +7,27 @@
       "command": "${workspaceFolder}/tools/dev/run_p5a_checks.bat",
       "group": "test",
       "problemMatcher": []
+    },
+    {
+      "label": "Prepare Echo Pro Runtime",
+      "type": "shell",
+      "command": "call \"${workspaceFolder}\\install_echo_pro.bat\" install && if not exist \"%LOCALAPPDATA%\\EchoProData\\runtime\\venv\\Scripts\\python.exe\" exit /b 1",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "cmd.exe",
+          "args": [
+            "/d",
+            "/c"
+          ]
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
     }
   ]
 }

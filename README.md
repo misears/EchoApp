@@ -14,7 +14,7 @@ Echo Pro is a local desktop audio production app with waveform editing, recordin
 ### Option B: Portable / source folder run
 1. Run `install_echo_pro.bat`.
 2. Wait for setup to finish (FFmpeg, Demucs, RVC, ACE Step dependencies).
-3. Start the app with `echo_pro_app.py` (dev) or `EchoPro_Portable.bat` (portable mode).
+3. Start the app with `Start_Echo.bat` for a one-click source launch, `echo_pro_app.py` for direct dev runs, or `EchoPro_Portable.bat` for portable mode.
 
 ## 2) Data location and first run notes
 
@@ -30,11 +30,13 @@ Echo Pro uses tabbed navigation:
 
 - **Home**
   - Primary waveform timeline view.
-  - Track list and project actions.
+  - Track list and compact hover-labeled project action icons for add, rename, delete, reorder, mute, solo, and arm operations.
+  - Project transport icon controls for play, stop, and jumping to the current selection or selected clip boundaries, with labels exposed on hover.
   - Studio mixer section directly below waveform area.
+  - Per-track playback settings for fades, loop region, and starter effects from each mixer strip's **FX** button.
 - **Recording**
-  - Device selection and device tests.
-  - Transport controls, take review, comping, recovery, and metering.
+  - Device selection and compact hover-labeled device/test controls.
+  - Hover-labeled icon actions for recording arm/setup, take review, comping, recovery, and transport.
 - **Voice FX**
   - Apply voice conversion to a selected clip with a selected profile.
 - **Music**
@@ -46,15 +48,17 @@ Echo Pro uses tabbed navigation:
 ## 4) Typical workflow
 
 1. Create/open a project on **Home**.
-2. Add tracks and clips.
-3. Record takes on **Recording** (arm track -> record -> review takes).
-4. Refine gain/mute/solo in **Home** studio mixer.
-5. Use **Voice FX** and **Music** tabs as needed.
-6. Save project frequently.
+2. Use the Home header's hover-labeled project icons to create, open, save, or browse projects, then add tracks and clips with the action and tool icons below.
+3. Use the **Home** transport icon buttons to play, stop, or jump to the current selection or selected clip boundaries during project editing.
+4. Record takes on **Recording** using the hover-labeled arm/setup icons, transport controls, and take-review actions.
+5. Refine gain/mute/solo and open per-track **FX** settings in **Home** studio mixer.
+6. Use **Voice FX** and **Music** tabs as needed.
+7. Save project frequently.
 
 ## 5) Troubleshooting
 
 - If stems fail due to missing tools, run `install_echo_pro.bat update`.
+- If you want a one-click source launch that bootstraps the runtime venv first, use `Start_Echo.bat` from the repo root.
 - If recording fails, verify selected audio input/output devices in **Recording**.
 - If a model-dependent feature is unavailable, rerun `install_echo_pro.bat update` to refresh local assets.
 
@@ -63,3 +67,7 @@ Echo Pro uses tabbed navigation:
 End-user install/use files stay at repository root. Development-only helpers are organized under:
 
 - `tools/dev/` (regression runners, smoke tests, build helpers, and backup variants)
+
+## 7) Task hub for backlog and follow-up work
+
+For repository task tracking, ideas, active problems, and follow-up work, use [TASK_HUB.md](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/TASK_HUB.md) as the actively maintained source of truth.
