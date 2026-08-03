@@ -42,6 +42,156 @@ When work changes the project state in a meaningful way, update this file in the
 
 ---
 
+## Ordered Build Task List
+
+Derived from `EchoApp DAW — UX Layer Companion Document.md` (v1.0.1, locked) and `offline thoughts.md` (implementation blueprint). Tasks are sequenced so each group depends only on groups above it. Work top-to-bottom within each group before moving to the next.
+
+---
+
+### Group 1 — Foundation: Visual System & App Shell
+
+These must land before any screen work; every subsequent surface inherits from them.
+
+- [x] **1.1** Implement the global QSS stylesheet with all five depth-level backgrounds, 3D bevel button states (resting / pressed / active glow), recessed slider groove, weighted capsule handle, and DAW Cyan `#00F0FF` filled track. Apply via `app.setStyleSheet()` at startup. *(ref: UX §1.1–1.6, offline Phase 1)*
+- [x] **1.2** Establish the full color-token set (Background `#121214` through Active Glow box-shadow) as named constants in `app/styles.py` so every widget references tokens, not raw hex. *(ref: UX §1.7)*
+- [x] **1.3** Implement the custom frameless title bar: app waveform logo, "EchoApp" label, and right-aligned minimize / maximize / close buttons. Remove the Windows system title bar. *(ref: UX §1.8)*
+- [ ] **1.4** Lock the main window ergonomic layout skeleton: fixed-width control zones never stretch on resize; only the waveform/timeline area grows. Set minimum resolution to 1100×700, default target 1440×900. *(ref: UX §1.9, §2.1)*
+
+<!-- REVISIT: Confirm whether typography tokens (Segoe UI / Consolas sizes) belong in styles.py or a separate theme file before 1.2 lands. -->
+
+---
+
+### Group 2 — Core Infrastructure: Sync, Persistence & Threading
+
+Backend wiring that all UI components will depend on.
+
+- [ ] **2.1** Build the `TimelineSyncController` (QObject with `zoom_factor`, `scroll_position`, `playhead` Properties and Signals) so all timeline-linked widgets subscribe to a single source of truth instead of updating independently. *(ref: offline Phase 2)*
+- [ ] **2.2** Define the non-destructive project serialization schema: JSON envelope storing source file paths, clip start/end samples, track metadata, and arrangement state — no destructive writes to source audio. Hook save/load into `project_model.py`. *(ref: UX Decision 7, offline Phase 10)*
+- [ ] **2.3** Wire the audio-thread-to-UI communication bridge using a lock-free SPSC ring buffer so playhead position updates cross from the audio thread to the PySide repaint loop without blocking real-time audio. *(ref: offline Phase 3)*
+
+<!-- REVISIT: The blueprint references a compiled C++ DLL (audio_bridge.dll). Decide before 2.3 whether to use ctypes + compiled extension, a pure-Python deque with threading.Event, or sounddevice callbacks — this choice affects Phase 7 (summing matrix) as well. -->
+
+---
+
+### Group 3 — Screen 1: Main Mixer / Arrangement View
+
+Build the primary DAW surface in sub-section order so each new layer has a stable parent to attach to.
+
+- [ ] **3.1** Implement the top toolbar: File / Edit / View / Project / AI Tools / Settings menus; New / Open / Save / Export / Undo / Redo icon buttons; editable BPM display with scroll-wheel nudge; master volume circular knob; time signature dropdown; sample rate + bit depth readout. *(ref: UX §2.2)*
+- [ ] **3.2** Build the Left Master Section (200px fixed): vertical master fader (≥200px stroke), dual-channel L+R VU meter, LUFS integrated readout (cyan monospace), master EQ toggle, master limiter threshold knob, master effects chain button, "MASTER" label. *(ref: UX §2.3)*
+- [ ] **3.3** Implement the Timeline Ruler (28px): bars:beats / seconds toggle, cyan full-height playhead, click-to-reposition, synchronized horizontal scroll. *(ref: UX §2.4)*
+- [ ] **3.4** Build the Channel Strip widget (220px fixed, left of waveform): track name inline edit, color swatch picker, Mute / Solo / Record Arm buttons with correct glow states, input source dropdown, gain + pan knobs, vertical 3D fader, Bus 1 / Bus 2 FX send knobs, EQ mini-graph click-to-open. *(ref: UX §2.5)*
+- [ ] **3.5** Implement Waveform Lane rendering: per-track color fill, center divider, magenta slice markers, rounded-corner clip rectangles with filename label, hover tooltip (duration + sample rate), right-click context menu (Rename / Duplicate / Delete / Export Clip / Send to Demucs / Send to ACE-Step / Properties). *(ref: UX §2.6, offline Phase 5)*
+- [ ] **3.6** Add the "+ Add Track" button at the bottom of the channel strip column; wire the track-type dialog (Audio / AI Stem / MIDI / Bus). *(ref: UX §2.7)*
+- [ ] **3.7** Build the Right Sidebar (260px, collapsible): Browser tab with drag-and-drop file tree (hover shows name, duration, sample rate); Sessions tab with fixed-height rows, right-click context menu, and 500ms-hover truncation tooltip for long names. *(ref: UX §2.8, Decision 3)*
+- [ ] **3.8** Implement the Transport Bar (72px full-width, never resizes): left cluster (input device dropdown, monitoring toggle, gain slider); center cluster (seven 36×36px 3D bevel transport buttons, seek bar scoped to cluster width, dual time display — BARS:BEATS:TICKS + HH:MM:SS:MS — on recessed LCD panel); right cluster (loop toggle with amber glow, loop start/end inputs, metronome toggle with BPM mirror, punch-in/punch-out toggles). *(ref: UX §2.9)*
+- [ ] **3.9** Implement the Status Bar (24px): CPU bar + %, RAM, driver name, sample rate, buffer size, latency in cyan, project name, save-status dot (green = saved, amber = unsaved). *(ref: UX §2.10)*
+
+---
+
+### Group 4 — Waveform Interaction & Editing Correctness
+
+Fix and complete the in-lane editing behaviors that the arrangement view depends on.
+
+- [ ] **4.1** Fix waveform zoom so users can reach close enough for clip-level inspection and editing; expose clear zoom-in / zoom-out controls and keyboard shortcuts (Ctrl+Scroll). *(ref: UX §10, existing P1 brief)*
+- [ ] **4.2** Fix skip-forward / skip-reverse so they fall back to a stable position when no region is selected; add click-based selection start/end editing directly on the waveform surface. *(ref: existing P1 brief)*
+- [ ] **4.3** Implement inline automation curve overlays directly in the waveform lane: parameter selector dropdown on channel strip, cyan dot handles, double-click to add nodes, drag to move, no separate dock panel (locked for v1.0). *(ref: UX §2.6, Decision 1, offline Phase 6)*
+- [ ] **4.4** Implement clip fade settings: 6px drag handles on clip edges plus a right-click "Fade Settings…" non-modal popover (Fade In / Fade Out ms inputs, Linear / Exp / Log / S-curve dropdown per fade). Drag handle and popover must stay in real-time sync. *(ref: UX Decision 6)*
+- [ ] **4.5** Add double-click on a waveform/track to open a focused single-track editor surface, passing the correct track context without disturbing the rest of the project. *(ref: existing P2 brief)*
+
+<!-- REVISIT: Decide before 4.5 whether the single-track editor is an inline panel expansion, a floating dock, or a modal — the choice affects layout code in Group 3. -->
+
+---
+
+### Group 5 — Audio Mixing Engine
+
+- [ ] **5.1** Implement multi-channel audio summing: mix per-track float buffers with individual gain values into the master output buffer in a vectorizable form; wire into the playback path. *(ref: offline Phase 7)*
+- [ ] **5.2** Make track FX and playback parameter changes apply reliably and audibly during active playback; clearly communicate any deliberate defer-to-next-buffer behavior. *(ref: existing P1 brief)*
+- [ ] **5.3** Make the Master Section live during playback: waveform updates, dual VU meter bars respond, LUFS integrated reading updates, peak indicators react. *(ref: UX §2.3, existing P2 brief)*
+
+---
+
+### Group 6 — New Project Dialog
+
+- [ ] **6.1** Implement the New Project modal dialog (Ctrl+N / File → New Project): project name field (auto-focus), folder selector, visual template grid (Empty / Basic 4-Track / Podcast / Beat Maker / AI Stems Session), sample rate dropdown, BPM field, "Create Project" cyan primary button + "Cancel". *(ref: UX Screen 7)*
+
+---
+
+### Group 7 — AI Tab: Demucs Stem Extraction
+
+- [ ] **7.1** Create the "Stem Separation (Demucs)" full-page tab: left panel (drag-and-drop source zone, separation model dropdown with stem-count labels and "Manage Models…" link, device selector with auto-detect, inline VRAM color indicator, Force CPU checkbox, shifts spinner, two-stem mode, output format / sample rate / normalize settings). *(ref: UX §3.2–3.4)*
+- [ ] **7.2** Implement the Demucs run controls: full-width "Separate" button (green ready / amber pulsing during processing), "Cancel" button (appears during processing only); wire to background Demucs worker with signal callbacks. *(ref: UX §3.5, offline Phase 4)*
+- [ ] **7.3** Build the center progress area: overall progress bar with states (Idle / Loading model… / Processing… / Complete), per-stem progress bars with labels, elapsed time + ETA, terminal-style activity log (green / amber / red color scheme, auto-scroll, timestamps, Copy / Save / Clear / filter toolbar). *(ref: UX §3.6–3.7)*
+- [ ] **7.4** Build the post-completion output preview section: per-stem waveform thumbnail rows with Play button and volume knob. *(ref: UX §3.8)*
+- [ ] **7.5** Implement the right Transfer Options panel: "Send to Main Tracks" raised tile card (insert position sub-options, auto-color-code toggle), "Save to Project Folder" tile card (path + subfolder pattern), per-stem output checklist with file sizes, "→ Transfer to ACE-Step" secondary button, primary Transfer button with cyan glow. *(ref: UX §3.9, Decision 7)*
+
+---
+
+### Group 8 — AI Tab: ACE-Step Generation
+
+- [ ] **8.1** Create the "AI Generation (ACE-Step)" full-page tab: model dropdown (checkpoint discovery from models dir, type badges), LoRA adapter dropdown with "+ Add Custom LoRA…", inline VRAM indicator, Force CPU checkbox. *(ref: UX §4.2)*
+- [ ] **8.2** Implement Style Tags and Instruments pill inputs: type-and-Enter pill creation, suggestion dropdown while typing, × removal per pill, 12-pill visible max with scroll, "Clear All" link; "No specific instruments" checkbox. *(ref: UX §4.3–4.4)*
+- [ ] **8.3** Implement Audio Reference section: source dropdown (None / Upload / Active Track / Last Demucs Stem), waveform thumbnail, Influence Strength slider (0.0–1.0), start/end time fields. *(ref: UX §4.5)*
+- [ ] **8.4** Expose all Generation Settings controls: Duration slider+input (5–300s), Steps (10–150), CFG scale (1.0–20.0), Seed + randomize dice, Lock seed checkbox, Scheduler dropdown (Euler / Euler Ancestral / DPM++ 2M / DPM++ SDE / DDIM / PNDM), ERG weight, ELA weight (grayed without lyrics), Batch count (1–8) with estimated time, Output format. *(ref: UX §4.6)*
+- [ ] **8.5** Build the right column prompts area: main textarea (min 5 lines), collapsible negative prompt, collapsible line-numbered lyrics field; full-width Generate button (green idle / amber pulsing processing with ETA); collapsible real-time terminal log. *(ref: UX §4.7–4.8)*
+- [ ] **8.6** Build results grid: waveform thumbnail cards with duration, seed, Play, Loop, star/favorite; quick-action row (Regenerate same/new seed, Vary subtle/strong); Transfer panel mirroring Demucs transfer options plus "Send to Demucs" tile. *(ref: UX §4.9–4.10)*
+
+---
+
+### Group 9 — Mastering Chain Page
+
+- [ ] **9.1** Build the mastering chain full-page view: horizontal 3D raised-card signal chain — Input Trim → 4-Band Parametric EQ (visual frequency curve) → Compressor (threshold / ratio / attack / release / knee / makeup, VU meters) → Stereo Widener → Limiter (threshold / ceiling / release, clip LED, true peak readout) → Output. Bypass button per block (red glow when bypassed). Arrow connectors between blocks. *(ref: UX §5.1, offline Phase 8)*
+- [ ] **9.2** Implement the LUFS meter panel: Integrated / Short-term / Momentary / LU Range / True Peak readouts in cyan monospace; target preset dropdown (Spotify −14 / YouTube −16 / EBU R128 −23 / ATSC −24 / Custom); dashed amber target line on LUFS history scrolling chart; Integrated readout color-coded green/amber/red vs target. *(ref: UX §5.2, Decisions 5)*
+
+<!-- REVISIT: The offline blueprint has C++ mastering_chain.cpp (atomic bypass). Confirm before 9.1 whether the Python implementation uses numpy DSP or calls a compiled extension — this changes the scope of 9.1 significantly. -->
+
+---
+
+### Group 10 — MIDI Hardware Mapping Page
+
+- [ ] **10.1** Build the MIDI mapping page three-panel layout: left device list (status dot, channel dropdown, Refresh button); center mappings table (Parameter / Current Value / CC / Channel / Min / Max / Curve / Learn columns, grouped by category); right MIDI Learn console (scrolling monospace monitor, Learn toggle, confirmation card for new mappings, amber "MIDI Learn Active" banner). *(ref: UX §6.1–6.3, offline Phase 11)*
+- [ ] **10.2** Wire the background MIDI input worker thread: poll active input port at ~500Hz, translate CC 0–127 to normalized 0.0–1.0, emit to parameter bindings; implement MIDI Learn assignment flow. *(ref: offline Phase 11)*
+
+---
+
+### Group 11 — Settings Page
+
+- [ ] **11.1** Build the Settings full-page tab with left sidebar navigation (200px): Audio Engine section (backend dropdown, input/output device dropdowns, sample rate / buffer size / bit depth selectors, latency readout, test-tone button, driver status indicator). *(ref: UX §7.1)*
+- [ ] **11.2** Implement the Model Manager section with Demucs and ACE-Step sub-tabs: installed models table with per-row Set Default and Remove (confirm dialog); "Add from Folder…" with format validation; "Add from URL…" with inline download progress; drag-and-drop install zone; model details pane on row selection. *(ref: UX §7.2)*
+- [ ] **11.3** Add Appearance, Keyboard Shortcuts (searchable / reassignable table with Reset All), Project Defaults, and About sections. *(ref: UX §7.3–7.6)*
+
+<!-- REVISIT: Keyboard shortcuts in §11.3 must be reconciled with the shortcut bindings task (Group 12). Decide whether shortcuts are stored per-user in a config file or hardcoded with an override layer before implementing the reassignment table. -->
+
+---
+
+### Group 12 — Keyboard Shortcuts & UI State Machine
+
+- [ ] **12.1** Wire all documented keyboard shortcut bindings: Space (play/stop), R (record), Home / End (skip to start/end), Ctrl+Z / Ctrl+Y (undo/redo), Ctrl+S (save), Delete (delete clip), S (split at playhead), Ctrl+T (new track), M (mute), Alt+S (solo), Ctrl+Scroll (zoom), Tab (switch panels), Ctrl+D (Demucs), Ctrl+E (ACE-Step), Ctrl+M (Mastering), Ctrl+L (MIDI Learn), Ctrl+N (new project), Ctrl+O (open), Ctrl+Shift+E (export). *(ref: UX §10)*
+- [ ] **12.2** Implement the full UI state machine: Idle/No Project (grayed controls, welcome panel), Project Open/Stopped (controls active), Playing (Play glows green, seek animates, playhead moves), Recording (Record pulses red, armed track red borders, live waveform draw, dim non-armed tracks, REC badge in status bar), AI Processing (amber progress indicator in status bar, click to jump to active AI tab), MIDI Learn Mode (amber banner, assignable parameters amber glow), Unsaved Changes (amber dot + title bar asterisk). *(ref: UX §9)*
+
+---
+
+### Group 13 — Control Polish & Icon Consistency
+
+- [ ] **13.1** Standardize all icon button sizing and spacing: 36×36px for transport, consistent size across Home and Recording flows, hover-tooltip labels for all icon-only controls, larger hit targets where noted. *(ref: existing P2 brief)*
+- [ ] **13.2** Control sizing and layout cleanup pass: ensure control clusters use fixed bounding boxes, buttons are 8px apart within clusters, no control stretches to fill space. *(ref: UX §1.9)*
+
+---
+
+### Group 14 — Developer Infrastructure & Launch Reliability
+
+- [ ] **14.1** Fix the non-debug source launch path so `Start_Echo.bat` and the VS Code shell task reliably surface the PySide window; document the preferred developer launch path. *(ref: existing P2 brief)*
+- [ ] **14.2** Add a runtime environment health check and recovery path for `%LOCALAPPDATA%\EchoProData\runtime\venv`; document the reset/resync procedure for contributors. *(ref: existing P3 brief)*
+- [ ] **14.3** Define and document the repeatable packaged-launcher validation path for contributors who do not have `EchoPro.exe` in their source checkout. *(ref: existing P3 brief)*
+
+---
+
+### Group 15 — Documentation Alignment
+
+- [ ] **15.1** Mark or update stale internal status docs (`docs/internal/`) so contributors can quickly identify which documents are authoritative vs historical; link to TASK_HUB.md as the active source. *(ref: existing P4 brief)*
+
+---
+
 ## Ideas
 
 - Reframe the main Echo Pro shell around the locked 3D studio-hardware layout from the UX companion document so control clusters, transport, and arrangement space follow the fixed-width rules.
@@ -62,6 +212,8 @@ When work changes the project state in a meaningful way, update this file in the
 - Explore a vertical beside-the-track mixer/control layout instead of the current separate mixer section.
 
 ## Todos
+
+> **Note (2026-08-03):** Active build work is tracked in the **Ordered Build Task List** above. Items in this section are older scoped tasks and general backlog; they will be retired as the build list covers them. Typography tokens (Segoe UI / Consolas sizes) are kept in `app/styles.py` alongside color tokens — no separate theme file needed for v1.0.
 
 - [ ] Audit the active Home / mixer shell against the locked UX document and list the remaining layout gaps for the 3D hardware-style arrangement view.
 - [ ] Split the AI workflow into distinct Demucs and ACE-Step tabs with the documented transfer actions between them.

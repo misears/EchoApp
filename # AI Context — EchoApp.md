@@ -9,7 +9,7 @@
 Echo Pro is a local desktop audio production app with waveform editing, recording, stem separation, voice conversion, and music generation workflows.
 
 | Field | Value |
-|---|---|
+| --- | --- |
 | Project | `EchoApp` |
 | Platform | Claude |
 | Device | quicksilver |
@@ -18,7 +18,7 @@ Echo Pro is a local desktop audio production app with waveform editing, recordin
 | Updated | 8/3/2026 12:38 PM |
 | AI.md Version | 1.2 |
 | Workspace | `c:\Users\misea\OneDrive\Documents\AI Project Folders\EchoApp` |
-| Repository | https://github.com/misears/EchoApp.git |
+| Repository | <https://github.com/misears/EchoApp.git> |
 | Branch | `taskhub-instructions-sync` |
 
 ## Recent Git Activity

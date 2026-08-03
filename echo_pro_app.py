@@ -80,6 +80,7 @@ from app.ui.dialogs.project_browser_dialog import ProjectBrowserDialog
 from app.ui.dialogs.track_playback_settings_dialog import TrackPlaybackSettingsDialog
 from app.ui.dialogs.voice_manager_dialog import VoiceManagerDialog
 from app.ui.widgets.collapsible_panel import CollapsiblePanel
+from app.ui.widgets.title_bar import CustomTitleBar
 from app.ui.widgets.track_mixer_row import TrackMixerRow
 
 # Symbolic stereo waveform placeholder shown in the Master Output section.
@@ -3183,7 +3184,8 @@ class TabbedEchoProWindow(EchoProWindow):
     def __init__(self):
         QMainWindow.__init__(self)
         self.setWindowTitle("Echo Pro")
-        self.setMinimumSize(1280, 900)
+        self.setMinimumSize(1100, 700)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.setStyleSheet(DARK_STYLE)
 
         self._initialize_shared_window_state()
@@ -3218,12 +3220,22 @@ class TabbedEchoProWindow(EchoProWindow):
 
     def _build_ui(self) -> None:
         root = QVBoxLayout()
-        root.setContentsMargins(10, 10, 10, 8)
-        root.setSpacing(8)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # Custom title bar spans the full window width with no outer margins.
+        self._title_bar = CustomTitleBar(self)
+        root.addWidget(self._title_bar)
+
+        # Wrap all existing content in a padded widget below the title bar.
+        _content = QWidget()
+        _content_layout = QVBoxLayout(_content)
+        _content_layout.setContentsMargins(10, 6, 10, 8)
+        _content_layout.setSpacing(8)
 
         header = QHBoxLayout()
         self.project_name_label = QLabel("Project: Untitled")
-        self.project_name_label.setStyleSheet("font-size:16px; font-weight:bold; color:#e94560;")
+        self.project_name_label.setStyleSheet("font-size:13px; font-weight:bold; color:#E2E2E5;")
         header.addWidget(self.project_name_label)
         header.addStretch()
 
@@ -3238,7 +3250,7 @@ class TabbedEchoProWindow(EchoProWindow):
             button.clicked.connect(slot)
             header.addWidget(button)
 
-        root.addLayout(header)
+        _content_layout.addLayout(header)
 
         self.tabs = QTabWidget()
         self.tabs.addTab(self._wrap_scroll(self._build_overview_tab()), "Home")
@@ -3247,7 +3259,9 @@ class TabbedEchoProWindow(EchoProWindow):
         self.tabs.addTab(self._wrap_scroll(self._build_music_tab()), "Music")
         self.tabs.addTab(self._wrap_scroll(self._build_tools_tab()), "Tools")
         self.tabs.addTab(self._build_help_tab(), "Help")
-        root.addWidget(self.tabs, stretch=1)
+        _content_layout.addWidget(self.tabs, stretch=1)
+
+        root.addWidget(_content, stretch=1)
 
         container = QWidget()
         container.setLayout(root)
