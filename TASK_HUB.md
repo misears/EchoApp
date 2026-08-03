@@ -3,10 +3,33 @@
 This is the single working file for EchoApp ideas, actionable todos, and current problems.
 
 Use this file as the default place to capture:
+
 - rough ideas that are not yet scoped,
 - next actionable engineering tasks,
 - active problems or recurring friction,
 - and recent completions worth keeping visible.
+
+## Top-Level Instruction Documents
+
+These documents are now treated as top-level instruction sources for EchoApp work. Read them before changing UI, layout, launch flow, playback behavior, AI workflow surfaces, or related persistence paths.
+
+### [offline thoughts.md](offline%20thoughts.md)
+
+- Treat this as the implementation blueprint for the app architecture and technical direction.
+- Its guidance locks the global visual system, multi-track timeline sync, audio-thread bridge, Demucs workflow, waveform rendering, automation editing, mixing engine, mastering chain, Linux audio driver path, and non-destructive storage approach.
+- The phase structure is directional and implementation-focused, so future work should align with it instead of inventing parallel patterns.
+
+### [EchoApp DAW — UX Layer Companion Document.md](EchoApp%20DAW%20%E2%80%94%20UX%20Layer%20Companion%20Document.md)
+
+- Treat this as the locked UX specification for the main DAW experience.
+- It defines the studio-hardware visual language, the main mixer/arrangement view, Demucs and ACE-Step as separate tabs, the mastering chain, MIDI mapping, settings, new-project flow, keyboard shortcuts, and the state machine.
+- The resolved design decisions are final unless the document version is formally bumped; do not reopen them casually in implementation work.
+
+### Instruction hierarchy
+
+- These two documents outrank older working notes when they conflict with backlog wording or stale status snapshots.
+- Use TASK_HUB.md to track what to do next, but use the two top-level instruction docs to decide how the app should look and behave.
+- When a task touches one of those instructions, capture the work here instead of scattering it across ad hoc notes.
 
 When work changes the project state in a meaningful way, update this file in the same change.
 
@@ -21,6 +44,11 @@ When work changes the project state in a meaningful way, update this file in the
 
 ## Ideas
 
+- Reframe the main Echo Pro shell around the locked 3D studio-hardware layout from the UX companion document so control clusters, transport, and arrangement space follow the fixed-width rules.
+- Treat Demucs and ACE-Step as separate full-page AI tabs with transfer handoff, not a unified AI surface.
+- Add the mastering chain as a dedicated first-class page with LUFS target presets, history graphing, and bypassable processing blocks.
+- Make the MIDI hardware mapping page and model-manager settings sub-tabs first-class destinations instead of hidden support screens.
+- Continue the non-destructive project/storage architecture so track slices, clip metadata, and arrangement state can be saved without mutating source audio.
 - Phase 5B validation pass and recovery-history UX improvements.
 - Phase 6 installer validation and packaged-launch verification.
 - Plain non-debug Echo Pro launch flow that is as reliable as the current VS Code debug launch.
@@ -35,6 +63,12 @@ When work changes the project state in a meaningful way, update this file in the
 
 ## Todos
 
+- [ ] Audit the active Home / mixer shell against the locked UX document and list the remaining layout gaps for the 3D hardware-style arrangement view.
+- [ ] Split the AI workflow into distinct Demucs and ACE-Step tabs with the documented transfer actions between them.
+- [ ] Add the mastering chain page with target LUFS presets, live meter feedback, and bypass controls.
+- [ ] Add the MIDI hardware mapping page and the Settings model-manager sub-tabs described in the instruction documents.
+- [ ] Implement the new project dialog and the session-sidebar truncation/tooltip behavior from the UX spec.
+- [ ] Define the non-destructive project serialization path for arrangement state, clip metadata, and saved slices.
 - [ ] Verify the new VS Code debug launch path from a fresh editor session and confirm it is the preferred developer launch path.
 - [ ] Decide whether to keep, rename, or replace the old task-based launch workflow now that the debug configuration is the reliable path.
 - [ ] Run a focused manual QA pass for per-track fade-in, fade-out, loop-region, and starter-effect playback after save/reopen.
@@ -57,6 +91,51 @@ When work changes the project state in a meaningful way, update this file in the
 - Users still cannot zoom in or out far enough to work directly at the waveform level on a single track.
 
 ## Implementation Briefs
+
+### Locked DAW shell and visual language
+
+- **Priority:** P1
+- **Feature definition:** Align the main Echo Pro shell with the locked 3D material design, fixed-width control clusters, and studio-hardware visual language from the UX companion document.
+- **User-visible behavior:** The app feels like a structured DAW surface with a custom title bar, fixed transport/status zones, left-side mixing controls, and waveform space that expands instead of the controls stretching.
+- **Out of scope:** No broad cosmetic rewrite outside the documented shell and no change to the locked layout rules unless the UX spec is formally revised.
+- **Likely affected areas:** [echo_pro_app.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/echo_pro_app.py), [app/styles.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/app/styles.py), [timeline_widget.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/timeline_widget.py), and shared widget/style helpers.
+- **Done when:** The live shell matches the locked mixer/transport/sidebar structure closely enough that the documented layout decisions are visible in the running app.
+
+### Split AI tabs and transfer workflow
+
+- **Priority:** P1
+- **Feature definition:** Implement Demucs and ACE-Step as separate full-page tabs with the documented source, progress, output, and transfer flows between them.
+- **User-visible behavior:** Users can move from mixer to Demucs or ACE-Step directly, complete a workflow, and hand results off to the other AI page or back into the arrangement.
+- **Out of scope:** No unified AI studio tab and no collapse of the two workflows into a single shared page.
+- **Likely affected areas:** [echo_pro_app.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/echo_pro_app.py), [stems_engine.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/stems_engine.py), [music_generator.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/music_generator.py), and related tab/navigation code.
+- **Done when:** Both AI pages exist as distinct tabs, each exposes the documented controls, and transfer actions preserve the intended handoff path.
+
+### Master chain and LUFS metering
+
+- **Priority:** P1
+- **Feature definition:** Build the mastering chain page with the ordered processing blocks, LUFS target presets, and real-time analytics described in the instruction document.
+- **User-visible behavior:** The user can inspect loudness, set a target preset, see the target line on the LUFS history display, and bypass individual chain stages.
+- **Out of scope:** No full DAW mastering suite and no attempt to replace the existing mixer architecture.
+- **Likely affected areas:** [echo_pro_app.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/echo_pro_app.py), [playback_mixer.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/playback_mixer.py), [app/ui/widgets/](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/app/ui/widgets/), and any mastering-specific backend.
+- **Done when:** The chain page exists, live loudness feedback works, and the documented LUFS target behavior is visible in the UI.
+
+### Inline automation and clip-fade workflow
+
+- **Priority:** P1
+- **Feature definition:** Keep automation inline in the waveform lane and add the locked fade-settings popover so clip-edge editing and automation remain synchronized.
+- **User-visible behavior:** Users can see and edit automation curves directly on the lane, then adjust fade in/out settings through the popover or clip handles with immediate sync.
+- **Out of scope:** No dedicated automation dock panel and no replacement of the inline lane overlay model in v1.
+- **Likely affected areas:** [timeline_widget.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/timeline_widget.py), [app/ui/widgets/](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/app/ui/widgets/), and clip-context-menu/fade helpers.
+- **Done when:** Automation stays inline, fade controls remain synchronized, and the clip interaction model matches the locked UX decision.
+
+### Non-destructive project serialization
+
+- **Priority:** P1
+- **Feature definition:** Define the save/load schema for tracks, slices, clips, and project metadata so source audio stays untouched while project state is preserved.
+- **User-visible behavior:** Users can save and reopen projects without losing clip arrangement, edits, or metadata, and source media remains intact on disk.
+- **Out of scope:** No destructive rewrite of source files and no custom media database beyond what the project needs.
+- **Likely affected areas:** [project_model.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/project_model.py), [recording_session.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/recording_session.py), [voice_store.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/voice_store.py), and persistence helpers.
+- **Done when:** Project state round-trips cleanly through save/reopen and the on-disk source media is not modified by normal workflow operations.
 
 ### Live FX application during playback
 
@@ -170,6 +249,7 @@ When work changes the project state in a meaningful way, update this file in the
 ## Source Notes
 
 The initial contents here were seeded from:
+
 - recent completed work in this repository,
 - current launch/runtime investigation results,
 - and the backlog direction in [docs/internal/PHASE_1_TO_5_KNOWN_ISSUES_TODO.md](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/docs/internal/PHASE_1_TO_5_KNOWN_ISSUES_TODO.md).
