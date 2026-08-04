@@ -1,0 +1,527 @@
+
+from pathlib import Path
+from typing import Callable, Dict, List, Optional, Tuple
+
+import numpy as np
+import soundfile as sf
+from PySide6.QtWidgets import QWidget, QMenu
+from PySide6.QtGui import QPainter, QColor, QPen
+from PySide6.QtCore import Qt, QRect, QPoint, QSize
+
+from project_model import Project
+
+TRACK_HEIGHT = 60
+TRACK_GAP = 10
+CLIP_COLOR = QColor(100, 180, 255)
+CLIP_BORDER = QColor(30, 60, 120)
+
+PIXELS_PER_SECOND = 50  # how many pixels represent one second
+
+class TimelineWidget(QWidget):
+    
+    def __init__(self, project: Project, parent=None):
+        super().__init__(parent)
+        self.project = project
+        self.selected_clip_id = None
+        self.selected_track_index = None
+        self.hide_inactive_take_clips = False
+        self.on_project_changed: Optional[Callable[[], None]] = None
+        self.on_comp_range_selected: Optional[Callable[[int, int, int], None]] = None
+        self.on_add_clip_at: Optional[Callable[[int, int], None]] = None
+        self._clip_rects = []
+        self._dragging_clip_id = None
+        self._drag_start_point = None
+        self._drag_origin_start_ms = None
+        self._comp_regions_by_track: Dict[int, List[dict]] = {}
+        self._comp_color_mode = "alternating"
+        self._comp_selecting = False
+        self._comp_select_start_ms: Optional[int] = None
+        self._comp_select_end_ms: Optional[int] = None
+        self._comp_select_track_index: Optional[int] = None
+        self._selected_time_range: Optional[Tuple[int, int, int]] = None
+        self._waveform_cache: Dict[str, tuple[int, int, np.ndarray]] = {}
+        self.playhead_ms = 0
+        self.setMinimumHeight(300)
+        self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._show_context_menu)
+        self._sync_view_size()
+
+    def set_project(self, project: Project):
+        self.project = project
+        self._sync_view_size()
+        self.update()
+
+    def set_selected_track(self, track_index):
+        self.selected_track_index = track_index
+        self._sync_view_size()
+        self.update()
+
+    def set_playhead_ms(self, ms: int) -> None:
+        self.playhead_ms = max(0, int(ms))
+        self.update()
+
+    def get_playhead_ms(self) -> int:
+        return max(0, int(self.playhead_ms))
+
+    def get_selected_clip_range_ms(self) -> Optional[Tuple[int, int]]:
+        if self.selected_clip_id is None:
+            return None
+        clip = self._find_clip_by_id(int(self.selected_clip_id))
+        if clip is None:
+            return None
+        start_ms = max(0, int(clip.start_ms))
+        end_ms = max(start_ms, int(clip.start_ms) + int(clip.length_ms))
+        return start_ms, end_ms
+
+    def get_selected_time_range_ms(self) -> Optional[Tuple[int, int]]:
+        if self._selected_time_range is None:
+            return None
+        _track_index, start_ms, end_ms = self._selected_time_range
+        return int(start_ms), int(end_ms)
+
+    def clear_selected_time_range(self) -> None:
+        if self._selected_time_range is None:
+            return
+        self._selected_time_range = None
+        self.update()
+
+    def _content_width(self) -> int:
+        max_end_ms = max((int(clip.start_ms) + int(clip.length_ms) for clip in self.project.clips), default=30000)
+        return max(1200, self.time_to_x(max_end_ms) + 180)
+
+    def _content_height(self) -> int:
+        row_height = TRACK_HEIGHT + TRACK_GAP
+        return max(320, len(self.project.tracks) * row_height + 40)
+
+    def _sync_view_size(self) -> None:
+        width = self._content_width()
+        height = self._content_height()
+        self.setMinimumSize(width, height)
+        self.resize(width, height)
+
+    def sizeHint(self) -> QSize:
+        return QSize(self._content_width(), self._content_height())
+
+    def set_hide_inactive_take_clips(self, hide: bool):
+        self.hide_inactive_take_clips = bool(hide)
+        self.update()
+
+    def set_comp_regions_for_track(self, track_index: int, regions: List[dict]) -> None:
+        self._comp_regions_by_track[int(track_index)] = list(regions)
+        self.update()
+
+    def clear_comp_regions(self) -> None:
+        self._comp_regions_by_track = {}
+        self.update()
+
+    def set_comp_color_mode(self, mode: str) -> None:
+        mode_value = str(mode).strip().lower()
+        self._comp_color_mode = "single" if mode_value == "single" else "alternating"
+        self.update()
+
+    def _comp_region_color(self, source_take_number: int) -> QColor:
+        if self._comp_color_mode == "single":
+            return QColor(237, 168, 67, 210)
+        palette = [
+            QColor(237, 168, 67, 210),
+            QColor(91, 168, 255, 210),
+            QColor(168, 224, 99, 210),
+            QColor(215, 130, 255, 210),
+        ]
+        index = abs(int(source_take_number)) % len(palette)
+        return palette[index]
+
+    def time_to_x(self, ms: int) -> int:
+        seconds = ms / 1000.0
+        return int(seconds * PIXELS_PER_SECOND)
+
+    def _read_waveform_peaks(self, file_path: str, target_points: int = 512) -> Optional[np.ndarray]:
+        path = Path(file_path)
+        if not path.exists():
+            return None
+        try:
+            stat = path.stat()
+        except OSError:
+            return None
+
+        cache_key = str(path.resolve())
+        cache_entry = self._waveform_cache.get(cache_key)
+        signature = (int(stat.st_mtime_ns), int(stat.st_size))
+        if cache_entry is not None and cache_entry[0] == signature[0] and cache_entry[1] == signature[1]:
+            return cache_entry[2]
+
+        try:
+            with sf.SoundFile(str(path)) as audio_file:
+                if audio_file.frames <= 0:
+                    return None
+                block_size = max(1, int(audio_file.frames // target_points))
+                peaks: list[float] = []
+                while True:
+                    block = audio_file.read(block_size, dtype="float32", always_2d=True)
+                    if block.size == 0:
+                        break
+                    mono = np.mean(np.abs(block), axis=1)
+                    peaks.append(float(np.max(mono)) if mono.size else 0.0)
+        except Exception:
+            return None
+
+        if not peaks:
+            return None
+
+        peak_array = np.clip(np.asarray(peaks, dtype=np.float32), 0.0, 1.0)
+        self._waveform_cache[cache_key] = (signature[0], signature[1], peak_array)
+        return peak_array
+
+    def _draw_clip_waveform(self, painter: QPainter, clip_rect: QRect, file_path: str) -> None:
+        inner = clip_rect.adjusted(3, 3, -3, -3)
+        if inner.width() < 4 or inner.height() < 4:
+            return
+
+        peaks = self._read_waveform_peaks(file_path)
+        if peaks is None or peaks.size == 0:
+            return
+
+        column_count = max(1, inner.width())
+        sample_positions = np.linspace(0, peaks.size - 1, column_count, dtype=np.int32)
+        sampled = peaks[sample_positions]
+        center_y = inner.center().y()
+        max_amp = max(1, inner.height() // 2)
+
+        painter.setPen(QPen(QColor(216, 238, 255, 210), 1))
+        for offset, peak in enumerate(sampled):
+            height = max(1, int(round(float(peak) * max_amp)))
+            x = inner.left() + offset
+            painter.drawLine(x, center_y - height, x, center_y + height)
+
+    def _count_enabled_track_effects(self, track) -> int:
+        settings = track.playback_settings
+        effects = settings.effects
+        return int(bool(effects.echo_enabled)) + int(bool(effects.distortion_enabled)) + int(bool(effects.chorus_enabled))
+
+    def _draw_track_playback_badges(self, painter: QPainter, track, top: int) -> None:
+        settings = track.playback_settings
+        badges: list[tuple[str, QColor]] = []
+        if settings.fade_in_ms > 0 or settings.fade_out_ms > 0:
+            badges.append(("FADE", QColor(214, 123, 54)))
+        if settings.loop_enabled and settings.loop_end_ms > settings.loop_start_ms:
+            badges.append(("LOOP", QColor(66, 146, 230)))
+        effect_count = self._count_enabled_track_effects(track)
+        if effect_count > 0:
+            badges.append((f"FX{effect_count}", QColor(134, 90, 214)))
+
+        badge_x = 90
+        for text, color in badges:
+            badge_width = 32 if len(text) <= 4 else 42
+            badge_rect = QRect(badge_x, top + 6, badge_width, 14)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(color)
+            painter.drawRect(badge_rect)
+            painter.setPen(Qt.white)
+            painter.drawText(badge_rect, Qt.AlignCenter, text)
+            badge_x += badge_width + 6
+
+    def _draw_track_playback_markers(self, painter: QPainter, track, track_index: int, top: int) -> None:
+        settings = track.playback_settings
+        lane_top = top + 22
+        lane_bottom = top + TRACK_HEIGHT - 5
+
+        if settings.fade_in_ms > 0:
+            fade_in_x = self.time_to_x(int(settings.fade_in_ms))
+            painter.setPen(QPen(QColor(255, 190, 120), 2, Qt.DashLine))
+            painter.drawLine(fade_in_x, lane_top, fade_in_x, lane_bottom)
+            painter.setPen(QColor(255, 210, 150))
+            painter.drawText(fade_in_x + 4, top + 34, "FI")
+
+        if settings.fade_out_ms > 0:
+            track_end_ms = max(
+                (
+                    int(clip.start_ms) + int(clip.length_ms)
+                    for clip in self.project.clips
+                    if clip.track_index == track_index
+                ),
+                default=0,
+            )
+            fade_out_start_ms = max(0, track_end_ms - int(settings.fade_out_ms))
+            fade_out_x = self.time_to_x(fade_out_start_ms)
+            painter.setPen(QPen(QColor(255, 190, 120), 2, Qt.DashLine))
+            painter.drawLine(fade_out_x, lane_top, fade_out_x, lane_bottom)
+            painter.setPen(QColor(255, 210, 150))
+            painter.drawText(fade_out_x + 4, top + 46, "FO")
+
+        if settings.loop_enabled and settings.loop_end_ms > settings.loop_start_ms:
+            loop_start_x = self.time_to_x(int(settings.loop_start_ms))
+            loop_end_x = self.time_to_x(int(settings.loop_end_ms))
+            loop_rect = QRect(min(loop_start_x, loop_end_x), top + 24, max(abs(loop_end_x - loop_start_x), 2), TRACK_HEIGHT - 31)
+            painter.setPen(QPen(QColor(90, 175, 255), 2, Qt.DashDotLine))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRect(loop_rect)
+            painter.setPen(QColor(185, 225, 255))
+            painter.drawText(loop_rect.adjusted(4, 0, -4, 0), Qt.AlignLeft | Qt.AlignTop, "LOOP")
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(30, 30, 30))  # background
+        self._clip_rects = []
+
+        # Draw tracks and clips
+        for track_index, track in enumerate(self.project.tracks):
+            top = track_index * (TRACK_HEIGHT + TRACK_GAP)
+            # Track background
+            track_rect = QRect(0, top, self.width(), TRACK_HEIGHT)
+            if self.selected_track_index == track_index:
+                painter.fillRect(track_rect, QColor(65, 85, 95))
+            else:
+                painter.fillRect(track_rect, QColor(40, 40, 40))
+            painter.setPen(Qt.white)
+            painter.drawText(5, top + 20, track.name)
+            self._draw_track_playback_badges(painter, track, top)
+            self._draw_track_playback_markers(painter, track, track_index, top)
+
+            # Draw clips on this track
+            for clip in self.project.clips:
+                if clip.track_index != track_index:
+                    continue
+
+                metadata = getattr(clip, "metadata", {}) or {}
+                is_recording_take = metadata.get("source") == "recording_take"
+                is_active_take = bool(metadata.get("is_active_take", True))
+                if self.hide_inactive_take_clips and is_recording_take and not is_active_take:
+                    continue
+
+                x = self.time_to_x(clip.start_ms)
+                w = self.time_to_x(clip.length_ms)
+                clip_rect = QRect(x, top + 20, max(w, 10), TRACK_HEIGHT - 25)
+
+                painter.setPen(QPen(CLIP_BORDER, 2))
+                painter.setBrush(CLIP_COLOR)
+                painter.drawRect(clip_rect)
+                self._clip_rects.append((clip.id, clip_rect))
+                self._draw_clip_waveform(painter, clip_rect, clip.file_path)
+
+                if self.selected_clip_id == clip.id:
+                    painter.setPen(QPen(QColor(255, 230, 120), 3))
+                    painter.setBrush(Qt.NoBrush)
+                    painter.drawRect(clip_rect.adjusted(-1, -1, 1, 1))
+
+                if is_recording_take:
+                    badge_text = "ACTIVE" if is_active_take else "ALT"
+                    badge_color = QColor(20, 130, 80) if is_active_take else QColor(110, 110, 110)
+                    badge_w = 44 if is_active_take else 28
+                    badge_rect = QRect(clip_rect.right() - badge_w - 4, clip_rect.top() + 4, badge_w, 14)
+                    painter.setPen(Qt.NoPen)
+                    painter.setBrush(badge_color)
+                    painter.drawRect(badge_rect)
+                    painter.setPen(Qt.white)
+                    painter.drawText(badge_rect, Qt.AlignCenter, badge_text)
+
+                    if bool(metadata.get("comp_selected", False)):
+                        comp_rect = QRect(clip_rect.left() + 4, clip_rect.top() + 4, 38, 14)
+                        painter.setPen(Qt.NoPen)
+                        painter.setBrush(QColor(188, 102, 22))
+                        painter.drawRect(comp_rect)
+                        painter.setPen(Qt.white)
+                        painter.drawText(comp_rect, Qt.AlignCenter, "COMP")
+
+            # Draw comp regions as track overlays.
+            for region in self._comp_regions_by_track.get(track_index, []):
+                start_ms = int(region.get("start_ms", 0))
+                end_ms = int(region.get("end_ms", 0))
+                if end_ms <= start_ms:
+                    continue
+                source_take_number = int(region.get("source_take_number", 0))
+                color = self._comp_region_color(source_take_number)
+                x1 = self.time_to_x(start_ms)
+                x2 = self.time_to_x(end_ms)
+                overlay = QRect(min(x1, x2), top + 22, max(abs(x2 - x1), 2), TRACK_HEIGHT - 29)
+                painter.setPen(QPen(color, 2, Qt.DashLine))
+                fill = QColor(color)
+                fill.setAlpha(60)
+                painter.setBrush(fill)
+                painter.drawRect(overlay)
+                painter.setPen(Qt.white)
+                painter.drawText(overlay.adjusted(4, 0, -4, 0), Qt.AlignLeft | Qt.AlignVCenter, f"R{int(region.get('region_id', 0))}")
+
+            if self._selected_time_range is not None:
+                selection_track_index, start_ms, end_ms = self._selected_time_range
+                if int(selection_track_index) == int(track_index) and end_ms > start_ms:
+                    x1 = self.time_to_x(int(start_ms))
+                    x2 = self.time_to_x(int(end_ms))
+                    selected_rect = QRect(min(x1, x2), top + 22, max(abs(x2 - x1), 2), TRACK_HEIGHT - 29)
+                    painter.setPen(QPen(QColor(112, 190, 255), 2, Qt.DashLine))
+                    painter.setBrush(QColor(112, 190, 255, 40))
+                    painter.drawRect(selected_rect)
+
+        # Draw in-progress range selection on top for immediate feedback.
+        if self._comp_selecting and self._comp_select_track_index is not None and self._comp_select_start_ms is not None and self._comp_select_end_ms is not None:
+            top = int(self._comp_select_track_index) * (TRACK_HEIGHT + TRACK_GAP)
+            x1 = self.time_to_x(self._comp_select_start_ms)
+            x2 = self.time_to_x(self._comp_select_end_ms)
+            sel_rect = QRect(min(x1, x2), top + 22, max(abs(x2 - x1), 2), TRACK_HEIGHT - 29)
+            painter.setPen(QPen(QColor(112, 190, 255), 2))
+            painter.setBrush(QColor(112, 190, 255, 55))
+            painter.drawRect(sel_rect)
+
+        playhead_x = self.time_to_x(self.playhead_ms)
+        painter.setPen(QPen(QColor(255, 92, 92), 2))
+        painter.drawLine(playhead_x, 0, playhead_x, self.height())
+
+        painter.end()
+
+    def _x_to_ms(self, x: int) -> int:
+        seconds = float(max(0, x)) / float(PIXELS_PER_SECOND)
+        return int(round(seconds * 1000.0))
+
+    def _find_clip_at_point(self, point: QPoint):
+        for clip_id, clip_rect in reversed(self._clip_rects):
+            if clip_rect.contains(point):
+                return clip_id
+        return None
+
+    def _find_clip_by_id(self, clip_id: int):
+        for clip in self.project.clips:
+            if clip.id == clip_id:
+                return clip
+        return None
+
+    def _track_index_for_y(self, y: int) -> Optional[int]:
+        if y < 0:
+            return None
+        row_height = TRACK_HEIGHT + TRACK_GAP
+        track_index = int(y // row_height)
+        if track_index < 0 or track_index >= len(self.project.tracks):
+            return None
+        track_top = track_index * row_height
+        if y > (track_top + TRACK_HEIGHT):
+            return None
+        return track_index
+
+    def mousePressEvent(self, event):
+        if event.button() != Qt.LeftButton:
+            return super().mousePressEvent(event)
+
+        clip_id = self._find_clip_at_point(event.position().toPoint())
+        self.selected_clip_id = clip_id
+        if clip_id is None:
+            track_index = self._track_index_for_y(event.position().toPoint().y())
+            if track_index is not None and self.selected_track_index is not None and int(track_index) == int(self.selected_track_index):
+                self._comp_selecting = True
+                self._comp_select_track_index = int(track_index)
+                self._comp_select_start_ms = self._x_to_ms(event.position().toPoint().x())
+                self._comp_select_end_ms = self._comp_select_start_ms
+            else:
+                self._selected_time_range = None
+            self._dragging_clip_id = None
+            self._drag_start_point = None
+            self._drag_origin_start_ms = None
+            self.update()
+            return
+
+        selected_clip = self._find_clip_by_id(clip_id)
+        if selected_clip is not None:
+            self._selected_time_range = None
+            self._dragging_clip_id = clip_id
+            self._drag_start_point = event.position().toPoint()
+            self._drag_origin_start_ms = int(selected_clip.start_ms)
+            self.setFocus(Qt.MouseFocusReason)
+        self.update()
+
+    def mouseMoveEvent(self, event):
+        if self._comp_selecting and self._comp_select_start_ms is not None:
+            self._comp_select_end_ms = self._x_to_ms(event.position().toPoint().x())
+            self.update()
+            return
+
+        if self._dragging_clip_id is None or self._drag_start_point is None or self._drag_origin_start_ms is None:
+            return super().mouseMoveEvent(event)
+        if not (event.buttons() & Qt.LeftButton):
+            return super().mouseMoveEvent(event)
+
+        clip = self._find_clip_by_id(self._dragging_clip_id)
+        if clip is None:
+            return
+
+        delta_x = event.position().toPoint().x() - self._drag_start_point.x()
+        delta_ms = self._x_to_ms(abs(delta_x))
+        if delta_x < 0:
+            delta_ms *= -1
+        clip.start_ms = max(0, int(self._drag_origin_start_ms + delta_ms))
+        self.update()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and self._comp_selecting:
+            start_ms = self._comp_select_start_ms
+            end_ms = self._comp_select_end_ms
+            track_index = self._comp_select_track_index
+            self._comp_selecting = False
+            self._comp_select_start_ms = None
+            self._comp_select_end_ms = None
+            self._comp_select_track_index = None
+
+            if start_ms is not None and end_ms is not None and track_index is not None:
+                range_start = min(int(start_ms), int(end_ms))
+                range_end = max(int(start_ms), int(end_ms))
+                if range_end - range_start >= 50 and self.on_comp_range_selected is not None:
+                    self._selected_time_range = (int(track_index), range_start, range_end)
+                    self.on_comp_range_selected(int(track_index), range_start, range_end)
+                elif range_end - range_start < 50:
+                    self._selected_time_range = None
+            self.update()
+            return super().mouseReleaseEvent(event)
+
+        if event.button() == Qt.LeftButton and self._dragging_clip_id is not None and self.on_project_changed is not None:
+            self.on_project_changed()
+        self._dragging_clip_id = None
+        self._drag_start_point = None
+        self._drag_origin_start_ms = None
+        return super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Delete, Qt.Key_Backspace) and self.selected_clip_id is not None:
+            before_count = len(self.project.clips)
+            self.project.clips = [clip for clip in self.project.clips if clip.id != self.selected_clip_id]
+            if len(self.project.clips) != before_count:
+                self.selected_clip_id = None
+                if self.on_project_changed is not None:
+                    self.on_project_changed()
+                self.update()
+            return
+        return super().keyPressEvent(event)
+
+    def _show_context_menu(self, pos: QPoint) -> None:
+        """Show a context menu for adding or removing clips at the clicked position."""
+        clip_id = self._find_clip_at_point(pos)
+        track_index = self._track_index_for_y(pos.y())
+        start_ms = self._x_to_ms(pos.x())
+
+        menu = QMenu(self)
+
+        if clip_id is not None:
+            select_act = menu.addAction("Select clip")
+            select_act.triggered.connect(lambda: self._select_clip(clip_id))
+            delete_act = menu.addAction("Delete clip")
+            delete_act.triggered.connect(lambda: self._delete_clip(clip_id))
+        elif track_index is not None and self.on_add_clip_at is not None:
+            track_name = self.project.tracks[track_index].name
+            add_act = menu.addAction(f'Add clip at {start_ms / 1000:.2f}s on \u201c{track_name}\u201d')
+            add_act.setToolTip("Open a file browser and place an audio clip at this position")
+            add_act.triggered.connect(lambda: self.on_add_clip_at(track_index, start_ms))  # type: ignore[misc]
+        else:
+            menu.addAction("(No track at this position)").setEnabled(False)
+
+        menu.exec(self.mapToGlobal(pos))
+
+    def _select_clip(self, clip_id: int) -> None:
+        self.selected_clip_id = clip_id
+        self.update()
+
+    def _delete_clip(self, clip_id: int) -> None:
+        before_count = len(self.project.clips)
+        self.project.clips = [c for c in self.project.clips if c.id != clip_id]
+        if len(self.project.clips) != before_count:
+            if self.selected_clip_id == clip_id:
+                self.selected_clip_id = None
+            if self.on_project_changed is not None:
+                self.on_project_changed()
+            self.update()
