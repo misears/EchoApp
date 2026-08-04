@@ -18,7 +18,7 @@ Scope: Punch/loop workflows, take browser, comping v1, recovery, and safety chec
   - `recording_ui_components.py`: added reusable `TakeListWidget` and `TransportPunchLoopWidget` and wired deterministic callbacks.
   - `timeline_widget.py`: added drag-select comp-range selection constrained to selected track plus comp region overlays.
   - `echo_pro_app.py`: integrated reusable widgets and timeline range-selection wiring into comp range controls.
-  - Validation: `run_p5a_checks.bat` passed (3/3) and `ui_runtime_smoke.py` passed all targeted flows with no exceptions.
+  - Validation: `run_ui_smoke_checks.bat` passed (`py_compile` + `ui_runtime_smoke.py`) with no exceptions.
 
 - 2026-07-24: P5B core transport and recovery plumbing are largely in place.
   - `recording_controller.py`: added punch and loop state, range setters (samples/seconds/bars), pre/post-roll windows, punch auto-stop, and loop cycle take rollover.

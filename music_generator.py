@@ -57,12 +57,17 @@ def generate_music_clip(
     seed: Optional[int] = None,
     project_id: str = "default_project",
     use_cloud: bool = False,
+    output_format: str = "wav",
+    output_sample_rate: int = 44100,
+    normalize_output: bool = True,
 ) -> T2MClipResult:
     ensure_dirs()
     out_dir = ECHO_ROOT / "generated" / project_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    output_path = out_dir / f"{section_name or 'clip'}_{seed or 'x'}.wav"
+    requested_format = str(output_format or "wav").strip().lower()
+    file_suffix = requested_format if requested_format in {"wav", "flac"} else "wav"
+    output_path = out_dir / f"{section_name or 'clip'}_{seed or 'x'}.{file_suffix}"
 
     prompt_style = style if style in VALID_STYLES else "custom"
 
@@ -83,5 +88,8 @@ def generate_music_clip(
     )
 
     config = get_default_t2m_config(use_cloud=use_cloud)
+    config.sample_rate = int(output_sample_rate)
+    config.extra["requested_output_format"] = requested_format
+    config.extra["normalize_output"] = bool(normalize_output)
     result = t2m_generate_clip(request, output_path, config)
     return result

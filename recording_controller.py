@@ -35,6 +35,8 @@ class RecordingStatus:
     pre_roll_bars: float = 0.0
     post_roll_bars: float = 0.0
     last_auto_stop_sample: int = 0
+    monitoring_enabled: bool = False
+    monitor_gain_percent: int = 75
 
 
 class RecordingController:
@@ -84,6 +86,8 @@ class RecordingController:
         }
         self._transport_last_error = ""
         self.auto_disarm_after_boundary = False
+        self.monitoring_enabled = False
+        self.monitor_gain_percent = 75
         self._transport_action_debounce_sec = 0.2
         self._last_start_action_ts = 0.0
         self._last_stop_action_ts = 0.0
@@ -112,6 +116,15 @@ class RecordingController:
 
     def set_auto_disarm_after_boundary(self, enabled: bool) -> None:
         self.auto_disarm_after_boundary = bool(enabled)
+
+    def set_monitoring_enabled(self, enabled: bool) -> None:
+        self.monitoring_enabled = bool(enabled)
+
+    def set_monitor_gain_percent(self, value: int) -> None:
+        self.monitor_gain_percent = max(0, min(100, int(value)))
+
+    def get_monitor_state(self) -> tuple[bool, int]:
+        return bool(self.monitoring_enabled), int(self.monitor_gain_percent)
 
     def arm_track(self, track_id: int) -> bool:
         if self.engine.get_track(track_id) is None:
@@ -605,6 +618,8 @@ class RecordingController:
             pre_roll_bars=self.samples_to_bars(self.pre_roll_samples),
             post_roll_bars=self.samples_to_bars(self.post_roll_samples),
             last_auto_stop_sample=self.status.last_auto_stop_sample,
+            monitoring_enabled=bool(self.monitoring_enabled),
+            monitor_gain_percent=int(self.monitor_gain_percent),
         )
         return snapshot
 

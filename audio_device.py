@@ -81,6 +81,7 @@ class AudioDeviceManager:
         
         try:
             device_list = sd.query_devices()
+            hostapi_list = sd.query_hostapis()
             default_pair = sd.default.device
             default_input = default_pair[0] if isinstance(default_pair, (list, tuple)) and len(default_pair) > 0 else -1
             default_output = default_pair[1] if isinstance(default_pair, (list, tuple)) and len(default_pair) > 1 else -1
@@ -91,6 +92,12 @@ class AudioDeviceManager:
             
             for i, device in enumerate(device_list):
                 latency_seconds = _coerce_latency_seconds(device)
+                hostapi_name = "Unknown"
+                hostapi_index = device.get('hostapi', -1)
+                if isinstance(hostapi_index, int) and 0 <= hostapi_index < len(hostapi_list):
+                    hostapi_entry = hostapi_list[hostapi_index]
+                    if isinstance(hostapi_entry, dict):
+                        hostapi_name = str(hostapi_entry.get('name', hostapi_name))
                 audio_device = AudioDevice(
                     device_id=i,
                     name=device['name'],
@@ -100,7 +107,7 @@ class AudioDeviceManager:
                     default_latency_ms=latency_seconds * 1000.0,
                     is_default_input=(i == default_input),
                     is_default_output=(i == default_output),
-                    api=device.get('hostapi', 'Unknown')
+                    api=hostapi_name
                 )
                 self.devices.append(audio_device)
             

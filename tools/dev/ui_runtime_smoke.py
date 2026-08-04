@@ -4,6 +4,7 @@ import sys
 import traceback
 import wave
 from pathlib import Path
+import types
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
@@ -24,6 +25,17 @@ def main() -> int:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     if os.name == "nt":
         os.environ.setdefault("QT_QPA_FONTDIR", str(Path(os.environ.get("WINDIR", "C:\\Windows")) / "Fonts"))
+
+    # Ensure preview playback paths stay non-interactive in headless smoke mode.
+    if "sounddevice" not in sys.modules:
+        sd_stub = types.SimpleNamespace(
+            stop=lambda: None,
+            play=lambda *args, **kwargs: None,
+            query_devices=lambda *args, **kwargs: [],
+            query_hostapis=lambda *args, **kwargs: [],
+            default=types.SimpleNamespace(device=(None, None)),
+        )
+        sys.modules["sounddevice"] = sd_stub
 
     from PySide6.QtCore import qInstallMessageHandler
     from PySide6.QtWidgets import QApplication, QMessageBox, QFileDialog
@@ -166,6 +178,47 @@ def main() -> int:
             window.split_song_into_stems()
 
         run_step("stems_dialog_flow", step_stems_dialog_flow)
+
+        def step_ace_generation_flow():
+            window._switch_to_tab("AI Generation (ACE-Step)")
+            window.ace_prompt_input.setPlainText("smoke test prompt: warm ambient loop")
+            window.ace_lyrics_input.setPlainText("")
+            window.ace_duration_spin.setValue(10)
+            window.ace_steps_spin.setValue(10)
+            window.ace_batch_spin.setValue(1)
+
+            fmt_idx = window.ace_output_format_combo.findText("flac")
+            if fmt_idx >= 0:
+                window.ace_output_format_combo.setCurrentIndex(fmt_idx)
+            sr_idx = window.ace_output_sample_rate_combo.findData(48000)
+            if sr_idx >= 0:
+                window.ace_output_sample_rate_combo.setCurrentIndex(sr_idx)
+
+            window.ace_generate_btn.click()
+            app.processEvents()
+            if not getattr(window, "_ace_step_results", []):
+                raise RuntimeError("ACE-Step smoke flow did not produce a result")
+
+            if window.ace_results_list.count() > 0:
+                window.ace_results_list.setCurrentRow(0)
+
+            window._toggle_ace_step_result_playback(0)
+            window._toggle_ace_step_result_loop(0)
+            window._toggle_ace_step_result_favorite(0)
+            window._ace_step_run_quick_action("same", 0)
+            app.processEvents()
+
+            if len(getattr(window, "_ace_step_results", [])) < 2:
+                raise RuntimeError("ACE-Step quick rerun did not append a second result")
+
+            window._transfer_ace_step_result(0)
+            window._send_ace_step_result_to_demucs(0)
+            app.processEvents()
+
+            if window.stem_source_path is None:
+                raise RuntimeError("ACE-Step to Demucs handoff did not set stem source")
+
+        run_step("ace_generation_flow", step_ace_generation_flow)
 
     finally:
         qInstallMessageHandler(previous_qt_handler)

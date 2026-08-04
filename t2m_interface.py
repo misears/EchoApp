@@ -59,20 +59,22 @@ def t2m_generate_clip(
     Baseline implementation: generates a silent preview clip.
     Replace this body with a real T2M model.
     """
-    import wave as _wave
+    import numpy as _np
+    import soundfile as _sf
 
     duration_ms = request.duration_seconds * 1000
     sample_rate = model_config.sample_rate
     n_channels = 2 if model_config.stereo else 1
     n_frames = int(sample_rate * request.duration_seconds)
+    requested_format = str(model_config.extra.get("requested_output_format", "wav") or "wav").strip().lower()
+    normalize_output = bool(model_config.extra.get("normalize_output", True))
+    output_format = requested_format if requested_format in {"wav", "flac"} else "wav"
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with _wave.open(str(output_path), "w") as wf:
-        wf.setnchannels(n_channels)
-        wf.setsampwidth(2)        # 16-bit PCM
-        wf.setframerate(sample_rate)
-        # Write silence: all-zero bytes (n_frames × channels × 2 bytes)
-        wf.writeframes(b"\x00" * n_frames * n_channels * 2)
+    audio = _np.zeros((n_frames, n_channels), dtype=_np.float32)
+    if normalize_output:
+        audio = _np.clip(audio, -1.0, 1.0)
+    _sf.write(str(output_path), audio, sample_rate, format=output_format.upper())
 
     return T2MClipResult(
         audio_path=output_path,
@@ -84,5 +86,9 @@ def t2m_generate_clip(
             "note": "Silent preview clip. Replace t2m_generate_clip with real model.",
             "capability_ready": bool(model_config.extra.get("ready", False)),
             "capability_reason": str(model_config.extra.get("reason", "")),
+            "requested_output_format": requested_format,
+            "output_format": output_format,
+            "normalize_output": normalize_output,
+            "output_sample_rate": sample_rate,
         }
     )

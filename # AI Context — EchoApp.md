@@ -1,0 +1,158 @@
+# AI Context — EchoApp
+
+> **Updated:** 8/3/2026 12:38 PM  |  **Platform:** Claude  |  **Device:** quicksilver
+
+---
+
+## Project Overview
+
+Echo Pro is a local desktop audio production app with waveform editing, recording, stem separation, voice conversion, and music generation workflows.
+
+| Field | Value |
+| --- | --- |
+| Project | `EchoApp` |
+| Platform | Claude |
+| Device | quicksilver |
+| Session ID | `ms3my7l4-yj9bm` |
+| Created | 7/27/2026 03:44 PM |
+| Updated | 8/3/2026 12:38 PM |
+| AI.md Version | 1.2 |
+| Workspace | `c:\Users\misea\OneDrive\Documents\AI Project Folders\EchoApp` |
+| Repository | <https://github.com/misears/EchoApp.git> |
+| Branch | `taskhub-instructions-sync` |
+
+## Recent Git Activity
+
+**Branch:** `taskhub-instructions-sync`
+**Uncommitted:** 6 untracked
+
+- 91b5b80 · v (2 minutes ago)
+- c127e9f · Refactor code structure for improved readability and maintainability (67 minutes ago)
+- 0706504 · updating task hub (6 hours ago)
+- 7ec8ca4 · minor update to the stems engine and regression runner to fix a bug in the stems engine that was causing it to fail when running certain tests. The regression runner was also updated to handle the new output format from the stems engine. (5 days ago)
+- 2d7f8fe · Implement Demucs stem splitting feature with model selection and progress reporting (8 days ago)
+- a11c1ea · Adds automated dependency bootstrap and runtime setup for Echo Pro, including local Demucs/ffmpeg model caching, installer/launcher updates, and timeline/mixer UI enhancements. (8 days ago)
+- ed91578 · Add planning and validation prompt workflows (8 days ago)
+- c3c3cfc · Add EchoApp Copilot guidance and implementation prompt (8 days ago)
+- 7ca579e · Refactor milestone 1: extract core styles, widgets, and dialogs from `echo_pro_app.py` into `app/` package (#3) (9 days ago)
+- 34dbbb8 · Merge pull request #2 from misears/copilot/home-tab-issues (9 days ago)
+
+## Open / Active Files
+
+- `TASK_HUB.md`
+
+## Project Structure
+
+```
+EchoApp/
+├── .agent-cache/
+│   ├── .gitignore
+│   └── index.json
+├── .continuum/
+│   ├── services/
+│   │   └── _template.md
+│   ├── change-impact.md
+│   ├── cross-cutting.md
+│   └── overview.md
+├── .github/
+│   ├── prompts/
+│   │   ├── cleanup.prompt.md
+│   │   ├── phase-implement.prompt.md
+│   │   ├── phase-plan.prompt.md
+│   │   ├── shape-backlog.prompt.md
+│   │   ├── task-hub.prompt.md
+│   │   └── validate-echo.prompt.md
+│   └── copilot-instructions.md
+├── .offline-markdown-preview/
+│   └── remote-images/
+│       ├── 0f4272eaccea7be83cae95e3.svg
+│       ├── 32af32979de516f77eef78ce.svg
+│       ├── 371a3029d93ab2b48eff1255.svg
+│       ├── 5d69566e0e7a987a1aaf5402.svg
+│       ├── f1a96215851819ee9f92c964.svg
+│       └── f458b95ec3b17f9bcb89a90e.svg
+├── app/
+│   ├── ui/
+│   │   └── __init__.py
+│   ├── __init__.py
+│   └── styles.py
+├── docs/
+│   └── internal/
+│       ├── AUTONOMOUS_IMPLEMENTATION_REPORT.md
+│       ├── BUILD_OUTLINE.md
+│       ├── BUILD_STATUS-BlackDragon.md
+│       ├── BUILD_STATUS.md
+│       ├── echo-v0.1.md
+│       ├── PHASE_0_COMPLETE.md
+│       ├── PHASE_1_TO_5_KNOWN_ISSUES_TODO-BlackDragon.md
+│       ├── PHASE_1_TO_5_KNOWN_ISSUES_TODO.md
+│       ├── PHASE_5A_RECORDING_PLAN.md
+│       ├── PHASE_5B_RECORDING_PLAN.md
+│       └── PHASE_5B_TASK_CHECKLIST.md
+├── Output/
+│   └── EchoProInstaller.exe
+├── release/
+│   └── README.md
+├── seeds/
+│   └── Retrieval-based-Voice-Conversion-WebUI-main/
+│       ├── go-realtime_gui.bat
+│       ├── go-webui.bat
+│       └── webui.py
+├── tools/
+│   ├── dev/
+│   │   ├── __init__.py
+│   │   ├── build_exe.bat
+│   │   ├── echo_pro_app-BlackDragon-2.py
+│   │   ├── echo_pro_app-BlackDragon.py
+│   │   ├── p5a_regression_runner.py
+│   │   ├── p5b_regression_runner.py
+│   │   ├── recording_ui_components-BlackDragon.py
+│   │   ├── restore_seed_wrappers.ps1
+│   │   ├── run_p5a_checks.bat
+│   │   ├── timeline_widget-BlackDragon.py
+│   │   └── ui_runtime_smoke.py
+│   └── __init__.py
+├── _ui_smoke_input_demucs_padded.wav
+├── app_paths.py
+├── audio_device.py
+├── audio_engine.py
+├── audio_info.py
+├── echo_pro_app.py
+├── echo_pro_installer.iss
+├── EchoApp DAW — UX Layer Companion Document.docx
+├── EchoApp DAW — UX Layer Companion Document.md
+├── EchoApp Task‑Hub Prompt (Token‑Optimized).md
+├── EchoPro_Desktop.bat
+├── EchoPro_Portable.bat
+├── EchoPro.spec
+├── first_run.py
+├── input_validation.py
+├── install_echo_pro.bat
+├── metronome.py
+├── music_generator.py
+├── offline thoughts.docx
+├── offline thoughts.md
+├── playback_mixer.py
+├── plugin_system.py
+├── project_model.py
+├── README.md
+├── recording_controller.py
+├── recording_recovery.py
+├── recording_session.py
+├── recording_ui_components.py
+├── song_planner.py
+├── Start_Echo.bat
+├── stems_engine.py
+├── t2m_interface.py
+├── TASK_HUB.md
+├── timeline_widget.py
+├── undo_manager.py
+├── voice_effects.py
+├── voice_interface.py
+├── voice_recorder.py
+└── voice_store.py
+```
+
+---
+
+*Generated by [AI.md](https://github.com/ai-md/vscode-extension) — Cross-platform AI context continuity*
