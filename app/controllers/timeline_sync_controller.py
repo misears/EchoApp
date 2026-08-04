@@ -37,9 +37,9 @@ class TimelineSyncController(QObject):
         self._time_signature = "4/4"
         self._master_volume_db = 0.0
         
-        # Zoom limits
-        self._zoom_min = 0.0078125  # 1/128
-        self._zoom_max = 128.0
+        # Common DAW zoom limits: arrangement 1/16x..16x with fine extension to 64x.
+        self._zoom_min = 0.0625  # 1/16
+        self._zoom_max = 64.0
         
         self._sample_rate = 44100
         

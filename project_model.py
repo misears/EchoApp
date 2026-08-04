@@ -28,6 +28,8 @@ class TrackPlaybackSettings:
     loop_start_ms: int = 0
     loop_end_ms: int = 0
     effects: TrackEffectChain = field(default_factory=TrackEffectChain)
+    active_automation_parameter: str = "volume_db"
+    automation: Dict[str, List[Dict[str, Any]]] = field(default_factory=dict)
 
 
 @dataclass
@@ -42,9 +44,15 @@ class Clip:
 @dataclass
 class Track:
     name: str
+    track_type: str = "Audio"
     volume_db: float = 0.0  # 0 = original, negative = quieter, positive = louder
+    pan: float = 0.0
     muted: bool = False
     soloed: bool = False
+    color_hex: str = "#00F0FF"
+    input_source: str = "Auto"
+    send_a: float = 0.0
+    send_b: float = 0.0
     playback_settings: TrackPlaybackSettings = field(default_factory=TrackPlaybackSettings)
 
 @dataclass
@@ -92,6 +100,25 @@ def _normalize_track_effect_chain(data: Any) -> TrackEffectChain:
 def _normalize_track_playback_settings(data: Any) -> TrackPlaybackSettings:
     if not isinstance(data, dict):
         return TrackPlaybackSettings()
+    automation_data = data.get("automation", {})
+    normalized_automation: Dict[str, List[Dict[str, Any]]] = {}
+    if isinstance(automation_data, dict):
+        for parameter_name, points in automation_data.items():
+            if not isinstance(points, list):
+                continue
+            sanitized_points: List[Dict[str, Any]] = []
+            for point in points:
+                if not isinstance(point, dict):
+                    continue
+                time_ms = max(0, _coerce_int(point.get("time_ms", 0), 0))
+                value = max(0.0, min(1.0, _coerce_float(point.get("value", 0.5), 0.5)))
+                sanitized_points.append({"time_ms": time_ms, "value": value})
+            if sanitized_points:
+                sanitized_points.sort(key=lambda item: int(item["time_ms"]))
+                normalized_automation[str(parameter_name)] = sanitized_points
+    active_automation_parameter = str(data.get("active_automation_parameter", "volume_db") or "volume_db").strip().lower()
+    if active_automation_parameter not in {"volume_db", "pan", "send_a", "send_b"}:
+        active_automation_parameter = "volume_db"
     return TrackPlaybackSettings(
         fade_in_ms=max(0, _coerce_int(data.get("fade_in_ms", 0), 0)),
         fade_out_ms=max(0, _coerce_int(data.get("fade_out_ms", 0), 0)),
@@ -99,11 +126,17 @@ def _normalize_track_playback_settings(data: Any) -> TrackPlaybackSettings:
         loop_start_ms=max(0, _coerce_int(data.get("loop_start_ms", 0), 0)),
         loop_end_ms=max(0, _coerce_int(data.get("loop_end_ms", 0), 0)),
         effects=_normalize_track_effect_chain(data.get("effects", {})),
+        active_automation_parameter=active_automation_parameter,
+        automation=normalized_automation,
     )
 
 
 def _track_from_dict(track_data: Dict[str, Any]) -> Track:
     track_copy = dict(track_data)
+    track_type = str(track_copy.get("track_type", "Audio") or "Audio").strip()
+    if track_type not in {"Audio", "AI Stem", "MIDI", "Bus"}:
+        track_type = "Audio"
+    track_copy["track_type"] = track_type
     track_copy["playback_settings"] = _normalize_track_playback_settings(track_copy.get("playback_settings", {}))
     return Track(**track_copy)
 

@@ -86,57 +86,54 @@ Backend wiring that all UI components will depend on.
 
 Build the primary DAW surface in sub-section order so each new layer has a stable parent to attach to.
 
-- [ ] **3.1** Implement the top toolbar: File / Edit / View / Project / AI Tools / Settings menus; New / Open / Save / Export / Undo / Redo icon buttons; editable BPM display with scroll-wheel nudge; master volume circular knob; time signature dropdown; sample rate + bit depth readout. *(ref: UX §2.2)*
-  - **Status:** Not started
+- [x] **3.1** Implement the top toolbar: File / Edit / View / Project / AI Tools / Settings menus; New / Open / Save / Export / Undo / Redo icon buttons; editable BPM display with scroll-wheel nudge; master volume circular knob; time signature dropdown; sample rate + bit depth readout. *(ref: UX §2.2)*
+  - **Status:** Complete
   - **Depends on:** Item 1.4 (MainMixerLayout scaffolding) ✓ 
-  - **Blockers:** CLARIFY menu structure (see todo: g3-toolbar-menu-spec)
-  - **Questions:** Complete menu item list, keyboard shortcuts, icon set, nested menus?
+  - **What landed:** `app/ui/widgets/main_mixer_layout.py` now builds the toolbar shell with menu buttons, quick-action buttons, controller-backed BPM/time-signature/master-volume controls, and sample format readout. File Export and Settings are now wired to real callbacks in `echo_pro_app.py`, View now includes sidebar toggling, and DAW-standard key bindings are applied (`Ctrl+N`, `Ctrl+O`, `Ctrl+S`, `Ctrl+Shift+E`, `Ctrl+Z`, `Ctrl+Y`, `Ctrl+B`, `Ctrl+,`).
 
-- [ ] **3.2** Build the Left Master Section (200px fixed): vertical master fader (≥200px stroke), dual-channel L+R VU meter, LUFS integrated readout (cyan monospace), master EQ toggle, master limiter threshold knob, master effects chain button, "MASTER" label. *(ref: UX §2.3)*
-  - **Status:** Not started
+- [x] **3.2** Build the Left Master Section (200px fixed): vertical master fader (≥200px stroke), dual-channel L+R VU meter, LUFS integrated readout (cyan monospace), master EQ toggle, master limiter threshold knob, master effects chain button, "MASTER" label. *(ref: UX §2.3)*
+  - **Status:** Complete
   - **Depends on:** Item 1.4 (MainMixerLayout scaffolding) ✓ 
-  - **Blockers:** CLARIFY control layout and panel opening behavior (see todo: g3-master-section-detail)
-  - **Questions:** Fader height spec, VU meter layout (L/R bars or combined), font specs for LUFS readout, how do EQ/limiter/effects panels open?
+  - **What landed:** `app/ui/widgets/main_mixer_layout.py` now renders the fixed 200px master panel shell with a 220px vertical fader, dual L/R VU meters, cyan LUFS readout, master EQ toggle, limiter threshold dial, and effects-chain button. Live meter/LUFS updates are now driven from recording meter updates in `echo_pro_app.py::refresh_recording_meters()` using a DAW-style integrated loudness proxy. Master EQ toggle and effects-chain button are now routed to real app callbacks, and limiter threshold now feeds render behavior via `playback_mixer.py` during mix/export.
 
-- [ ] **3.3** Implement the Timeline Ruler (28px): bars:beats / seconds toggle, cyan full-height playhead, click-to-reposition, synchronized horizontal scroll. *(ref: UX §2.4)*
-  - **Status:** Scaffolded in MainMixerLayout._build_timeline_ruler()
+- [x] **3.3** Implement the Timeline Ruler (28px): bars:beats / seconds toggle, cyan full-height playhead, click-to-reposition, synchronized horizontal scroll. *(ref: UX §2.4)*
+  - **Status:** Complete
   - **Depends on:** Item 1.4 (MainMixerLayout scaffolding) ✓, Item 2.1 (TimelineSyncController)
-  - **Blockers:** 2.1 not yet implemented
-  - **Next step:** Wire TimelineSyncController once 2.1 is complete
+  - **What landed:** `app/ui/widgets/main_mixer_layout.py` now uses a controller-backed ruler canvas with Bars:Beats / Seconds toggle, cyan playhead render, and click-to-reposition behavior. `echo_pro_app.py` bridges waveform scroll position through `TimelineSyncController`, and ruler extent now syncs to live timeline content width so ruler interactions mirror the active viewport.
 
-- [ ] **3.4** Build the Channel Strip widget (220px fixed, left of waveform): track name inline edit, color swatch picker, Mute / Solo / Record Arm buttons with correct glow states, input source dropdown, gain + pan knobs, vertical 3D fader, Bus 1 / Bus 2 FX send knobs, EQ mini-graph click-to-open. *(ref: UX §2.5)*
-  - **Status:** TrackMixerRow component exists but needs review for 3D styling and glow states
+- [x] **3.4** Build the Channel Strip widget (220px fixed, left of waveform): track name inline edit, color swatch picker, Mute / Solo / Record Arm buttons with correct glow states, input source dropdown, gain + pan knobs, vertical 3D fader, Bus 1 / Bus 2 FX send knobs, EQ mini-graph click-to-open. *(ref: UX §2.5)*
+  - **Status:** Complete
   - **Depends on:** Item 1.4 (MainMixerLayout scaffolding) ✓, Group 1 styling complete ✓
-  - **Next step:** Review/update TrackMixerRow to match spec, wire into MainMixerLayout
+  - **What landed:** `project_model.py`, `app/ui/widgets/track_mixer_row.py`, and `echo_pro_app.py` now carry a full 220px channel-strip pass with inline name editing, color swatch, record-arm state, input-source selection, gain/pan/send controls, and EQ mini-graph button wiring. Bus send knobs now write through to persisted project track fields (`send_a`, `send_b`), input/EQ actions are wired to real callbacks, and the live Home arrangement now places strip and waveform surfaces side-by-side (DAW-standard channel-strip next to lane workflow). Non-recording channel-strip edits now participate in project undo/redo snapshots (volume, pan, mute, solo, color, input source, sends, and rename behavior).
 
-- [ ] **3.5** Implement Waveform Lane rendering: per-track color fill, center divider, magenta slice markers, rounded-corner clip rectangles with filename label, hover tooltip (duration + sample rate), right-click context menu (Rename / Duplicate / Delete / Export Clip / Send to Demucs / Send to ACE-Step / Properties). *(ref: UX §2.6, offline Phase 5)*
-  - **Status:** TimelineWidget component exists; needs review for all visual details
+- [x] **3.5** Implement Waveform Lane rendering: per-track color fill, center divider, magenta slice markers, rounded-corner clip rectangles with filename label, hover tooltip (duration + sample rate), right-click context menu (Rename / Duplicate / Delete / Export Clip / Send to Demucs / Send to ACE-Step / Properties). *(ref: UX §2.6, offline Phase 5)*
+  - **Status:** Complete
   - **Depends on:** Item 1.4 (MainMixerLayout scaffolding) ✓, Item 2.1 (TimelineSyncController)
-  - **Blockers:** 2.1 not yet implemented, possibly Item 4.5 (single-track editor UX pattern)
-  - **Next step:** Review TimelineWidget rendering and context menu
+  - **What landed:** `timeline_widget.py` now renders track-color lane fills, center dividers, rounded clip bodies with filename labels, magenta slice markers from clip metadata, hover tooltips, and the full clip context-menu entry set. `echo_pro_app.py` now handles duplicate and Demucs/Music handoff actions from that menu, plus real rename/export/properties clip actions (rename persists as clip metadata display label, export copies source audio to a chosen destination, properties now includes inline name editing). Home-tab waveform scrolling and playhead updates are now bridged to `TimelineSyncController`, aligning the timeline viewport and ruler state model. Single-track interaction rule is now explicit in behavior: selecting a clip or clicking inside a lane sets that track as the active track context, keeping timeline edits and track-scoped controls synchronized.
 
-- [ ] **3.6** Add the "+ Add Track" button at the bottom of the channel strip column; wire the track-type dialog (Audio / AI Stem / MIDI / Bus). *(ref: UX §2.7)*
-  - **Status:** Not started
+- [x] **3.6** Add the "+ Add Track" button at the bottom of the channel strip column; wire the track-type dialog (Audio / AI Stem / MIDI / Bus). *(ref: UX §2.7)*
+  - **Status:** Complete
   - **Depends on:** Item 3.4 (Channel Strip widget complete)
   - **Blockers:** None
-  - **Next step:** Create track-type dialog and wire to MainMixerLayout
+  - **What landed:** `echo_pro_app.py` now adds a dedicated `+ Add Track` strip widget at the end of the live mixer channel-strip area. Clicking it opens a track-type selection dialog (Audio / AI Stem / MIDI / Bus) and creates a new track with type-specific defaults (name prefix, color, and input-source seed). The add-strip now enforces full channel-strip height with an anchored bottom CTA so the affordance consistently reads as "bottom of strip column" in the live mixer layout. `project_model.py` now persists `Track.track_type`, and the track list now surfaces non-Audio types (for example, `[MIDI]`, `[Bus]`) so typed-track intent remains visible after save/load. Non-Audio tracks now enforce lightweight runtime policy in `echo_pro_app.py`: locked input-source mapping by type and disallowed record-arm for AI Stem/MIDI/Bus tracks (treated as playback/routing-only in this build).
 
-- [ ] **3.7** Build the Right Sidebar (260px, collapsible): Browser tab with drag-and-drop file tree (hover shows name, duration, sample rate); Sessions tab with fixed-height rows, right-click context menu, and 500ms-hover truncation tooltip for long names. *(ref: UX §2.8, Decision 3)*
-  - **Status:** Scaffolded in MainMixerLayout._build_sidebar()
+- [x] **3.7** Build the Right Sidebar (260px, collapsible): Browser tab with drag-and-drop file tree (hover shows name, duration, sample rate); Sessions tab with fixed-height rows, right-click context menu, and 500ms-hover truncation tooltip for long names. *(ref: UX §2.8, Decision 3)*
+  - **Status:** Complete
   - **Depends on:** Item 1.4 (MainMixerLayout scaffolding) ✓
   - **Blockers:** CLARIFY Browser tree schema (see todo: g3-sidebar-browser-schema)
-  - **Questions:** What file types to show, drag-drop auto-import or dialog, folder context menu, Sessions definition?
+  - **What landed:** `app/ui/widgets/main_mixer_layout.py` now builds a real tabbed sidebar shell (`Browser` + `Sessions`) in `_build_sidebar()`. The Sessions tab now uses fixed-height list rows, a right-click context menu (open/rename/duplicate/delete), and delayed hover behavior that shows full names for truncated entries after 500ms. The Browser tab now includes a real audio tree (current project + project library + dropped files), hover metadata tooltips (name, duration, sample rate), explicit context actions (`Add to Selected Track`, `Add to New Audio Track`, `Reveal in Folder`, `Refresh Browser`), and external Explorer file-drop import flow with track-target selection. Browser add actions are wired into `TabbedEchoProWindow.add_clip_from_browser_path()`.
+  - **Remaining:** Optional UX polish only (visual tuning and final copy); core 3.7 behavior is now implemented.
 
-- [ ] **3.8** Implement the Transport Bar (72px full-width, never resizes): left cluster (input device dropdown, monitoring toggle, gain slider); center cluster (seven 36×36px 3D bevel transport buttons, seek bar scoped to cluster width, dual time display — BARS:BEATS:TICKS + HH:MM:SS:MS — on recessed LCD panel); right cluster (loop toggle with amber glow, loop start/end inputs, metronome toggle with BPM mirror, punch-in/punch-out toggles). *(ref: UX §2.9)*
-  - **Status:** TransportBar component exists; needs review and integration into MainMixerLayout
+- [x] **3.8** Implement the Transport Bar (72px full-width, never resizes): left cluster (input device dropdown, monitoring toggle, gain slider); center cluster (seven 36×36px 3D bevel transport buttons, seek bar scoped to cluster width, dual time display — BARS:BEATS:TICKS + HH:MM:SS:MS — on recessed LCD panel); right cluster (loop toggle with amber glow, loop start/end inputs, metronome toggle with BPM mirror, punch-in/punch-out toggles). *(ref: UX §2.9)*
+  - **Status:** Complete
   - **Depends on:** Item 1.4 (MainMixerLayout scaffolding) ✓, Group 1 styling (3D bevels, amber glow) ✓, Item 2.1 (TimelineSyncController)
   - **Blockers:** CLARIFY time display format and LCD styling (see todo: g3-transport-time-display)
-  - **Next step:** Review TransportBar styling against spec, wire into MainMixerLayout
+  - **What landed:** `echo_pro_app.py` now wires a dedicated `mixer_transport_bar` into `MainMixerLayout.set_transport_bar(...)` so the Mixer tab owns a real transport surface. Recording button state and metronome-state syncing are now shared across both transport bars (Recording tab + Mixer tab) via common helpers. `app/ui/widgets/main_mixer_layout.py` now renders a clustered 72px Mixer transport shell: left cluster (input mirror, monitor toggle, gain slider), center cluster (seven-button transport row with jump-start/jump-end + core transport controls, seek slider, dual BARS:BEATS:TICKS + HH:MM:SS:MS readouts synced to `TimelineSyncController`), and right cluster (loop/click/punch toggles with loop and punch range inputs + apply action wired to `RecordingController`). Additional sync hooks now refresh Mixer transport controls when recording-side loop/punch/device state changes. Transport visuals were further polished toward the locked look: bevel-like button treatment, recessed LCD styling, and an amber-emphasis loop toggle with BPM mirror label next to metronome controls. `recording_controller.py` now persists explicit monitoring runtime state (`monitoring_enabled`, `monitor_gain_percent`), with Mixer monitor/gain controls writing to that state and status text reflecting monitor mode.
 
-- [ ] **3.9** Implement the Status Bar (24px): CPU bar + %, RAM, driver name, sample rate, buffer size, latency in cyan, project name, save-status dot (green = saved, amber = unsaved). *(ref: UX §2.10)*
-  - **Status:** QStatusBar exists in EchoProWindow; needs styling and wiring
+- [x] **3.9** Implement the Status Bar (24px): CPU bar + %, RAM, driver name, sample rate, buffer size, latency in cyan, project name, save-status dot (green = saved, amber = unsaved). *(ref: UX §2.10)*
+  - **Status:** Complete
   - **Depends on:** Group 1 styling complete ✓
-  - **Next step:** Wire CPU/RAM/driver/latency telemetry, add save-status dot indicator
+  - **What landed (2026-08-04):** `echo_pro_app.py` now builds persistent status widgets on the active tabbed-window path with fixed 24px bar height, CPU usage bar + %, RAM %, driver label, sample-rate label, buffer-size label, cyan latency readout, project-name label, and save-status dot/text (`Saved` green, `Unsaved` amber). A 1s telemetry timer now refreshes values from runtime state, and open/save/new project flows synchronize saved-state baseline for the indicator. Status telemetry wiring now uses selected sample rate and selected input/output devices, and host API names resolve to readable driver labels via `audio_device.py`.
 
 ---
 
@@ -144,69 +141,84 @@ Build the primary DAW surface in sub-section order so each new layer has a stabl
 
 Fix and complete the in-lane editing behaviors that the arrangement view depends on.
 
-- [ ] **4.1** Fix waveform zoom so users can reach close enough for clip-level inspection and editing; expose clear zoom-in / zoom-out controls and keyboard shortcuts (Ctrl+Scroll). *(ref: UX §10, existing P1 brief)*
-  - **Status:** Not started
-  - **Blockers:** CLARIFY zoom depth limits (see todo: g4-zoom-limits)
-  - **Questions:** Closest/farthest zoom levels, zoom UI (slider/buttons/scroll), can user see individual samples?
-  - **Notes:** Currently listed as a known problem (waveform zoom insufficient)
+- [x] **4.1** Fix waveform zoom so users can reach close enough for clip-level inspection and editing; expose clear zoom-in / zoom-out controls and keyboard shortcuts (Ctrl+Scroll). *(ref: UX §10, existing P1 brief)*
+  - **Status:** Complete
+  - **Blockers:** None
+  - **Decision (2026-08-04, common DAW baseline):** Use horizontal zoom range 1/16x to 16x for normal arrangement work, with fine-zoom extension up to 64x for detailed waveform inspection. Apply `Ctrl+Scroll` incremental zoom around cursor/playhead with ~1.25x step, plus explicit zoom-in/zoom-out controls and a visible zoom percentage/readout.
+  - **What landed (2026-08-04):** `timeline_widget.py` now supports dynamic zoom factor scaling and Ctrl+Scroll zoom requests; `echo_pro_app.py` now wires zoom requests through `TimelineSyncController` with cursor-anchored zoom and adds explicit Home waveform zoom controls (`-`, `+`, `100%`) plus readout updates and shortcuts (`Ctrl+-`, `Ctrl+=`, `Ctrl+0`); `timeline_sync_controller.py` zoom limits now follow the DAW baseline (min 1/16x, max 64x).
 
-- [ ] **4.2** Fix skip-forward / skip-reverse so they fall back to a stable position when no region is selected; add click-based selection start/end editing directly on the waveform surface. *(ref: existing P1 brief)*
-  - **Status:** Not started
-  - **Known issue:** Skip forward/reverse behavior is currently broken (see Problems section)
-  - **Next step:** Review existing skip logic, implement fallback behavior, add click-based selection
+- [x] **4.2** Fix skip-forward / skip-reverse so they fall back to a stable position when no region is selected; add click-based selection start/end editing directly on the waveform surface. *(ref: existing P1 brief)*
+  - **Status:** Complete
+  - **Known issue:** Addressed in active tabbed path.
+  - **What landed (2026-08-04):** `echo_pro_app.py` now treats Jump Start/End as selection/clip boundary jumps when a target exists, and as stable relative skip controls when no region is selected (fallback step = one bar computed from current BPM/time signature, clamped to timeline bounds). `timeline_widget.py` now supports click-based range edge editing directly on the waveform lane (`Alt+click` adjusts selection start, `Shift+click` adjusts selection end), and emits range-change callbacks so `comp_start_sec_input` / `comp_end_sec_input` stay synchronized with timeline edits.
 
-- [ ] **4.3** Implement inline automation curve overlays directly in the waveform lane: parameter selector dropdown on channel strip, cyan dot handles, double-click to add nodes, drag to move, no separate dock panel (locked for v1.0). *(ref: UX §2.6, Decision 1, offline Phase 6)*
-  - **Status:** Not started
-  - **Blockers:** Item 3.5 (waveform lane rendering complete)
-  - **Notes:** No separate dock/panel allowed — must be inline with waveform
+- [x] **4.3** Implement inline automation curve overlays directly in the waveform lane: parameter selector dropdown on channel strip, cyan dot handles, double-click to add nodes, drag to move, no separate dock panel (locked for v1.0). *(ref: UX §2.6, Decision 1, offline Phase 6)*
+  - **Status:** Complete
+  - **Blockers:** None
+  - **What landed (2026-08-04):** `app/ui/widgets/track_mixer_row.py` now includes a per-channel automation parameter selector (`Auto: Volume`, `Auto: Pan`, `Auto: Send A`, `Auto: Send B`) wired to `TabbedEchoProWindow`. `timeline_widget.py` now renders inline cyan automation overlays directly in each waveform lane for the active per-track parameter, with cyan dot handles, double-click node insertion, and drag-to-move interaction constrained/sorted by neighbor nodes. `echo_pro_app.py` now persists per-track automation points and active target parameter through `TrackPlaybackSettings` and project save/load (`project_model.py`), syncs overlay state on timeline refresh, and records automation edits into project undo/redo snapshots. No separate automation dock/panel was added.
 
-- [ ] **4.4** Implement clip fade settings: 6px drag handles on clip edges plus a right-click "Fade Settings…" non-modal popover (Fade In / Fade Out ms inputs, Linear / Exp / Log / S-curve dropdown per fade). Drag handle and popover must stay in real-time sync. *(ref: UX Decision 6)*
-  - **Status:** Not started
-  - **Blockers:** Item 3.5 (waveform lane rendering complete)
-  - **Notes:** Popover must sync with drag handle in real-time (no stale state)
+- [x] **4.4** Implement clip fade settings: 6px drag handles on clip edges plus a right-click "Fade Settings…" non-modal popover (Fade In / Fade Out ms inputs, Linear / Exp / Log / S-curve dropdown per fade). Drag handle and popover must stay in real-time sync. *(ref: UX Decision 6)*
+  - **Status:** Complete
+  - **Blockers:** None
+  - **What landed (2026-08-04):** `timeline_widget.py` now draws 6px fade handles on selected clip edges, renders inline fade ramps, and supports drag-updating `fade_in_ms` / `fade_out_ms` directly in the lane. Right-click clip context now includes `Fade Settings…`, routed through `echo_pro_app.py` to a non-modal `ClipFadeSettingsPopover` with Fade In/Fade Out ms and per-side curve selectors (Linear/Exp/Log/S-curve). Drag and popover now stay synchronized in real time through shared clip metadata updates and callback syncing; closing the popover commits one project-history snapshot when values changed.
 
-- [ ] **4.5** Add double-click on a waveform/track to open a focused single-track editor surface, passing the correct track context without disturbing the rest of the project. *(ref: existing P2 brief)*
-  - **Status:** Not started
-  - **Blockers:** CLARIFY single-track editor UI pattern (see todo: g3-clarify-single-track-editor)
-  - **Questions:** Inline panel, floating dock, modal, or new tab? This affects Group 3 layout code.
+- [x] **4.5** Add double-click on a waveform/track to open a focused single-track editor surface, passing the correct track context without disturbing the rest of the project. *(ref: existing P2 brief)*
+  - **Status:** Complete
+  - **Decision (2026-08-04, common DAW-style workflow):** Open a dedicated in-app `Track Editor` tab that focuses one track context while keeping all other project state and tabs intact.
+  - **What landed (2026-08-04):** `timeline_widget.py` now emits track double-click callbacks (double-click clip body or left track-lane header zone). `echo_pro_app.py` now routes that callback to `open_single_track_editor(track_index)` in `TabbedEchoProWindow`, which opens/reuses a focused Track Editor tab with track summary and clip list scoped to the selected track, plus quick actions for jumping playhead to first clip and opening playback settings for that track only. Existing timeline and project surfaces remain available and unchanged.
 
-<!-- DECISION NEEDED: Single-track editor UI pattern (inline/floating/modal) — affects Group 3 layout code. -->
+<!-- Decision resolved on 2026-08-04: use dedicated Track Editor tab for focused single-track workflow. -->
 
 ---
 
 ### Group 5 — Audio Mixing Engine
 
-- [ ] **5.1** Implement multi-channel audio summing: mix per-track float buffers with individual gain values into the master output buffer in a vectorizable form; wire into the playback path. *(ref: offline Phase 7)*
-  - **Status:** Not started
-  - **Blockers:** CLARIFY summing vectorization approach (see todo: g5-mixing-vectorization), Item 2.3 (audio bridge wiring)
-  - **Questions:** Use numpy, numpy + SIMD compiled extension, or pure Python? This affects latency and real-time responsiveness.
-  - **Known issue:** Track FX do not apply reliably (see Problems section)
+- [x] **5.1** Implement multi-channel audio summing: mix per-track float buffers with individual gain values into the master output buffer in a vectorizable form; wire into the playback path. *(ref: offline Phase 7)*
+  - **Status:** Complete
+  - **Decision (2026-08-04):** Use NumPy-first vectorized summing in the existing `playback_mixer.py` render path (no compiled extension yet), preserving current playback/export entrypoints.
+  - **What landed (2026-08-04):** `playback_mixer.py` now groups clips by track before rendering, applies per-clip in-lane fade metadata (`fade_in_ms`/`fade_out_ms`), keeps per-track processing passes (loop/effects/fades), then applies per-track gain + equal-power pan and accumulates into a float64 master buffer before limiter/clip to float32. Existing playback/export wiring (`play_project`, `mix_project_to_segment`, `export_project_mix_dialog`) remains unchanged and now uses the upgraded summing path automatically.
+  - **Known issue:** Track FX reliability edge cases remain in scope for 5.2.
 
-- [ ] **5.2** Make track FX and playback parameter changes apply reliably and audibly during active playback; clearly communicate any deliberate defer-to-next-buffer behavior. *(ref: existing P1 brief)*
-  - **Status:** Not started
-  - **Blockers:** Item 5.1 (summing engine complete)
-  - **Known issue:** Track FX currently unreliable (see Problems section)
+- [x] **5.2** Make track FX and playback parameter changes apply reliably and audibly during active playback; clearly communicate any deliberate defer-to-next-buffer behavior. *(ref: existing P1 brief)*
+  - **Status:** Complete
+  - **What landed (2026-08-04):** `echo_pro_app.py` now performs a controlled active-playback remix/restart from the current playhead (`_refresh_active_project_playback_mix(...)`) whenever committed track playback parameters change (volume/pan/mute/solo/send, automation edits, clip fade commit, and playback settings dialog apply). This keeps edits audibly reliable during ongoing playback in the current non-streaming architecture. For high-frequency fade popover edits, the app now explicitly communicates deferred apply behavior while the popover is open, then applies/remixes on close.
+  - **Notes:** Implementation intentionally remixes from current playhead for reliability with the existing pre-render playback model.
 
-- [ ] **5.3** Make the Master Section live during playback: waveform updates, dual VU meter bars respond, LUFS integrated reading updates, peak indicators react. *(ref: UX §2.3, existing P2 brief)*
-  - **Status:** Not started
-  - **Blockers:** Item 3.2 (master section complete), Item 2.3 (audio-thread-to-UI bridge complete)
-  - **Known issue:** Master section appears nonfunctional; needs dedicated waveform bars and meter panel (see Problems section)
+- [x] **5.3** Make the Master Section live during playback: waveform updates, dual VU meter bars respond, LUFS integrated reading updates, peak indicators react. *(ref: UX §2.3, existing P2 brief)*
+  - **Status:** Complete
+  - **What landed (2026-08-04):** `echo_pro_app.py` now caches the active playback segment and updates master telemetry every playback poll from the rendered audio window (left/right RMS VU, peak dB indicators, integrated loudness proxy, and waveform preview glyphs). `app/ui/widgets/main_mixer_layout.py` now exposes dedicated playback-metric update/reset hooks and displays peak indicators plus waveform preview in the Master section. Recording-meter updates no longer override master playback telemetry while project playback is active.
+  - **Notes:** Uses the existing pre-render playback architecture, with timeline-poll-driven master visualization updates.
 
 ---
 
 ### Group 6 — New Project Dialog
 
-- [ ] **6.1** Implement the New Project modal dialog (Ctrl+N / File → New Project): project name field (auto-focus), folder selector, visual template grid (Empty / Basic 4-Track / Podcast / Beat Maker / AI Stems Session), sample rate dropdown, BPM field, "Create Project" cyan primary button + "Cancel". *(ref: UX Screen 7)*
+- [x] **6.1** Implement the New Project modal dialog (Ctrl+N / File → New Project): project name field (auto-focus), folder selector, visual template grid (Empty / Basic 4-Track / Podcast / Beat Maker / AI Stems Session), sample rate dropdown, BPM field, "Create Project" cyan primary button + "Cancel". *(ref: UX Screen 7)*
+  - **Status:** Complete
+  - **What landed (2026-08-04):** Added `app/ui/dialogs/new_project_dialog.py` with a real New Project modal (auto-focus name input, folder browse selector, visual template tile grid, sample-rate dropdown, BPM spinner, and Create/Cancel buttons with cyan primary CTA styling). `echo_pro_app.py` now routes `new_project()` through this modal, creates template-specific track layouts (Empty / Basic 4-Track / Podcast / Beat Maker / AI Stems Session), applies BPM + sample-rate through the existing recording and timeline controller wiring, and stores project defaults (`project_template`, `project_sample_rate`, `project_tempo_bpm`, `project_folder`) in project metadata.
+  - **Notes:** Save/Open/Browse flows now maintain the active project folder context so Save defaults to the selected/loaded project directory.
 
 ---
 
 ### Group 7 — AI Tab: Demucs Stem Extraction
 
-- [ ] **7.1** Create the "Stem Separation (Demucs)" full-page tab: left panel (drag-and-drop source zone, separation model dropdown with stem-count labels and "Manage Models…" link, device selector with auto-detect, inline VRAM color indicator, Force CPU checkbox, shifts spinner, two-stem mode, output format / sample rate / normalize settings). *(ref: UX §3.2–3.4)*
-- [ ] **7.2** Implement the Demucs run controls: full-width "Separate" button (green ready / amber pulsing during processing), "Cancel" button (appears during processing only); wire to background Demucs worker with signal callbacks. *(ref: UX §3.5, offline Phase 4)*
-- [ ] **7.3** Build the center progress area: overall progress bar with states (Idle / Loading model… / Processing… / Complete), per-stem progress bars with labels, elapsed time + ETA, terminal-style activity log (green / amber / red color scheme, auto-scroll, timestamps, Copy / Save / Clear / filter toolbar). *(ref: UX §3.6–3.7)*
-- [ ] **7.4** Build the post-completion output preview section: per-stem waveform thumbnail rows with Play button and volume knob. *(ref: UX §3.8)*
-- [ ] **7.5** Implement the right Transfer Options panel: "Send to Main Tracks" raised tile card (insert position sub-options, auto-color-code toggle), "Save to Project Folder" tile card (path + subfolder pattern), per-stem output checklist with file sizes, "→ Transfer to ACE-Step" secondary button, primary Transfer button with cyan glow. *(ref: UX §3.9, Decision 7)*
+- [x] **7.1** Create the "Stem Separation (Demucs)" full-page tab: left panel (drag-and-drop source zone, separation model dropdown with stem-count labels and "Manage Models…" link, device selector with auto-detect, inline VRAM color indicator, Force CPU checkbox, shifts spinner, two-stem mode, output format / sample rate / normalize settings). *(ref: UX §3.2–3.4)*
+  - **Status:** Complete
+  - **What landed (2026-08-04):** `echo_pro_app.py` now adds a dedicated full-page `Stem Separation` tab in the active tabbed window path, with a three-column workspace and a full left control panel matching UX scope: drag-and-drop source zone (plus browse fallback), Demucs model selector with stem-count labels, `Manage Models...` entry point, device selector (Auto/CUDA/CPU), inline color-coded capability indicator, `Force CPU` toggle, shifts spinner, two-stem mode selector, and output format/sample-rate/normalize controls. Existing stem backend/status/activity wiring was reused and updated so source selection and runtime readiness telemetry sync across the new tab.
+  - **Notes:** Tools tab now links users to the dedicated Stem Separation page; Demucs run/progress/transfer enhancements continue in 7.2-7.5.
+- [x] **7.2** Implement the Demucs run controls: full-width "Separate" button (green ready / amber pulsing during processing), "Cancel" button (appears during processing only); wire to background Demucs worker with signal callbacks. *(ref: UX §3.5, offline Phase 4)*
+  - **Status:** Complete
+  - **What landed (2026-08-04):** `echo_pro_app.py` now runs Demucs separation through a dedicated `StemSeparationWorker` on a `QThread` with signal callbacks (`progress`, `completed`, `failed`, `cancelled`). The Stem Separation tab now uses a full-width green `Separate` button in ready state, switches to an amber pulsing processing state while a run is active, and shows a `Cancel` button only during active processing. Completion/failure/cancel callbacks update status/activity UI and preserve existing stem-import behavior into project tracks.
+  - **Safety fix:** Added worker shutdown handling on app close to avoid orphaned running Demucs worker threads.
+- [x] **7.3** Build the center progress area: overall progress bar with states (Idle / Loading model… / Processing… / Complete), per-stem progress bars with labels, elapsed time + ETA, terminal-style activity log (green / amber / red color scheme, auto-scroll, timestamps, Copy / Save / Clear / filter toolbar). *(ref: UX §3.6–3.7)*
+  - **Status:** Complete
+  - **What landed (2026-08-04):** `echo_pro_app.py` now includes a full center progress surface in the Stem Separation tab: explicit state label lifecycle (idle/loading/processing/complete), overall progress bar, per-stem progress bars, elapsed+ETA updates, and an activity log panel with timestamped entries, severity-aware row styling, auto-scroll, filter dropdown, and Copy/Save/Clear actions.
+- [x] **7.4** Build the post-completion output preview section: per-stem waveform thumbnail rows with Play button and volume knob. *(ref: UX §3.8)*
+  - **Status:** Complete
+  - **What landed (2026-08-04):** `echo_pro_app.py` now renders post-run per-stem preview rows from the latest separation results, including waveform glyph preview, per-row play/stop action, and per-stem preview volume control.
+- [x] **7.5** Implement the right Transfer Options panel: "Send to Main Tracks" raised tile card (insert position sub-options, auto-color-code toggle), "Save to Project Folder" tile card (path + subfolder pattern), per-stem output checklist with file sizes, "→ Transfer to ACE-Step" secondary button, primary Transfer button with cyan glow. *(ref: UX §3.9, Decision 7)*
+  - **Status:** Complete
+  - **What landed (2026-08-04):** `echo_pro_app.py` now provides full transfer controls: checked-stem transfer list with size readout, insert-position option (top/append), auto-color-code toggle, save/copy-to-project folder controls with subfolder pattern, ACE-Step handoff action, and primary transfer action wired into project track insertion/update flows.
 
 ---
 
@@ -277,40 +289,15 @@ Fix and complete the in-lane editing behaviors that the arrangement view depends
 
 ## Ideas
 
-- Reframe the main Echo Pro shell around the locked 3D studio-hardware layout from the UX companion document so control clusters, transport, and arrangement space follow the fixed-width rules.
-- Treat Demucs and ACE-Step as separate full-page AI tabs with transfer handoff, not a unified AI surface.
-- Add the mastering chain as a dedicated first-class page with LUFS target presets, history graphing, and bypassable processing blocks.
-- Make the MIDI hardware mapping page and model-manager settings sub-tabs first-class destinations instead of hidden support screens.
-- Continue the non-destructive project/storage architecture so track slices, clip metadata, and arrangement state can be saved without mutating source audio.
-- Phase 5B validation pass and recovery-history UX improvements.
-- Phase 6 installer validation and packaged-launch verification.
 - Plain non-debug Echo Pro launch flow that is as reliable as the current VS Code debug launch.
-- Manual playback QA pass focused on per-track fades, loop regions, and starter effects with save/reopen coverage.
-- Additional lightweight timeline affordances if playback settings need stronger visibility after user testing.
+- Phase 6 installer validation and packaged-launch verification.
 - Broader recording and device-startup polish if audio-device refresh continues to feel slow or fragile on startup.
 - Real-device recording sanity pass before any release-oriented packaging or rollout.
-- Better progress/reporting UX for long-running generation workflows if current status updates still feel too thin in practice.
-- Clip-import validation polish if add-clip flows still produce avoidable user-error loops during QA.
-- Declutter the Home tab layout so track controls feel less crowded and more directly associated with the track they affect.
 - Explore a vertical beside-the-track mixer/control layout instead of the current separate mixer section.
 
 ## Todos
 
-> **Note (2026-08-03):** Active build work is tracked in the **Ordered Build Task List** above. Items in this section are older scoped tasks and general backlog; they will be retired as the build list covers them. Typography tokens (Segoe UI / Consolas sizes) are kept in `app/styles.py` alongside color tokens — no separate theme file needed for v1.0.
-
-- [ ] Audit the active Home / mixer shell against the locked UX document and list the remaining layout gaps for the 3D hardware-style arrangement view.
-- [ ] Split the AI workflow into distinct Demucs and ACE-Step tabs with the documented transfer actions between them.
-- [ ] Add the mastering chain page with target LUFS presets, live meter feedback, and bypass controls.
-- [ ] Add the MIDI hardware mapping page and the Settings model-manager sub-tabs described in the instruction documents.
-- [ ] Implement the new project dialog and the session-sidebar truncation/tooltip behavior from the UX spec.
-- [ ] Define the non-destructive project serialization path for arrangement state, clip metadata, and saved slices.
-- [ ] Verify the new VS Code debug launch path from a fresh editor session and confirm it is the preferred developer launch path.
-- [ ] Decide whether to keep, rename, or replace the old task-based launch workflow now that the debug configuration is the reliable path.
-- [ ] Run a focused manual QA pass for per-track fade-in, fade-out, loop-region, and starter-effect playback after save/reopen.
-- [ ] Capture any follow-up UX tweaks discovered during track playback QA back into this file before starting implementation.
-- [ ] Run a manual real-device recording sanity pass to complement the existing automated Phase 5 regression coverage.
-- [ ] Re-check long-running generation workflows for progress feedback gaps that still need better UX.
-- [ ] Increase the new icon controls to roughly double their current size so they are easier to see and click.
+- Active backlog work is tracked in the Ordered Build Task List above. This section is kept only for ad hoc notes that do not belong in the phased build list.
 
 ## Problems
 
@@ -318,114 +305,8 @@ Fix and complete the in-lane editing behaviors that the arrangement view depends
 - A shell task can start the Echo Pro runtime Python process without reliably surfacing the PySide window, which is why the debug launch path is currently preferred.
 - Echo Pro runtime dependencies live outside the repo under `%LOCALAPPDATA%\\EchoProData\\runtime\\venv`, so launch reliability can drift if that environment gets out of sync.
 - Older internal status docs can drift from the repo's current runtime and launch reality, so this file should be treated as the actively maintained task snapshot.
-- The Master section appears nonfunctional and still needs its own waveform bars plus a dedicated control/meter panel for levels, peaks, and related master-output monitoring.
-- UI controls should use evenly sized, evenly spaced icon buttons instead of text-heavy buttons, with descriptive text exposed on hover/tooltips.
-- Double-clicking a waveform/track still does not open a dedicated single-track editor for focused editing.
-- Track FX do not seem to apply reliably, and playback parameters should be adjustable live while audio is playing.
-- Skip forward/reverse behaves incorrectly when no part of the waveform is selected, and single-click selection start/end editing is still missing.
-- Users still cannot zoom in or out far enough to work directly at the waveform level on a single track.
 
 ## Implementation Briefs
-
-### Locked DAW shell and visual language
-
-- **Priority:** P1
-- **Feature definition:** Align the main Echo Pro shell with the locked 3D material design, fixed-width control clusters, and studio-hardware visual language from the UX companion document.
-- **User-visible behavior:** The app feels like a structured DAW surface with a custom title bar, fixed transport/status zones, left-side mixing controls, and waveform space that expands instead of the controls stretching.
-- **Out of scope:** No broad cosmetic rewrite outside the documented shell and no change to the locked layout rules unless the UX spec is formally revised.
-- **Likely affected areas:** [echo_pro_app.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/echo_pro_app.py), [app/styles.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/app/styles.py), [timeline_widget.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/timeline_widget.py), and shared widget/style helpers.
-- **Done when:** The live shell matches the locked mixer/transport/sidebar structure closely enough that the documented layout decisions are visible in the running app.
-
-### Split AI tabs and transfer workflow
-
-- **Priority:** P1
-- **Feature definition:** Implement Demucs and ACE-Step as separate full-page tabs with the documented source, progress, output, and transfer flows between them.
-- **User-visible behavior:** Users can move from mixer to Demucs or ACE-Step directly, complete a workflow, and hand results off to the other AI page or back into the arrangement.
-- **Out of scope:** No unified AI studio tab and no collapse of the two workflows into a single shared page.
-- **Likely affected areas:** [echo_pro_app.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/echo_pro_app.py), [stems_engine.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/stems_engine.py), [music_generator.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/music_generator.py), and related tab/navigation code.
-- **Done when:** Both AI pages exist as distinct tabs, each exposes the documented controls, and transfer actions preserve the intended handoff path.
-
-### Master chain and LUFS metering
-
-- **Priority:** P1
-- **Feature definition:** Build the mastering chain page with the ordered processing blocks, LUFS target presets, and real-time analytics described in the instruction document.
-- **User-visible behavior:** The user can inspect loudness, set a target preset, see the target line on the LUFS history display, and bypass individual chain stages.
-- **Out of scope:** No full DAW mastering suite and no attempt to replace the existing mixer architecture.
-- **Likely affected areas:** [echo_pro_app.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/echo_pro_app.py), [playback_mixer.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/playback_mixer.py), [app/ui/widgets/](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/app/ui/widgets/), and any mastering-specific backend.
-- **Done when:** The chain page exists, live loudness feedback works, and the documented LUFS target behavior is visible in the UI.
-
-### Inline automation and clip-fade workflow
-
-- **Priority:** P1
-- **Feature definition:** Keep automation inline in the waveform lane and add the locked fade-settings popover so clip-edge editing and automation remain synchronized.
-- **User-visible behavior:** Users can see and edit automation curves directly on the lane, then adjust fade in/out settings through the popover or clip handles with immediate sync.
-- **Out of scope:** No dedicated automation dock panel and no replacement of the inline lane overlay model in v1.
-- **Likely affected areas:** [timeline_widget.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/timeline_widget.py), [app/ui/widgets/](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/app/ui/widgets/), and clip-context-menu/fade helpers.
-- **Done when:** Automation stays inline, fade controls remain synchronized, and the clip interaction model matches the locked UX decision.
-
-### Non-destructive project serialization
-
-- **Priority:** P1
-- **Feature definition:** Define the save/load schema for tracks, slices, clips, and project metadata so source audio stays untouched while project state is preserved.
-- **User-visible behavior:** Users can save and reopen projects without losing clip arrangement, edits, or metadata, and source media remains intact on disk.
-- **Out of scope:** No destructive rewrite of source files and no custom media database beyond what the project needs.
-- **Likely affected areas:** [project_model.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/project_model.py), [recording_session.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/recording_session.py), [voice_store.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/voice_store.py), and persistence helpers.
-- **Done when:** Project state round-trips cleanly through save/reopen and the on-disk source media is not modified by normal workflow operations.
-
-### Live FX application during playback
-
-- **Priority:** P1
-- **Feature definition:** Make track FX and playback parameter changes apply reliably and audibly while playback is already running, or clearly communicate any deliberate limitations if truly live updates are not feasible.
-- **User-visible behavior:** Adjusting supported playback settings during playback produces immediate or predictably refreshed audible changes instead of appearing broken or ignored.
-- **Out of scope:** No full real-time DSP engine rewrite unless the current architecture absolutely requires it, and no speculative plugin system expansion beyond the existing playback settings surface.
-- **Likely affected areas:** [playback_mixer.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/playback_mixer.py), [project_model.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/project_model.py), [echo_pro_app.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/echo_pro_app.py), and [app/ui/dialogs/track_playback_settings_dialog.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/app/ui/dialogs/track_playback_settings_dialog.py).
-- **Done when:** Supported FX/playback adjustments are clearly applied during playback or at a defined refresh point, and the user can verify that parameter changes are not silently ignored.
-
-### Waveform navigation fallback and click-based selection editing
-
-- **Priority:** P1
-- **Feature definition:** Fix waveform navigation so skip forward/reverse behaves sensibly when nothing is selected, and add click-based selection start/end editing on the waveform surface.
-- **User-visible behavior:** Skip controls fall back to intuitive positions when no region is selected, and users can establish or refine a selection directly from the waveform without awkward workarounds.
-- **Out of scope:** No full timeline interaction rewrite and no replacement of existing drag-selection behavior unless needed to support clear click-based editing.
-- **Likely affected areas:** [timeline_widget.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/timeline_widget.py), [echo_pro_app.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/echo_pro_app.py), and any playhead/selection helpers already used by transport controls.
-- **Done when:** Skip controls use stable fallback behavior with no selection, and users can set or refine selection boundaries directly with click-driven interactions that update the active playhead/selection state visibly.
-
-### Waveform-level zoom for single-track editing
-
-- **Priority:** P1
-- **Feature definition:** Add enough zoom control and resolution on the track editor/timeline surfaces for direct waveform-level work instead of only broad arrangement-level navigation.
-- **User-visible behavior:** Users can zoom in close enough to inspect and edit waveform details, then zoom back out without losing orientation in the project.
-- **Out of scope:** No fully separate sample editor unless later work explicitly chooses that path, and no destructive waveform editing pass beyond navigation/inspection improvements.
-- **Likely affected areas:** [timeline_widget.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/timeline_widget.py), [echo_pro_app.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/echo_pro_app.py), and any dedicated track-editor surface created for focused waveform work.
-- **Done when:** The UI exposes usable zoom in/out behavior for close waveform work, the current zoom state is reflected clearly enough for the user to stay oriented, and the resulting workflow supports direct single-track inspection/editing.
-
-### Dedicated single-track editor on waveform double-click
-
-- **Priority:** P2
-- **Feature definition:** Add a reliable double-click interaction that opens a focused single-track editor window or panel from the waveform/track surface.
-- **User-visible behavior:** Double-clicking the intended track or waveform region opens a dedicated editing surface for that track instead of doing nothing.
-- **Out of scope:** No multi-window session manager and no attempt to redesign every editing workflow before the first single-track editor pass works.
-- **Likely affected areas:** [timeline_widget.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/timeline_widget.py), [echo_pro_app.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/echo_pro_app.py), and any new dialogs/windows created under [app/ui/](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/app/ui/).
-- **Done when:** A track double-click consistently opens the intended focused editor path, passes the correct track context, and preserves the user's current project/timeline state.
-
-### Master output section functionality and metering
-
-- **Priority:** P2
-- **Feature definition:** Make the Master section function as a meaningful output-monitoring surface with waveform, levels, peaks, and related master controls instead of a mostly passive placeholder.
-- **User-visible behavior:** The Master area reacts to playback, exposes useful monitoring information, and feels like a real output section rather than an inert panel.
-- **Out of scope:** No full mastering suite, no advanced DAW-grade plugin rack, and no attempt to replace the per-track mixer with a completely different architecture.
-- **Likely affected areas:** [echo_pro_app.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/echo_pro_app.py), [playback_mixer.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/playback_mixer.py), any level-meter widgets under [app/ui/widgets/](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/app/ui/widgets/), and playback polling/status paths.
-- **Done when:** The Master section updates during playback, shows useful waveform/meter feedback, and exposes at least a scoped first pass of master-output monitoring that matches the rest of the app's live state.
-
-### Control sizing and icon affordance consistency
-
-- **Priority:** P2
-- **Feature definition:** Finish the control declutter pass by standardizing icon button sizing, spacing, and hover-label behavior so the new icon-based UI remains readable and easy to hit.
-- **User-visible behavior:** Icon buttons are consistently sized, easier to see, and easier to click, with hover/tooltips remaining the primary way to reveal descriptive labels.
-- **Out of scope:** No full visual redesign of every widget style in the app and no unrelated theme/color overhaul unless required for button readability.
-- **Likely affected areas:** [echo_pro_app.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/echo_pro_app.py), [recording_ui_components.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/recording_ui_components.py), [app/ui/widgets/track_mixer_row.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/app/ui/widgets/track_mixer_row.py), and any shared button helpers or style rules that now control icon surfaces.
-- **Done when:** The icon-based controls use a coherent size/spacing standard across the main Home and Recording flows, including the requested larger hit targets, without making the layouts collapse or clip.
-
 ### Reliable non-debug launch from source
 
 - **Priority:** P2
@@ -463,58 +344,6 @@ Fix and complete the in-lane editing behaviors that the arrangement view depends
 - **Done when:** Stale status docs are either updated, explicitly marked as historical, or linked back to [TASK_HUB.md](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/TASK_HUB.md) as the active source of truth, so project-state drift is visibly reduced.
 
 ---
-
-## Problems
-
-Known blockers, integration gaps, performance concerns, and deferred work requiring attention:
-
-### Group 2 & 3 Integration Concerns
-
-1. **TimelineSyncController subscription wiring in Group 3 widgets**
-   - **Issue:** TimelineSyncController is now the authoritative source for timeline state (playhead, zoom, scroll, playback, BPM). All Group 3 widgets (Timeline Ruler, Waveform Lane, Transport Bar, Master Section, Channel Strips) must subscribe to controller signals instead of managing independent state.
-   - **Impact:** Without proper subscription, UI will not update during playback or when user changes zoom/scroll/playback state.
-   - **Action needed:** Wire signal subscriptions in each Group 3 component before testing live playback. See Group 3 items 3.1–3.9.
-
-2. **TrackMixerRow styling alignment for 3D glow states**
-   - **Issue:** Existing TrackMixerRow component needs review for Mute / Solo / Record Arm button glow states to match the 3D bevel spec in Group 1 (active glow box-shadow on #00F0FF).
-   - **Impact:** Item 3.4 (Channel Strip widget) cannot be considered complete without visual correctness.
-   - **Action needed:** Review [app/ui/widgets/track_mixer_row.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/app/ui/widgets/track_mixer_row.py) and update button styling to match spec.
-
-3. **Waveform rendering performance at extreme zoom levels**
-   - **Issue:** TimelineSyncController supports zoom range 1/128–128x (256x range). Waveform rendering at 128x (sample-level editing) may have performance implications for large projects.
-   - **Impact:** Potential janky UI or excessive CPU during sample-level zoom and scroll.
-   - **Action needed:** Profile waveform rendering at zoom extremes (post-Group 3 completion); may require caching or LOD strategy in Group 4.
-
-4. **Audio bridge playhead polling frequency**
-   - **Issue:** AudioThreadBridge uses queue.Queue with manual `poll()` calls from UI thread. No automatic polling wired yet; audio→UI updates only happen when UI thread calls `bridge.poll()`.
-   - **Impact:** Playhead and meters may appear "stuck" if UI thread is busy or polling is not called frequently enough.
-   - **Action needed:** Wire `bridge.poll()` into a QTimer or main event loop before testing live audio (see Group 3 Transport Bar wiring).
-
-5. **Project persistence integration with current project model**
-   - **Issue:** ProjectPersistence is scaffolded but not wired into echo_pro_app.py's save/load paths yet.
-   - **Impact:** Projects saved via current "Save Project" button are stored in old format; new persistence layer is unused.
-   - **Action needed:** Integrate ProjectPersistence.save_project() and load_project() into project_browser_dialog and main app save/load slots (Group 6 or 7 work).
-
-### Deferred Technical Decisions (Not Blocking, But Flagged)
-
-1. **Project schema backward compatibility strategy**
-   - **Note:** ProjectMetadata includes `version` field for future migration. Current schema is v1.0 (reference-by-path, no deep copies).
-   - **Decision:** If future versions need to support embedded stems or alternate storage formats, add a schema version migration handler in ProjectPersistence._is_compatible_version().
-
-2. **Master section real-time metering (Group 3.2)**
-   - **Note:** Master fader and VU meter UI components are scaffolded in MainMixerLayout but not wired to actual master volume state or audio levels yet.
-   - **Decision:** Requires Group 5 mixing engine to expose master output levels via AudioThreadBridge; should be wired after mixing engine is ready.
-
-3. **Undo/Redo architecture**
-   - **Note:** ProjectPersistence includes `undo_history` field in project JSON (unused).
-   - **Decision:** Full undo/redo implementation deferred to Group 6 or 7. Current approach: warn user on unsaved changes; no checkpoint-based undo yet.
-
-### Known Gaps (Not Critical But Worth Noting)
-
-- MainMixerLayout toolbar is scaffolded with TODO markers for File/Edit/View menus and quick-action buttons; wiring to actual slots needed in Group 3.1.
-- Timeline Ruler placeholder text present; full bars:beats:ticks rendering and click-to-reposition logic deferred to Group 3.3.
-- Waveform Lane placeholder in center area; full waveform rendering, clip rectangles, and color fill deferred to Group 3.5.
-- Sidebar scaffold present; Browser tree drag-and-drop and Sessions tab implementation deferred to Group 3.7.
 
 ## Recently Completed
 

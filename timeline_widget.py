@@ -4,7 +4,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import soundfile as sf
-from PySide6.QtWidgets import QWidget, QMenu
+from PySide6.QtWidgets import QWidget, QMenu, QToolTip
 from PySide6.QtGui import QPainter, QColor, QPen
 from PySide6.QtCore import Qt, QRect, QPoint, QSize
 
@@ -28,10 +28,20 @@ class TimelineWidget(QWidget):
         self.on_project_changed: Optional[Callable[[], None]] = None
         self.on_comp_range_selected: Optional[Callable[[int, int, int], None]] = None
         self.on_add_clip_at: Optional[Callable[[int, int], None]] = None
+        self.on_clip_action: Optional[Callable[[str, int], None]] = None
+        self.on_track_selected: Optional[Callable[[int], None]] = None
+        self.on_zoom_request: Optional[Callable[[int, int], None]] = None
+        self.on_time_range_changed: Optional[Callable[[Optional[int], Optional[int], Optional[int]], None]] = None
+        self.on_automation_points_changed: Optional[Callable[[int, str, List[dict]], None]] = None
+        self.on_clip_fade_changed: Optional[Callable[[int, int, int, bool], None]] = None
+        self.on_track_double_click: Optional[Callable[[int], None]] = None
         self._clip_rects = []
+        self._fade_handle_rects: List[Tuple[int, str, QRect]] = []
         self._dragging_clip_id = None
         self._drag_start_point = None
         self._drag_origin_start_ms = None
+        self._dragging_fade_handle: Optional[Tuple[int, str]] = None
+        self._dragging_automation_node: Optional[Tuple[int, str, int]] = None
         self._comp_regions_by_track: Dict[int, List[dict]] = {}
         self._comp_color_mode = "alternating"
         self._comp_selecting = False
@@ -39,7 +49,11 @@ class TimelineWidget(QWidget):
         self._comp_select_end_ms: Optional[int] = None
         self._comp_select_track_index: Optional[int] = None
         self._selected_time_range: Optional[Tuple[int, int, int]] = None
+        self._automation_points_by_track_param: Dict[Tuple[int, str], List[dict]] = {}
+        self._active_automation_parameter_by_track: Dict[int, str] = {}
         self._waveform_cache: Dict[str, tuple[int, int, np.ndarray]] = {}
+        self._hovered_clip_id: Optional[int] = None
+        self._zoom_factor = 1.0
         self.playhead_ms = 0
         self.setMinimumHeight(300)
         self.setMouseTracking(True)
@@ -61,6 +75,17 @@ class TimelineWidget(QWidget):
     def set_playhead_ms(self, ms: int) -> None:
         self.playhead_ms = max(0, int(ms))
         self.update()
+
+    def set_zoom_factor(self, factor: float) -> None:
+        next_zoom = max(0.0625, min(64.0, float(factor)))
+        if abs(next_zoom - float(self._zoom_factor)) <= 1e-9:
+            return
+        self._zoom_factor = next_zoom
+        self._sync_view_size()
+        self.update()
+
+    def get_zoom_factor(self) -> float:
+        return float(self._zoom_factor)
 
     def get_playhead_ms(self) -> int:
         return max(0, int(self.playhead_ms))
@@ -85,7 +110,39 @@ class TimelineWidget(QWidget):
         if self._selected_time_range is None:
             return
         self._selected_time_range = None
+        self._emit_time_range_changed(None, None, None)
         self.update()
+
+    def _emit_time_range_changed(
+        self,
+        track_index: Optional[int],
+        start_ms: Optional[int],
+        end_ms: Optional[int],
+    ) -> None:
+        if self.on_time_range_changed is None:
+            return
+        self.on_time_range_changed(track_index, start_ms, end_ms)
+
+    def _set_selected_time_range(self, track_index: int, start_ms: int, end_ms: int) -> None:
+        safe_start = max(0, int(min(start_ms, end_ms)))
+        safe_end = max(safe_start + 1, int(max(start_ms, end_ms)))
+        self._selected_time_range = (int(track_index), safe_start, safe_end)
+        self._emit_time_range_changed(int(track_index), safe_start, safe_end)
+
+    def _edit_selected_time_range_edge(self, track_index: int, clicked_ms: int, *, move_start: bool) -> bool:
+        if self._selected_time_range is None:
+            return False
+        selected_track_index, selected_start_ms, selected_end_ms = self._selected_time_range
+        if int(selected_track_index) != int(track_index):
+            return False
+        click_ms = max(0, int(clicked_ms))
+        if move_start:
+            next_start = min(click_ms, int(selected_end_ms) - 1)
+            self._set_selected_time_range(int(track_index), next_start, int(selected_end_ms))
+            return True
+        next_end = max(click_ms, int(selected_start_ms) + 1)
+        self._set_selected_time_range(int(track_index), int(selected_start_ms), next_end)
+        return True
 
     def _content_width(self) -> int:
         max_end_ms = max((int(clip.start_ms) + int(clip.length_ms) for clip in self.project.clips), default=30000)
@@ -116,6 +173,23 @@ class TimelineWidget(QWidget):
         self._comp_regions_by_track = {}
         self.update()
 
+    def set_track_automation_points(self, track_index: int, parameter: str, points: List[dict]) -> None:
+        key = (int(track_index), str(parameter).strip().lower() or "volume_db")
+        self._automation_points_by_track_param[key] = self._normalize_automation_points(points)
+        self.update()
+
+    def clear_automation_points(self) -> None:
+        self._automation_points_by_track_param = {}
+        self.update()
+
+    def set_active_automation_parameter(self, track_index: int, parameter: str) -> None:
+        normalized_track = int(track_index)
+        if normalized_track < 0:
+            return
+        normalized_parameter = str(parameter).strip().lower() or "volume_db"
+        self._active_automation_parameter_by_track[normalized_track] = normalized_parameter
+        self.update()
+
     def set_comp_color_mode(self, mode: str) -> None:
         mode_value = str(mode).strip().lower()
         self._comp_color_mode = "single" if mode_value == "single" else "alternating"
@@ -133,9 +207,124 @@ class TimelineWidget(QWidget):
         index = abs(int(source_take_number)) % len(palette)
         return palette[index]
 
+    def _normalize_automation_points(self, points: List[dict]) -> List[dict]:
+        normalized: List[dict] = []
+        for point in points:
+            if not isinstance(point, dict):
+                continue
+            try:
+                time_ms = max(0, int(point.get("time_ms", 0)))
+            except (TypeError, ValueError):
+                continue
+            try:
+                value = float(point.get("value", 0.5))
+            except (TypeError, ValueError):
+                value = 0.5
+            normalized.append({"time_ms": time_ms, "value": max(0.0, min(1.0, value))})
+
+        normalized.sort(key=lambda item: int(item["time_ms"]))
+        deduped: List[dict] = []
+        for point in normalized:
+            if deduped and int(deduped[-1]["time_ms"]) == int(point["time_ms"]):
+                deduped[-1] = point
+            else:
+                deduped.append(point)
+        return deduped
+
+    def _track_automation_parameter(self, track_index: int) -> str:
+        return self._active_automation_parameter_by_track.get(int(track_index), "volume_db")
+
+    def _track_automation_points(self, track_index: int, parameter: str) -> List[dict]:
+        key = (int(track_index), str(parameter).strip().lower() or "volume_db")
+        return self._automation_points_by_track_param.setdefault(key, [])
+
+    def _lane_top_bottom(self, track_top: int) -> Tuple[int, int]:
+        return track_top + 22, track_top + TRACK_HEIGHT - 5
+
+    def _lane_value_to_y(self, lane_top: int, lane_bottom: int, value: float) -> int:
+        clamped = max(0.0, min(1.0, float(value)))
+        span = max(1, lane_bottom - lane_top)
+        return int(round(lane_bottom - (clamped * span)))
+
+    def _y_to_lane_value(self, lane_top: int, lane_bottom: int, y: int) -> float:
+        span = max(1, lane_bottom - lane_top)
+        clamped_y = max(lane_top, min(lane_bottom, int(y)))
+        return max(0.0, min(1.0, float(lane_bottom - clamped_y) / float(span)))
+
+    def _draw_track_automation(self, painter: QPainter, track_index: int, top: int) -> None:
+        parameter = self._track_automation_parameter(track_index)
+        points = self._track_automation_points(track_index, parameter)
+        lane_top, lane_bottom = self._lane_top_bottom(top)
+        cyan = QColor(0, 240, 255, 220)
+        if points:
+            painter.setPen(QPen(cyan, 2))
+            for idx in range(len(points) - 1):
+                left = points[idx]
+                right = points[idx + 1]
+                x1 = self.time_to_x(int(left["time_ms"]))
+                y1 = self._lane_value_to_y(lane_top, lane_bottom, float(left["value"]))
+                x2 = self.time_to_x(int(right["time_ms"]))
+                y2 = self._lane_value_to_y(lane_top, lane_bottom, float(right["value"]))
+                painter.drawLine(x1, y1, x2, y2)
+
+        painter.setPen(QPen(QColor(0, 255, 255, 245), 1))
+        for node_index, point in enumerate(points):
+            x = self.time_to_x(int(point["time_ms"]))
+            y = self._lane_value_to_y(lane_top, lane_bottom, float(point["value"]))
+            radius = 4
+            if self._dragging_automation_node == (int(track_index), parameter, int(node_index)):
+                radius = 5
+            painter.setBrush(QColor(0, 255, 255, 210))
+            painter.drawEllipse(QPoint(x, y), radius, radius)
+
+        parameter_label = parameter.replace("_", " ").upper()
+        label_rect = QRect(118, top + 6, 152, 14)
+        painter.setPen(QColor(0, 240, 255, 185))
+        painter.drawText(label_rect, Qt.AlignLeft | Qt.AlignVCenter, f"AUTO: {parameter_label}")
+
+    def _find_automation_node_at_point(self, point: QPoint) -> Optional[Tuple[int, str, int]]:
+        track_index = self._track_index_for_y(int(point.y()))
+        if track_index is None:
+            return None
+        parameter = self._track_automation_parameter(int(track_index))
+        points = self._track_automation_points(int(track_index), parameter)
+        lane_top, lane_bottom = self._lane_top_bottom(int(track_index) * (TRACK_HEIGHT + TRACK_GAP))
+        for node_index, node in enumerate(points):
+            node_x = self.time_to_x(int(node["time_ms"]))
+            node_y = self._lane_value_to_y(lane_top, lane_bottom, float(node["value"]))
+            if abs(int(point.x()) - int(node_x)) <= 7 and abs(int(point.y()) - int(node_y)) <= 7:
+                return int(track_index), parameter, int(node_index)
+        return None
+
+    def _emit_automation_points_changed(self, track_index: int, parameter: str) -> None:
+        if self.on_automation_points_changed is None:
+            return
+        points = self._track_automation_points(int(track_index), parameter)
+        payload = [{"time_ms": int(point["time_ms"]), "value": float(point["value"])} for point in points]
+        self.on_automation_points_changed(int(track_index), str(parameter), payload)
+
+    def _insert_automation_node(self, track_index: int, parameter: str, time_ms: int, value: float) -> None:
+        points = self._track_automation_points(int(track_index), parameter)
+        points.append({"time_ms": max(0, int(time_ms)), "value": max(0.0, min(1.0, float(value)))})
+        points[:] = self._normalize_automation_points(points)
+
+    def _move_automation_node(self, track_index: int, parameter: str, node_index: int, time_ms: int, value: float) -> None:
+        points = self._track_automation_points(int(track_index), parameter)
+        if node_index < 0 or node_index >= len(points):
+            return
+        safe_time = max(0, int(time_ms))
+        safe_value = max(0.0, min(1.0, float(value)))
+
+        if node_index > 0:
+            safe_time = max(safe_time, int(points[node_index - 1]["time_ms"]) + 1)
+        if node_index < (len(points) - 1):
+            safe_time = min(safe_time, int(points[node_index + 1]["time_ms"]) - 1)
+
+        points[node_index] = {"time_ms": safe_time, "value": safe_value}
+
     def time_to_x(self, ms: int) -> int:
         seconds = ms / 1000.0
-        return int(seconds * PIXELS_PER_SECOND)
+        return int(seconds * PIXELS_PER_SECOND * float(self._zoom_factor))
 
     def _read_waveform_peaks(self, file_path: str, target_points: int = 512) -> Optional[np.ndarray]:
         path = Path(file_path)
@@ -194,6 +383,122 @@ class TimelineWidget(QWidget):
             height = max(1, int(round(float(peak) * max_amp)))
             x = inner.left() + offset
             painter.drawLine(x, center_y - height, x, center_y + height)
+
+    def _track_color(self, track) -> QColor:
+        color_hex = getattr(track, "color_hex", "#00F0FF") or "#00F0FF"
+        color = QColor(color_hex)
+        return color if color.isValid() else QColor(0, 240, 255)
+
+    def _clip_fill_color(self, track, clip_selected: bool) -> QColor:
+        base = self._track_color(track)
+        fill = QColor(base)
+        fill.setAlpha(210 if clip_selected else 150)
+        return fill
+
+    def _clip_border_color(self, track, clip_selected: bool) -> QColor:
+        base = self._track_color(track)
+        return QColor(255, 230, 120) if clip_selected else base.darker(160)
+
+    def _draw_slice_markers(self, painter: QPainter, clip_rect: QRect, clip) -> None:
+        metadata = getattr(clip, "metadata", {}) or {}
+        markers = metadata.get("slice_markers_ms", [])
+        if not isinstance(markers, list):
+            return
+        painter.setPen(QPen(QColor(255, 70, 170), 1))
+        clip_start_ms = int(clip.start_ms)
+        clip_end_ms = clip_start_ms + int(clip.length_ms)
+        for marker_ms in markers:
+            try:
+                marker_value = int(marker_ms)
+            except (TypeError, ValueError):
+                continue
+            if marker_value < clip_start_ms or marker_value > clip_end_ms:
+                continue
+            marker_x = self.time_to_x(marker_value)
+            painter.drawLine(marker_x, clip_rect.top() + 2, marker_x, clip_rect.bottom() - 2)
+
+    def _clip_fade_values_ms(self, clip) -> Tuple[int, int]:
+        metadata = getattr(clip, "metadata", {}) or {}
+        length_ms = max(1, int(getattr(clip, "length_ms", 1)))
+        try:
+            fade_in_ms = int(metadata.get("fade_in_ms", 0))
+        except (TypeError, ValueError):
+            fade_in_ms = 0
+        try:
+            fade_out_ms = int(metadata.get("fade_out_ms", 0))
+        except (TypeError, ValueError):
+            fade_out_ms = 0
+        return max(0, min(length_ms, fade_in_ms)), max(0, min(length_ms, fade_out_ms))
+
+    def _set_clip_fade_values_ms(self, clip, fade_in_ms: int, fade_out_ms: int) -> Tuple[int, int]:
+        metadata = dict(getattr(clip, "metadata", {}) or {})
+        length_ms = max(1, int(getattr(clip, "length_ms", 1)))
+        next_fade_in = max(0, min(length_ms, int(fade_in_ms)))
+        next_fade_out = max(0, min(length_ms, int(fade_out_ms)))
+        metadata["fade_in_ms"] = int(next_fade_in)
+        metadata["fade_out_ms"] = int(next_fade_out)
+        metadata.setdefault("fade_in_curve", "Linear")
+        metadata.setdefault("fade_out_curve", "Linear")
+        clip.metadata = metadata
+        return int(next_fade_in), int(next_fade_out)
+
+    def _draw_clip_fades(self, painter: QPainter, clip_rect: QRect, clip, clip_selected: bool) -> None:
+        fade_in_ms, fade_out_ms = self._clip_fade_values_ms(clip)
+        if fade_in_ms <= 0 and fade_out_ms <= 0 and not clip_selected:
+            return
+
+        clip_start = int(getattr(clip, "start_ms", 0))
+        clip_end = clip_start + int(getattr(clip, "length_ms", 0))
+        inner_top = clip_rect.top() + 2
+        inner_bottom = clip_rect.bottom() - 2
+        if inner_bottom <= inner_top:
+            return
+
+        painter.setPen(QPen(QColor(255, 190, 120, 210), 2))
+        if fade_in_ms > 0:
+            fade_in_end_ms = min(clip_end, clip_start + int(fade_in_ms))
+            x1 = self.time_to_x(clip_start)
+            x2 = self.time_to_x(fade_in_end_ms)
+            painter.drawLine(x1, inner_bottom, x2, inner_top)
+        if fade_out_ms > 0:
+            fade_out_start_ms = max(clip_start, clip_end - int(fade_out_ms))
+            x1 = self.time_to_x(fade_out_start_ms)
+            x2 = self.time_to_x(clip_end)
+            painter.drawLine(x1, inner_top, x2, inner_bottom)
+
+        if not clip_selected:
+            return
+
+        handle_width = 6
+        left_handle = QRect(clip_rect.left(), clip_rect.top(), handle_width, max(10, clip_rect.height()))
+        right_handle = QRect(clip_rect.right() - handle_width + 1, clip_rect.top(), handle_width, max(10, clip_rect.height()))
+        painter.setPen(QPen(QColor(255, 200, 130, 230), 1))
+        painter.setBrush(QColor(255, 175, 110, 120))
+        painter.drawRect(left_handle)
+        painter.drawRect(right_handle)
+        self._fade_handle_rects.append((int(clip.id), "in", left_handle))
+        self._fade_handle_rects.append((int(clip.id), "out", right_handle))
+
+    def _clip_tooltip_text(self, clip) -> str:
+        clip_name = self._clip_display_name(clip)
+        path = Path(clip.file_path)
+        duration_ms = max(0, int(getattr(clip, "length_ms", 0)))
+        duration_sec = duration_ms / 1000.0
+        sample_rate_text = "unknown"
+        try:
+            info = sf.info(str(path))
+            if getattr(info, "samplerate", 0):
+                sample_rate_text = f"{int(info.samplerate)} Hz"
+        except Exception:
+            pass
+        return f"{clip_name}\nSource: {path.name}\nDuration: {duration_sec:.2f}s\nSample rate: {sample_rate_text}"
+
+    def _clip_display_name(self, clip) -> str:
+        metadata = getattr(clip, "metadata", {}) or {}
+        custom_name = str(metadata.get("display_name", "")).strip()
+        if custom_name:
+            return custom_name
+        return Path(clip.file_path).name
 
     def _count_enabled_track_effects(self, track) -> int:
         settings = track.playback_settings
@@ -264,18 +569,29 @@ class TimelineWidget(QWidget):
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor(30, 30, 30))  # background
         self._clip_rects = []
+        self._fade_handle_rects = []
 
         # Draw tracks and clips
         for track_index, track in enumerate(self.project.tracks):
             top = track_index * (TRACK_HEIGHT + TRACK_GAP)
             # Track background
             track_rect = QRect(0, top, self.width(), TRACK_HEIGHT)
+            track_color = self._track_color(track)
             if self.selected_track_index == track_index:
-                painter.fillRect(track_rect, QColor(65, 85, 95))
+                selected_fill = QColor(track_color)
+                selected_fill.setAlpha(80)
+                painter.fillRect(track_rect, selected_fill)
             else:
-                painter.fillRect(track_rect, QColor(40, 40, 40))
+                lane_fill = QColor(track_color)
+                lane_fill.setAlpha(42)
+                painter.fillRect(track_rect, lane_fill)
+            painter.setPen(QPen(track_color.darker(170), 1))
+            painter.drawRect(track_rect.adjusted(0, 0, -1, -1))
+            lane_center_y = top + 20 + ((TRACK_HEIGHT - 25) // 2)
+            painter.setPen(QPen(QColor(220, 230, 240, 70), 1))
+            painter.drawLine(0, lane_center_y, self.width(), lane_center_y)
             painter.setPen(Qt.white)
-            painter.drawText(5, top + 20, track.name)
+            painter.drawText(8, top + 18, track.name)
             self._draw_track_playback_badges(painter, track, top)
             self._draw_track_playback_markers(painter, track, track_index, top)
 
@@ -294,16 +610,24 @@ class TimelineWidget(QWidget):
                 w = self.time_to_x(clip.length_ms)
                 clip_rect = QRect(x, top + 20, max(w, 10), TRACK_HEIGHT - 25)
 
-                painter.setPen(QPen(CLIP_BORDER, 2))
-                painter.setBrush(CLIP_COLOR)
-                painter.drawRect(clip_rect)
+                clip_selected = self.selected_clip_id == clip.id
+                painter.setPen(QPen(self._clip_border_color(track, clip_selected), 2))
+                painter.setBrush(self._clip_fill_color(track, clip_selected))
+                painter.drawRoundedRect(clip_rect, 4, 4)
                 self._clip_rects.append((clip.id, clip_rect))
                 self._draw_clip_waveform(painter, clip_rect, clip.file_path)
+                self._draw_slice_markers(painter, clip_rect, clip)
+                self._draw_clip_fades(painter, clip_rect, clip, clip_selected)
 
-                if self.selected_clip_id == clip.id:
+                label_rect = clip_rect.adjusted(6, 3, -6, -3)
+                if label_rect.width() > 24:
+                    painter.setPen(QColor(242, 246, 250))
+                    painter.drawText(label_rect, Qt.AlignLeft | Qt.AlignTop, self._clip_display_name(clip))
+
+                if clip_selected:
                     painter.setPen(QPen(QColor(255, 230, 120), 3))
                     painter.setBrush(Qt.NoBrush)
-                    painter.drawRect(clip_rect.adjusted(-1, -1, 1, 1))
+                    painter.drawRoundedRect(clip_rect.adjusted(-1, -1, 1, 1), 5, 5)
 
                 if is_recording_take:
                     badge_text = "ACTIVE" if is_active_take else "ALT"
@@ -353,6 +677,8 @@ class TimelineWidget(QWidget):
                     painter.setBrush(QColor(112, 190, 255, 40))
                     painter.drawRect(selected_rect)
 
+            self._draw_track_automation(painter, track_index, top)
+
         # Draw in-progress range selection on top for immediate feedback.
         if self._comp_selecting and self._comp_select_track_index is not None and self._comp_select_start_ms is not None and self._comp_select_end_ms is not None:
             top = int(self._comp_select_track_index) * (TRACK_HEIGHT + TRACK_GAP)
@@ -370,8 +696,19 @@ class TimelineWidget(QWidget):
         painter.end()
 
     def _x_to_ms(self, x: int) -> int:
-        seconds = float(max(0, x)) / float(PIXELS_PER_SECOND)
+        zoom = max(0.0625, float(self._zoom_factor))
+        seconds = float(max(0, x)) / float(PIXELS_PER_SECOND * zoom)
         return int(round(seconds * 1000.0))
+
+    def wheelEvent(self, event) -> None:
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            delta = event.angleDelta().y()
+            if delta != 0 and self.on_zoom_request is not None:
+                steps = 1 if delta > 0 else -1
+                self.on_zoom_request(steps, int(event.position().x()))
+                event.accept()
+                return
+        super().wheelEvent(event)
 
     def _find_clip_at_point(self, point: QPoint):
         for clip_id, clip_rect in reversed(self._clip_rects):
@@ -379,11 +716,29 @@ class TimelineWidget(QWidget):
                 return clip_id
         return None
 
+    def _find_fade_handle_at_point(self, point: QPoint) -> Optional[Tuple[int, str]]:
+        for clip_id, edge, rect in reversed(self._fade_handle_rects):
+            if rect.contains(point):
+                return int(clip_id), str(edge)
+        return None
+
     def _find_clip_by_id(self, clip_id: int):
         for clip in self.project.clips:
             if clip.id == clip_id:
                 return clip
         return None
+
+    def _set_selected_track_from_timeline(self, track_index: Optional[int]) -> None:
+        if track_index is None:
+            return
+        normalized = int(track_index)
+        if normalized < 0 or normalized >= len(self.project.tracks):
+            return
+        if self.selected_track_index == normalized:
+            return
+        self.selected_track_index = normalized
+        if self.on_track_selected is not None:
+            self.on_track_selected(normalized)
 
     def _track_index_for_y(self, y: int) -> Optional[int]:
         if y < 0:
@@ -401,17 +756,56 @@ class TimelineWidget(QWidget):
         if event.button() != Qt.LeftButton:
             return super().mousePressEvent(event)
 
+        fade_hit = self._find_fade_handle_at_point(event.position().toPoint())
+        if fade_hit is not None:
+            clip = self._find_clip_by_id(int(fade_hit[0]))
+            if clip is not None:
+                self.selected_clip_id = int(fade_hit[0])
+                self._set_selected_track_from_timeline(int(clip.track_index))
+                self._dragging_fade_handle = (int(fade_hit[0]), str(fade_hit[1]))
+                self._dragging_clip_id = None
+                self._drag_start_point = None
+                self._drag_origin_start_ms = None
+                self._dragging_automation_node = None
+                self.setFocus(Qt.MouseFocusReason)
+                self.update()
+                return
+
+        automation_hit = self._find_automation_node_at_point(event.position().toPoint())
+        if automation_hit is not None:
+            self._dragging_automation_node = automation_hit
+            self.selected_clip_id = None
+            self._dragging_clip_id = None
+            self._drag_start_point = None
+            self._drag_origin_start_ms = None
+            self._set_selected_track_from_timeline(int(automation_hit[0]))
+            self.setFocus(Qt.MouseFocusReason)
+            self.update()
+            return
+
         clip_id = self._find_clip_at_point(event.position().toPoint())
         self.selected_clip_id = clip_id
         if clip_id is None:
             track_index = self._track_index_for_y(event.position().toPoint().y())
+            self._set_selected_track_from_timeline(track_index)
+            clicked_ms = self._x_to_ms(event.position().toPoint().x())
             if track_index is not None and self.selected_track_index is not None and int(track_index) == int(self.selected_track_index):
+                modifiers = event.modifiers()
+                if modifiers & Qt.KeyboardModifier.AltModifier:
+                    if self._edit_selected_time_range_edge(int(track_index), int(clicked_ms), move_start=True):
+                        self.update()
+                        return
+                if modifiers & Qt.KeyboardModifier.ShiftModifier:
+                    if self._edit_selected_time_range_edge(int(track_index), int(clicked_ms), move_start=False):
+                        self.update()
+                        return
                 self._comp_selecting = True
                 self._comp_select_track_index = int(track_index)
-                self._comp_select_start_ms = self._x_to_ms(event.position().toPoint().x())
+                self._comp_select_start_ms = int(clicked_ms)
                 self._comp_select_end_ms = self._comp_select_start_ms
             else:
                 self._selected_time_range = None
+                self._emit_time_range_changed(None, None, None)
             self._dragging_clip_id = None
             self._drag_start_point = None
             self._drag_origin_start_ms = None
@@ -420,6 +814,7 @@ class TimelineWidget(QWidget):
 
         selected_clip = self._find_clip_by_id(clip_id)
         if selected_clip is not None:
+            self._set_selected_track_from_timeline(int(selected_clip.track_index))
             self._selected_time_range = None
             self._dragging_clip_id = clip_id
             self._drag_start_point = event.position().toPoint()
@@ -427,9 +822,86 @@ class TimelineWidget(QWidget):
             self.setFocus(Qt.MouseFocusReason)
         self.update()
 
+    def mouseDoubleClickEvent(self, event):
+        if event.button() != Qt.LeftButton:
+            return super().mouseDoubleClickEvent(event)
+
+        clip_id = self._find_clip_at_point(event.position().toPoint())
+        if clip_id is not None:
+            clip = self._find_clip_by_id(int(clip_id))
+            if clip is not None:
+                track_index = int(clip.track_index)
+                self._set_selected_track_from_timeline(track_index)
+                if self.on_track_double_click is not None:
+                    self.on_track_double_click(track_index)
+                return
+
+        track_index = self._track_index_for_y(event.position().toPoint().y())
+        if track_index is None:
+            return super().mouseDoubleClickEvent(event)
+
+        if event.position().toPoint().x() <= 128:
+            self._set_selected_track_from_timeline(int(track_index))
+            if self.on_track_double_click is not None:
+                self.on_track_double_click(int(track_index))
+            return
+
+        self._set_selected_track_from_timeline(int(track_index))
+        parameter = self._track_automation_parameter(int(track_index))
+        clicked_ms = self._x_to_ms(event.position().toPoint().x())
+        lane_top, lane_bottom = self._lane_top_bottom(int(track_index) * (TRACK_HEIGHT + TRACK_GAP))
+        value = self._y_to_lane_value(lane_top, lane_bottom, int(event.position().toPoint().y()))
+        self._insert_automation_node(int(track_index), parameter, int(clicked_ms), float(value))
+        self._emit_automation_points_changed(int(track_index), parameter)
+        self.update()
+        return
+
     def mouseMoveEvent(self, event):
+        clip_id = self._find_clip_at_point(event.position().toPoint())
+        if clip_id != self._hovered_clip_id:
+            self._hovered_clip_id = clip_id
+            if clip_id is None:
+                QToolTip.hideText()
+            else:
+                clip = self._find_clip_by_id(clip_id)
+                if clip is not None:
+                    QToolTip.showText(event.globalPosition().toPoint(), self._clip_tooltip_text(clip), self)
+
         if self._comp_selecting and self._comp_select_start_ms is not None:
             self._comp_select_end_ms = self._x_to_ms(event.position().toPoint().x())
+            self.update()
+            return
+
+        if self._dragging_fade_handle is not None:
+            if not (event.buttons() & Qt.LeftButton):
+                return super().mouseMoveEvent(event)
+            clip_id, edge = self._dragging_fade_handle
+            clip = self._find_clip_by_id(int(clip_id))
+            if clip is None:
+                return super().mouseMoveEvent(event)
+
+            clip_start_ms = int(getattr(clip, "start_ms", 0))
+            clip_end_ms = clip_start_ms + int(getattr(clip, "length_ms", 0))
+            pointer_ms = self._x_to_ms(event.position().toPoint().x())
+            fade_in_ms, fade_out_ms = self._clip_fade_values_ms(clip)
+            if edge == "in":
+                fade_in_ms = max(0, min(int(getattr(clip, "length_ms", 0)), int(pointer_ms - clip_start_ms)))
+            else:
+                fade_out_ms = max(0, min(int(getattr(clip, "length_ms", 0)), int(clip_end_ms - pointer_ms)))
+            next_in, next_out = self._set_clip_fade_values_ms(clip, fade_in_ms, fade_out_ms)
+            if self.on_clip_fade_changed is not None:
+                self.on_clip_fade_changed(int(clip_id), int(next_in), int(next_out), False)
+            self.update()
+            return
+
+        if self._dragging_automation_node is not None:
+            if not (event.buttons() & Qt.LeftButton):
+                return super().mouseMoveEvent(event)
+            track_index, parameter, node_index = self._dragging_automation_node
+            lane_top, lane_bottom = self._lane_top_bottom(int(track_index) * (TRACK_HEIGHT + TRACK_GAP))
+            next_time_ms = self._x_to_ms(event.position().toPoint().x())
+            next_value = self._y_to_lane_value(lane_top, lane_bottom, int(event.position().toPoint().y()))
+            self._move_automation_node(int(track_index), str(parameter), int(node_index), int(next_time_ms), float(next_value))
             self.update()
             return
 
@@ -450,6 +922,26 @@ class TimelineWidget(QWidget):
         self.update()
 
     def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and self._dragging_fade_handle is not None:
+            clip_id, _edge = self._dragging_fade_handle
+            self._dragging_fade_handle = None
+            clip = self._find_clip_by_id(int(clip_id))
+            if clip is not None:
+                fade_in_ms, fade_out_ms = self._clip_fade_values_ms(clip)
+                if self.on_clip_fade_changed is not None:
+                    self.on_clip_fade_changed(int(clip_id), int(fade_in_ms), int(fade_out_ms), True)
+                elif self.on_project_changed is not None:
+                    self.on_project_changed()
+            self.update()
+            return super().mouseReleaseEvent(event)
+
+        if event.button() == Qt.LeftButton and self._dragging_automation_node is not None:
+            track_index, parameter, _node_index = self._dragging_automation_node
+            self._dragging_automation_node = None
+            self._emit_automation_points_changed(int(track_index), str(parameter))
+            self.update()
+            return super().mouseReleaseEvent(event)
+
         if event.button() == Qt.LeftButton and self._comp_selecting:
             start_ms = self._comp_select_start_ms
             end_ms = self._comp_select_end_ms
@@ -463,10 +955,11 @@ class TimelineWidget(QWidget):
                 range_start = min(int(start_ms), int(end_ms))
                 range_end = max(int(start_ms), int(end_ms))
                 if range_end - range_start >= 50 and self.on_comp_range_selected is not None:
-                    self._selected_time_range = (int(track_index), range_start, range_end)
+                    self._set_selected_time_range(int(track_index), range_start, range_end)
                     self.on_comp_range_selected(int(track_index), range_start, range_end)
                 elif range_end - range_start < 50:
                     self._selected_time_range = None
+                    self._emit_time_range_changed(None, None, None)
             self.update()
             return super().mouseReleaseEvent(event)
 
@@ -490,7 +983,7 @@ class TimelineWidget(QWidget):
         return super().keyPressEvent(event)
 
     def _show_context_menu(self, pos: QPoint) -> None:
-        """Show a context menu for adding or removing clips at the clicked position."""
+        """Show a context menu for clip actions or adding a clip at the clicked position."""
         clip_id = self._find_clip_at_point(pos)
         track_index = self._track_index_for_y(pos.y())
         start_ms = self._x_to_ms(pos.x())
@@ -500,8 +993,22 @@ class TimelineWidget(QWidget):
         if clip_id is not None:
             select_act = menu.addAction("Select clip")
             select_act.triggered.connect(lambda: self._select_clip(clip_id))
+            fade_settings_act = menu.addAction("Fade Settings…")
+            fade_settings_act.triggered.connect(lambda: self._dispatch_clip_action("fade_settings", clip_id))
+            rename_act = menu.addAction("Rename")
+            rename_act.triggered.connect(lambda: self._dispatch_clip_action("rename", clip_id))
+            duplicate_act = menu.addAction("Duplicate")
+            duplicate_act.triggered.connect(lambda: self._dispatch_clip_action("duplicate", clip_id))
             delete_act = menu.addAction("Delete clip")
             delete_act.triggered.connect(lambda: self._delete_clip(clip_id))
+            export_act = menu.addAction("Export Clip")
+            export_act.triggered.connect(lambda: self._dispatch_clip_action("export", clip_id))
+            send_demucs_act = menu.addAction("Send to Demucs")
+            send_demucs_act.triggered.connect(lambda: self._dispatch_clip_action("demucs", clip_id))
+            send_music_act = menu.addAction("Send to ACE-Step")
+            send_music_act.triggered.connect(lambda: self._dispatch_clip_action("ace_step", clip_id))
+            properties_act = menu.addAction("Properties")
+            properties_act.triggered.connect(lambda: self._dispatch_clip_action("properties", clip_id))
         elif track_index is not None and self.on_add_clip_at is not None:
             track_name = self.project.tracks[track_index].name
             add_act = menu.addAction(f'Add clip at {start_ms / 1000:.2f}s on \u201c{track_name}\u201d')
@@ -514,6 +1021,9 @@ class TimelineWidget(QWidget):
 
     def _select_clip(self, clip_id: int) -> None:
         self.selected_clip_id = clip_id
+        selected_clip = self._find_clip_by_id(clip_id)
+        if selected_clip is not None:
+            self._set_selected_track_from_timeline(int(selected_clip.track_index))
         self.update()
 
     def _delete_clip(self, clip_id: int) -> None:
@@ -525,3 +1035,12 @@ class TimelineWidget(QWidget):
             if self.on_project_changed is not None:
                 self.on_project_changed()
             self.update()
+
+    def _dispatch_clip_action(self, action: str, clip_id: int) -> None:
+        self.selected_clip_id = clip_id
+        selected_clip = self._find_clip_by_id(clip_id)
+        if selected_clip is not None:
+            self._set_selected_track_from_timeline(int(selected_clip.track_index))
+        if self.on_clip_action is not None:
+            self.on_clip_action(action, clip_id)
+        self.update()

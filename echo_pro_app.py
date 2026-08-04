@@ -2,13 +2,19 @@
 # pyright: reportAttributeAccessIssue=false, reportArgumentType=false
 
 import os
+import copy
+import json
+import re
 import shutil
 import subprocess
 import sys
 import time
+from dataclasses import asdict
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
+import numpy as np
+import soundfile as sf
 
 def _configure_qt_font_fallback() -> None:
     """Point Qt at Windows system fonts when bundled Qt fonts are unavailable."""
@@ -26,18 +32,18 @@ _configure_qt_font_fallback()
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget,
     QStatusBar, QPushButton, QFileDialog, QHBoxLayout, QLineEdit,
-    QComboBox, QProgressDialog,
-    QMessageBox, QDialog, QTextEdit, QListWidget, QListWidgetItem,
-    QTabWidget, QScrollArea, QGroupBox, QGridLayout,
-    QFrame, QSizePolicy, QSplitter, QMenu
+    QComboBox, QProgressBar, QProgressDialog,
+    QMessageBox, QDialog, QTextEdit, QListWidget, QListWidgetItem, QInputDialog,
+    QTabWidget, QScrollArea, QGroupBox, QGridLayout, QFormLayout, QDialogButtonBox,
+    QFrame, QSizePolicy, QSplitter, QMenu, QSpinBox, QCheckBox, QDial
 )
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QPainter, QColor, QPen
+from PySide6.QtCore import Qt, QTimer, QObject, QThread, Signal, Slot
+from PySide6.QtGui import QPainter, QColor, QPen, QCursor, QDragEnterEvent, QDropEvent
 
 from project_model import Clip, Project, Track, TrackPlaybackSettings, new_empty_project, save_project, load_project
 from audio_info import get_audio_length_ms
 from timeline_widget import TimelineWidget
-from playback_mixer import is_playback_active, play_project, project_duration_ms, stop_playback
+from playback_mixer import TARGET_SAMPLE_RATE, is_playback_active, mix_project_to_segment, play_project, project_duration_ms, stop_playback
 from stems_engine import (
     DEFAULT_DEMUCS_MODEL,
     DEMUCS_MODEL_OPTIONS,
@@ -76,6 +82,7 @@ from input_validation import parse_float, parse_int, parse_time_signature, run_c
 
 from app.styles import DARK_STYLE
 from app.ui.dialogs.first_run_dialog import FirstRunDialog
+from app.ui.dialogs.new_project_dialog import NewProjectDialog
 from app.ui.dialogs.project_browser_dialog import ProjectBrowserDialog
 from app.ui.dialogs.track_playback_settings_dialog import TrackPlaybackSettingsDialog
 from app.ui.dialogs.voice_manager_dialog import VoiceManagerDialog
@@ -90,6 +97,213 @@ _MASTER_WAVEFORM_PLACEHOLDER = (
     "\u25ac\u25ac\u2580\u2584\u2580\u2588\u2580\u2584\u2580\u25ac  MASTER L  \u25ac\u25ac\u25ac  "
     "MASTER R  \u25ac\u2580\u2584\u2580\u2588\u2580\u2584\u2580\u25ac\u25ac"
 )
+
+
+class ClipFadeSettingsPopover(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._on_change = None
+        self._on_close = None
+        self._suspend_events = False
+        self._clip_id: Optional[int] = None
+
+        self.setWindowTitle("Fade Settings")
+        self.setModal(False)
+        self.setWindowFlag(Qt.WindowType.Tool, True)
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        self.setMinimumWidth(300)
+
+        layout = QVBoxLayout(self)
+        hint = QLabel("Adjust clip fades inline. Changes apply live while editing.")
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color:#aab4be;")
+        layout.addWidget(hint)
+
+        form = QFormLayout()
+        self.fade_in_ms = QSpinBox()
+        self.fade_in_ms.setRange(0, 600000)
+        self.fade_in_ms.setSuffix(" ms")
+        form.addRow("Fade In", self.fade_in_ms)
+
+        self.fade_in_curve = QComboBox()
+        self.fade_in_curve.addItems(["Linear", "Exp", "Log", "S-curve"])
+        form.addRow("Fade In Curve", self.fade_in_curve)
+
+        self.fade_out_ms = QSpinBox()
+        self.fade_out_ms.setRange(0, 600000)
+        self.fade_out_ms.setSuffix(" ms")
+        form.addRow("Fade Out", self.fade_out_ms)
+
+        self.fade_out_curve = QComboBox()
+        self.fade_out_curve.addItems(["Linear", "Exp", "Log", "S-curve"])
+        form.addRow("Fade Out Curve", self.fade_out_curve)
+        layout.addLayout(form)
+
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(self.hide)
+        layout.addWidget(close_button, alignment=Qt.AlignmentFlag.AlignRight)
+
+        self.fade_in_ms.valueChanged.connect(self._emit_change)
+        self.fade_out_ms.valueChanged.connect(self._emit_change)
+        self.fade_in_curve.currentTextChanged.connect(self._emit_change)
+        self.fade_out_curve.currentTextChanged.connect(self._emit_change)
+
+    def bind(self, on_change, on_close=None) -> None:
+        self._on_change = on_change
+        self._on_close = on_close
+
+    def set_clip_context(self, clip_id: int, *, fade_in_ms: int, fade_out_ms: int, fade_in_curve: str, fade_out_curve: str) -> None:
+        self._clip_id = int(clip_id)
+        self._suspend_events = True
+        try:
+            self.fade_in_ms.setValue(max(0, int(fade_in_ms)))
+            self.fade_out_ms.setValue(max(0, int(fade_out_ms)))
+            in_index = self.fade_in_curve.findText(str(fade_in_curve or "Linear"))
+            out_index = self.fade_out_curve.findText(str(fade_out_curve or "Linear"))
+            self.fade_in_curve.setCurrentIndex(in_index if in_index >= 0 else 0)
+            self.fade_out_curve.setCurrentIndex(out_index if out_index >= 0 else 0)
+        finally:
+            self._suspend_events = False
+
+    def clip_id(self) -> Optional[int]:
+        return self._clip_id
+
+    def _emit_change(self, *_args) -> None:
+        if self._suspend_events or self._on_change is None or self._clip_id is None:
+            return
+        self._on_change(
+            int(self._clip_id),
+            int(self.fade_in_ms.value()),
+            int(self.fade_out_ms.value()),
+            str(self.fade_in_curve.currentText()),
+            str(self.fade_out_curve.currentText()),
+        )
+
+    def hideEvent(self, event) -> None:
+        if self._on_close is not None and self._clip_id is not None:
+            self._on_close(int(self._clip_id))
+        return super().hideEvent(event)
+
+
+class StemSourceDropZone(QFrame):
+    def __init__(self, on_path_dropped, parent=None):
+        super().__init__(parent)
+        self._on_path_dropped = on_path_dropped
+        self._path_text = ""
+        self.setAcceptDrops(True)
+        self.setMinimumHeight(124)
+        self.setObjectName("StemDropZone")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(6)
+
+        self.title_label = QLabel("Drop source audio here")
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title_label.setStyleSheet("font-size:13px; font-weight:600; color:#d6e6f2;")
+        layout.addWidget(self.title_label)
+
+        self.path_label = QLabel("No file selected")
+        self.path_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.path_label.setWordWrap(True)
+        self.path_label.setStyleSheet("color:#89a3b8; font-size:11px;")
+        layout.addWidget(self.path_label)
+
+        self.setStyleSheet(
+            "QFrame#StemDropZone { border: 1px dashed #2b4f6f; border-radius: 8px; background: #0f1e2d; }"
+            "QFrame#StemDropZone[dragActive='true'] { border: 1px solid #00f0ff; background: #123149; }"
+        )
+
+    def set_current_path(self, path: Optional[Path]) -> None:
+        if path is None:
+            self._path_text = ""
+            self.path_label.setText("No file selected")
+            return
+        self._path_text = str(path)
+        self.path_label.setText(path.name)
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        if event.mimeData().hasUrls():
+            self.setProperty("dragActive", True)
+            self.style().unpolish(self)
+            self.style().polish(self)
+            event.acceptProposedAction()
+            return
+        event.ignore()
+
+
+class StemSeparationWorker(QObject):
+    progress = Signal(str)
+    completed = Signal(dict)
+    failed = Signal(str, str)
+    cancelled = Signal(str)
+
+    def __init__(self, *, source_path: Path, output_dir: Path, model_name: str):
+        super().__init__()
+        self._source_path = Path(source_path)
+        self._output_dir = Path(output_dir)
+        self._model_name = str(model_name)
+        self._cancel_requested = False
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            runtime = resolve_stem_runtime()
+            stems = separate_stems(
+                str(self._source_path),
+                self._output_dir,
+                demucs_executable=runtime.demucs_executable,
+                demucs_repo=runtime.demucs_repo,
+                ffmpeg_executable=runtime.ffmpeg_executable,
+                demucs_model=self._model_name,
+                progress_callback=self.progress.emit,
+                cancel_check=lambda: bool(self._cancel_requested),
+            )
+            self.completed.emit(
+                {
+                    "stems": stems,
+                    "output_dir": str(self._output_dir),
+                    "model_name": self._model_name,
+                    "source_name": self._source_path.name,
+                }
+            )
+        except StemCancelledError as exc:
+            self.cancelled.emit(str(exc))
+        except StemDependencyError as exc:
+            self.failed.emit("dependency", str(exc))
+        except StemSeparationError as exc:
+            self.failed.emit("separation", str(exc))
+        except Exception as exc:
+            self.failed.emit("unexpected", str(exc))
+
+    @Slot()
+    def request_cancel(self) -> None:
+        self._cancel_requested = True
+
+    def dragLeaveEvent(self, event) -> None:
+        self.setProperty("dragActive", False)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        return super().dragLeaveEvent(event)
+
+    def dropEvent(self, event: QDropEvent) -> None:
+        self.setProperty("dragActive", False)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        urls = event.mimeData().urls()
+        if not urls:
+            event.ignore()
+            return
+        for url in urls:
+            local_path = url.toLocalFile()
+            if not local_path:
+                continue
+            file_path = Path(local_path)
+            if file_path.suffix.lower() in {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aiff"}:
+                self._on_path_dropped(file_path)
+                event.acceptProposedAction()
+                return
+        event.ignore()
 
 
 class EchoProWindow(QMainWindow):
@@ -109,9 +323,196 @@ class EchoProWindow(QMainWindow):
         self._project_playback_start_ms = 0
         self._project_playback_end_ms = 0
         self._project_playback_manual_stop = False
+        self._project_playback_segment: Optional[np.ndarray] = None
+        self._project_playback_lufs_integrated_db = -70.0
         self.stem_source_path: Optional[Path] = None
         self.stem_output_dir: Optional[Path] = None
         self._stem_activity_lines: list[str] = []
+        self._timeline_controller_bridge_connected = False
+        self._syncing_timeline_scroll = False
+        self._project_history_limit = 100
+        self._project_undo_stack: list[dict] = []
+        self._project_redo_stack: list[dict] = []
+        self._project_history_suspended = False
+        self._saved_project_fingerprint: Optional[str] = None
+        self._timeline_zoom_step_ratio = 1.25
+        self._automation_parameter_by_track: Dict[int, str] = {}
+        self._clip_fade_popover: Optional[ClipFadeSettingsPopover] = None
+        self._clip_fade_edit_state: Optional[dict] = None
+        self._single_track_editor_tab: Optional[QWidget] = None
+        self._single_track_editor_track_index: Optional[int] = None
+        self._project_save_directory: Optional[Path] = None
+        self._stem_worker_thread: Optional[QThread] = None
+        self._stem_worker: Optional[StemSeparationWorker] = None
+        self._stem_is_processing = False
+        self._stem_pulse_state = False
+        self._stem_started_at: Optional[float] = None
+        self._stem_last_percent: int = 0
+        self._stem_progress_filter = "all"
+        self._latest_stem_results: dict[str, str] = {}
+        self._latest_stem_output_dir: Optional[Path] = None
+        self._stem_preview_volume_by_name: dict[str, float] = {}
+        self._stem_preview_playing_name: Optional[str] = None
+
+    def _shutdown_stem_worker(self) -> None:
+        thread = self._stem_worker_thread
+        worker = self._stem_worker
+        if thread is None:
+            return
+
+        if thread.isRunning() and worker is not None:
+            worker.request_cancel()
+            deadline = time.monotonic() + 6.0
+            while thread.isRunning() and time.monotonic() < deadline:
+                thread.wait(120)
+                QApplication.processEvents()
+
+        if thread.isRunning():
+            thread.quit()
+            thread.wait(1000)
+
+        if thread.isRunning():
+            thread.terminate()
+            thread.wait(1000)
+
+        self._stem_worker = None
+        self._stem_worker_thread = None
+        self._stem_is_processing = False
+
+    def closeEvent(self, event) -> None:
+        self._shutdown_stem_worker()
+        return super().closeEvent(event)
+
+    def _setup_status_bar_widgets(self) -> None:
+        self.status.setSizeGripEnabled(False)
+        self.status.setFixedHeight(24)
+        self.status.setStyleSheet(
+            "QStatusBar { border-top: 1px solid #0f2a44; }"
+            "QStatusBar::item { border: none; }"
+        )
+
+        self.status_cpu_bar = QProgressBar(self)
+        self.status_cpu_bar.setRange(0, 100)
+        self.status_cpu_bar.setValue(0)
+        self.status_cpu_bar.setTextVisible(False)
+        self.status_cpu_bar.setFixedSize(56, 12)
+
+        self.status_cpu_label = QLabel("CPU 0%")
+        self.status_cpu_label.setMinimumWidth(58)
+        self.status_ram_label = QLabel("RAM 0%")
+        self.status_ram_label.setMinimumWidth(64)
+        self.status_driver_label = QLabel("Driver: --")
+        self.status_driver_label.setMinimumWidth(120)
+        self.status_sample_rate_label = QLabel("SR 44.1k")
+        self.status_sample_rate_label.setMinimumWidth(60)
+        self.status_buffer_label = QLabel("BUF 256")
+        self.status_buffer_label.setMinimumWidth(54)
+        self.status_latency_label = QLabel("0.0 ms")
+        self.status_latency_label.setMinimumWidth(58)
+        self.status_latency_label.setStyleSheet("color: #00F0FF; font-family: Consolas, monospace;")
+        self.status_project_label = QLabel("Project: Untitled")
+        self.status_project_label.setMinimumWidth(130)
+        self.status_project_label.setStyleSheet("color: #cfd4db;")
+        self.status_save_dot = QLabel("●")
+        self.status_save_dot.setMinimumWidth(10)
+        self.status_save_dot.setStyleSheet("color: #e6a23c;")
+        self.status_save_text = QLabel("Unsaved")
+        self.status_save_text.setMinimumWidth(58)
+
+        self.status.addPermanentWidget(self.status_cpu_bar)
+        self.status.addPermanentWidget(self.status_cpu_label)
+        self.status.addPermanentWidget(self.status_ram_label)
+        self.status.addPermanentWidget(self.status_driver_label)
+        self.status.addPermanentWidget(self.status_sample_rate_label)
+        self.status.addPermanentWidget(self.status_buffer_label)
+        self.status.addPermanentWidget(self.status_latency_label)
+        self.status.addPermanentWidget(self.status_project_label, 1)
+        self.status.addPermanentWidget(self.status_save_dot)
+        self.status.addPermanentWidget(self.status_save_text)
+
+        self.status_telemetry_timer = QTimer(self)
+        self.status_telemetry_timer.setInterval(1000)
+        self.status_telemetry_timer.timeout.connect(self._refresh_status_bar_telemetry)
+        self.status_telemetry_timer.start()
+        self._refresh_status_bar_telemetry()
+
+    def _read_system_usage_percent(self) -> Tuple[Optional[float], Optional[float]]:
+        try:
+            import psutil  # type: ignore
+
+            return float(psutil.cpu_percent(interval=None)), float(psutil.virtual_memory().percent)
+        except Exception:
+            return None, None
+
+    def _compute_project_fingerprint(self) -> str:
+        payload = {
+            "name": self.current_project.name,
+            "tracks": [asdict(track) for track in self.current_project.tracks],
+            "clips": [asdict(clip) for clip in self.current_project.clips],
+            "metadata": self.current_project.metadata,
+            "next_clip_id": int(self.next_clip_id),
+        }
+        return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+    def _mark_project_saved_state(self) -> None:
+        self._saved_project_fingerprint = self._compute_project_fingerprint()
+        self._refresh_status_bar_telemetry()
+
+    def _is_project_dirty(self) -> bool:
+        if self._saved_project_fingerprint is None:
+            return True
+        return self._compute_project_fingerprint() != self._saved_project_fingerprint
+
+    def _refresh_status_bar_telemetry(self) -> None:
+        cpu_percent, ram_percent = self._read_system_usage_percent()
+        if cpu_percent is None:
+            self.status_cpu_bar.setValue(0)
+            self.status_cpu_label.setText("CPU --")
+        else:
+            cpu_clamped = max(0, min(100, int(round(cpu_percent))))
+            self.status_cpu_bar.setValue(cpu_clamped)
+            self.status_cpu_label.setText(f"CPU {cpu_clamped}%")
+
+        if ram_percent is None:
+            self.status_ram_label.setText("RAM --")
+        else:
+            ram_clamped = max(0, min(100, int(round(ram_percent))))
+            self.status_ram_label.setText(f"RAM {ram_clamped}%")
+
+        selected_output_id = self.selected_output_device_id
+        if selected_output_id is None:
+            selected_output_id = device_manager.selected_output_device
+        output_device = device_manager.get_device(int(selected_output_id)) if selected_output_id is not None else None
+        driver_label = "--"
+        if output_device is not None:
+            driver_label = str(output_device.api)
+        self.status_driver_label.setText(f"Driver: {driver_label}")
+
+        sample_rate = int(device_manager.selected_sample_rate)
+        if hasattr(self, "sample_rate_combo") and getattr(self.sample_rate_combo, "count", None) is not None:
+            selected_sample_rate = self.sample_rate_combo.currentData()
+            if isinstance(selected_sample_rate, int) and selected_sample_rate > 0:
+                sample_rate = selected_sample_rate
+        self.status_sample_rate_label.setText(f"SR {sample_rate / 1000.0:.1f}k")
+
+        buffer_size = int(device_manager.selected_buffer_size)
+        self.status_buffer_label.setText(f"BUF {buffer_size}")
+
+        latency_ms = float(device_manager.get_total_latency())
+        self.status_latency_label.setText(f"{latency_ms:.1f} ms")
+
+        project_name = str(self.current_project.name or "Untitled")
+        self.status_project_label.setText(f"Project: {project_name}")
+
+        dirty = self._is_project_dirty()
+        if dirty:
+            self.status_save_dot.setStyleSheet("color: #e6a23c;")
+            self.status_save_text.setText("Unsaved")
+            self.status_save_text.setStyleSheet("color: #e6a23c;")
+        else:
+            self.status_save_dot.setStyleSheet("color: #26d07c;")
+            self.status_save_text.setText("Saved")
+            self.status_save_text.setStyleSheet("color: #26d07c;")
 
     def _initialize_shared_window_timers(self, *, start_recording_timer: bool) -> None:
         self.recording_timer = QTimer(self)
@@ -132,6 +533,7 @@ class EchoProWindow(QMainWindow):
 
         self.status = QStatusBar()
         self.setStatusBar(self.status)
+        self._setup_status_bar_widgets()
 
         self._initialize_shared_window_timers(start_recording_timer=True)
 
@@ -645,6 +1047,10 @@ class EchoProWindow(QMainWindow):
         self.timeline = TimelineWidget(self.current_project)
         self.timeline.on_project_changed = self._on_timeline_project_changed
         self.timeline.on_comp_range_selected = self.on_timeline_comp_range_selected
+        self.timeline.on_track_selected = self._on_timeline_track_selected
+        self.timeline.on_track_double_click = self._on_timeline_track_double_click
+        self.timeline.on_automation_points_changed = self._on_timeline_automation_points_changed
+        self.timeline.on_clip_fade_changed = self._on_timeline_clip_fade_changed
         layout.addWidget(self.timeline)
 
         container = QWidget()
@@ -672,8 +1078,25 @@ class EchoProWindow(QMainWindow):
         button.setFixedSize(width, height)
 
     def _sync_metronome_button_state(self, running: bool) -> None:
-        if hasattr(self, "transport_bar") and hasattr(self.transport_bar, "set_metronome_enabled"):
-            self.transport_bar.set_metronome_enabled(running)
+        for bar in self._recording_transport_bars():
+            if hasattr(bar, "set_metronome_enabled"):
+                bar.set_metronome_enabled(running)
+        mixer_layout = getattr(self, "main_mixer_view", None)
+        if mixer_layout is not None and hasattr(mixer_layout, "_sync_mixer_transport_controls_from_window"):
+            mixer_layout._sync_mixer_transport_controls_from_window()
+
+    def _recording_transport_bars(self) -> list[TransportBar]:
+        bars: list[TransportBar] = []
+        for attr_name in ("transport_bar", "mixer_transport_bar"):
+            bar = getattr(self, attr_name, None)
+            if isinstance(bar, TransportBar) and bar not in bars:
+                bars.append(bar)
+        return bars
+
+    def _set_recording_transport_button_state(self, *, can_record: bool, can_stop: bool) -> None:
+        for bar in self._recording_transport_bars():
+            bar.record_button.setEnabled(bool(can_record))
+            bar.stop_button.setEnabled(bool(can_stop))
 
     def _on_timeline_project_changed(self):
         self.refresh_timeline()
@@ -699,25 +1122,438 @@ class EchoProWindow(QMainWindow):
         if value is not None:
             self.alter_section_index_input.setText(str(value))
 
-    def _append_stem_activity(self, text: str, *, reset: bool = False) -> None:
+    def _classify_stem_log_level(self, message: str) -> str:
+        lowered = str(message or "").lower()
+        if "error" in lowered or "failed" in lowered or "missing" in lowered:
+            return "error"
+        if "warning" in lowered or "cancel" in lowered:
+            return "warn"
+        return "info"
+
+    def _append_stem_activity(self, text: str, *, reset: bool = False, level: Optional[str] = None) -> None:
         if not hasattr(self, "stem_activity_view"):
             return
         message = text.strip()
         if reset:
             self._stem_activity_lines = []
         if not message:
-            self.stem_activity_view.setPlainText("\n".join(self._stem_activity_lines))
+            self._refresh_stem_activity_log_view()
             return
-        if self._stem_activity_lines and self._stem_activity_lines[-1] == message:
+        if self._stem_activity_lines:
+            last = self._stem_activity_lines[-1]
+            if isinstance(last, dict) and str(last.get("text", "")) == message:
+                return
+            if isinstance(last, str) and last == message:
+                return
+        log_level = str(level or self._classify_stem_log_level(message)).lower()
+        if log_level not in {"info", "warn", "error"}:
+            log_level = "info"
+        timestamp = time.strftime("%H:%M:%S")
+        entry = {"level": log_level, "time": timestamp, "text": message}
+        self._stem_activity_lines.append(entry)
+        self._stem_activity_lines = self._stem_activity_lines[-120:]
+        self._refresh_stem_activity_log_view()
+
+    def _refresh_stem_activity_log_view(self) -> None:
+        if not hasattr(self, "stem_activity_view"):
             return
-        self._stem_activity_lines.append(message)
-        self._stem_activity_lines = self._stem_activity_lines[-10:]
-        self.stem_activity_view.setPlainText("\n".join(self._stem_activity_lines))
+        filter_mode = str(self._stem_progress_filter or "all")
+        lines: list[str] = []
+        for item in self._stem_activity_lines:
+            if isinstance(item, dict):
+                level = str(item.get("level", "info")).lower()
+                text = str(item.get("text", "")).strip()
+                at = str(item.get("time", ""))
+            else:
+                level = "info"
+                text = str(item).strip()
+                at = ""
+            if not text:
+                continue
+            if filter_mode != "all" and level != filter_mode:
+                continue
+            prefix = "I"
+            color = "#6ce47a"
+            if level == "warn":
+                prefix = "W"
+                color = "#f0b55a"
+            elif level == "error":
+                prefix = "E"
+                color = "#f16f6f"
+            stamp = f"[{at}] " if at else ""
+            safe_text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            lines.append(f"<span style='color:{color};'>{prefix}</span> {stamp}{safe_text}")
+
+        if not lines:
+            self.stem_activity_view.setHtml("<span style='color:#8aa0b3;'>No activity lines for current filter.</span>")
+            return
+        self.stem_activity_view.setHtml("<br/>".join(lines))
+        cursor = self.stem_activity_view.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        self.stem_activity_view.setTextCursor(cursor)
+
+    def _on_stem_log_filter_changed(self, *_args) -> None:
+        if hasattr(self, "stem_log_filter_combo"):
+            value = self.stem_log_filter_combo.currentData()
+            self._stem_progress_filter = str(value or "all")
+        self._refresh_stem_activity_log_view()
+
+    def _copy_stem_log(self) -> None:
+        if not hasattr(self, "stem_activity_view"):
+            return
+        QApplication.clipboard().setText(self.stem_activity_view.toPlainText())
+        self.update_status("Stem activity log copied")
+
+    def _save_stem_log(self) -> None:
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Stem Activity Log",
+            "stem_activity.log",
+            "Log Files (*.log);;Text Files (*.txt)",
+        )
+        if not filename:
+            return
+        try:
+            Path(filename).write_text(self.stem_activity_view.toPlainText(), encoding="utf-8")
+            self.update_status(f"Saved stem activity log: {filename}")
+        except Exception as exc:
+            QMessageBox.warning(self, "Save log", f"Could not save log:\n{exc}")
+
+    def _clear_stem_log(self) -> None:
+        self._stem_activity_lines = []
+        self._refresh_stem_activity_log_view()
+        self.update_status("Stem activity log cleared")
+
+    def _set_stem_progress_state_label(self, text: str) -> None:
+        if hasattr(self, "stem_progress_state_label"):
+            self.stem_progress_state_label.setText(str(text))
+
+    def _reset_stem_progress_ui(self, *, state_text: str = "Idle") -> None:
+        self._stem_last_percent = 0
+        self._set_stem_progress_state_label(state_text)
+        if hasattr(self, "stem_overall_progress"):
+            self.stem_overall_progress.setValue(0)
+        if hasattr(self, "stem_elapsed_label"):
+            self.stem_elapsed_label.setText("Elapsed: 0s")
+        if hasattr(self, "stem_eta_label"):
+            self.stem_eta_label.setText("ETA: --")
+        bars = getattr(self, "stem_per_stem_bars", {})
+        if isinstance(bars, dict):
+            for bar in bars.values():
+                bar.setValue(0)
+
+    def _update_stem_elapsed_eta(self, percent: int) -> None:
+        if self._stem_started_at is None:
+            return
+        elapsed = max(0, int(time.monotonic() - float(self._stem_started_at)))
+        if hasattr(self, "stem_elapsed_label"):
+            self.stem_elapsed_label.setText(f"Elapsed: {elapsed}s")
+        if hasattr(self, "stem_eta_label"):
+            if percent > 0:
+                total_est = int((elapsed * 100.0) / float(percent))
+                eta = max(0, total_est - elapsed)
+                self.stem_eta_label.setText(f"ETA: {eta}s")
+            else:
+                self.stem_eta_label.setText("ETA: --")
+
+    def _update_stem_progress_from_message(self, message: str) -> None:
+        text = str(message).strip()
+        if not text:
+            return
+
+        lower = text.lower()
+        if "loading" in lower or "launching" in lower or "downloading" in lower:
+            self._set_stem_progress_state_label("Loading model...")
+        elif "processing" in lower or "separating" in lower:
+            self._set_stem_progress_state_label("Processing...")
+        elif "collecting" in lower:
+            self._set_stem_progress_state_label("Collecting stems...")
+        elif "finished" in lower or "complete" in lower:
+            self._set_stem_progress_state_label("Complete")
+
+        percent_match = re.search(r"(\d{1,3})%", text)
+        if percent_match is not None:
+            try:
+                percent = max(0, min(100, int(percent_match.group(1))))
+            except ValueError:
+                percent = self._stem_last_percent
+            self._stem_last_percent = max(self._stem_last_percent, percent)
+            if hasattr(self, "stem_overall_progress"):
+                self.stem_overall_progress.setValue(int(self._stem_last_percent))
+            self._update_stem_elapsed_eta(int(self._stem_last_percent))
+
+            bars = getattr(self, "stem_per_stem_bars", {})
+            ordered_names = ["vocals", "drums", "bass", "guitar", "piano", "other"]
+            if isinstance(bars, dict) and bars:
+                active_idx = min(len(ordered_names) - 1, int((self._stem_last_percent / 100.0) * len(ordered_names)))
+                for idx, stem_name in enumerate(ordered_names):
+                    bar = bars.get(stem_name)
+                    if bar is None:
+                        continue
+                    if idx < active_idx:
+                        bar.setValue(100)
+                    elif idx == active_idx:
+                        per = int((self._stem_last_percent * len(ordered_names)) % 100)
+                        bar.setValue(max(5, min(100, per)))
 
     def _set_stem_status(self, summary: str, *, detail: Optional[str] = None, reset_activity: bool = False) -> None:
         if hasattr(self, "stem_status_label"):
             self.stem_status_label.setText(summary)
-        self._append_stem_activity(detail or summary, reset=reset_activity)
+        payload = detail or summary
+        self._append_stem_activity(payload, reset=reset_activity)
+        self._update_stem_progress_from_message(payload)
+
+    def _format_file_size(self, path: Path) -> str:
+        try:
+            size = float(path.stat().st_size)
+        except Exception:
+            return "unknown"
+        units = ["B", "KB", "MB", "GB"]
+        idx = 0
+        while size >= 1024.0 and idx < len(units) - 1:
+            size /= 1024.0
+            idx += 1
+        return f"{size:.1f} {units[idx]}"
+
+    def _project_folder_for_transfer(self) -> Path:
+        folder_raw = str(self.current_project.metadata.get("project_folder", "") or "").strip()
+        if folder_raw:
+            return Path(folder_raw)
+        if self._project_save_directory is not None:
+            return Path(self._project_save_directory)
+        return PROJECTS_DIR
+
+    def _render_waveform_ascii_for_file(self, file_path: Path, columns: int = 32) -> str:
+        try:
+            audio, _sr = sf.read(str(file_path), always_2d=True)
+        except Exception:
+            return "-" * columns
+        if audio.shape[0] <= 0:
+            return "-" * columns
+        mono = np.mean(np.abs(audio), axis=1)
+        if mono.size <= 0:
+            return "-" * columns
+        sample_positions = np.linspace(0, mono.size - 1, int(max(4, columns)), dtype=np.int32)
+        sampled = mono[sample_positions]
+        glyphs = "▁▂▃▄▅▆▇█"
+        out = []
+        for value in sampled:
+            normalized = max(0.0, min(1.0, float(value)))
+            idx = min(len(glyphs) - 1, int(round(normalized * (len(glyphs) - 1))))
+            out.append(glyphs[idx])
+        return "".join(out)
+
+    def _refresh_stem_preview_rows(self) -> None:
+        if not hasattr(self, "stem_preview_rows_layout"):
+            return
+        layout = self.stem_preview_rows_layout
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        if not self._latest_stem_results:
+            hint = QLabel("Run a separation to preview stems.")
+            hint.setStyleSheet("color:#8aa0b3;")
+            layout.addWidget(hint)
+            return
+
+        ordered_names = [name for name in ["vocals", "drums", "bass", "guitar", "piano", "other"] if name in self._latest_stem_results]
+        extras = [name for name in self._latest_stem_results.keys() if name not in ordered_names]
+        for stem_name in ordered_names + extras:
+            file_path = Path(self._latest_stem_results[stem_name])
+            row = QFrame()
+            row.setFrameShape(QFrame.Shape.StyledPanel)
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(6, 4, 6, 4)
+            row_layout.setSpacing(6)
+
+            name_label = QLabel(stem_name.title())
+            name_label.setMinimumWidth(72)
+            row_layout.addWidget(name_label)
+
+            waveform = QLabel(self._render_waveform_ascii_for_file(file_path, columns=30))
+            waveform.setStyleSheet("font-family:Consolas, monospace; color:#63d8ff;")
+            waveform.setMinimumWidth(220)
+            row_layout.addWidget(waveform, stretch=1)
+
+            play_btn = QPushButton("Play")
+            play_btn.clicked.connect(lambda _=False, n=stem_name: self._toggle_stem_preview_playback(n))
+            row_layout.addWidget(play_btn)
+
+            volume_dial = QDial()
+            volume_dial.setRange(0, 100)
+            volume_dial.setNotchesVisible(True)
+            volume_dial.setFixedSize(36, 36)
+            volume_dial.setValue(int(round(self._stem_preview_volume_by_name.get(stem_name, 70.0))))
+            volume_dial.valueChanged.connect(lambda value, n=stem_name: self._set_stem_preview_volume(n, int(value)))
+            row_layout.addWidget(volume_dial)
+
+            row_layout.addWidget(QLabel(self._format_file_size(file_path)))
+            layout.addWidget(row)
+
+    def _set_stem_preview_volume(self, stem_name: str, dial_value: int) -> None:
+        self._stem_preview_volume_by_name[str(stem_name)] = max(0.0, min(1.0, float(dial_value) / 100.0))
+
+    def _toggle_stem_preview_playback(self, stem_name: str) -> None:
+        name = str(stem_name)
+        if self._stem_preview_playing_name == name:
+            self._stop_stem_preview_playback()
+            return
+        self._play_stem_preview(name)
+
+    def _play_stem_preview(self, stem_name: str) -> None:
+        path_raw = self._latest_stem_results.get(str(stem_name))
+        if not path_raw:
+            return
+        file_path = Path(path_raw)
+        if not file_path.exists():
+            QMessageBox.warning(self, "Stem Preview", f"Stem file not found:\n{file_path}")
+            return
+        try:
+            import sounddevice as sd  # type: ignore
+            audio, sample_rate = sf.read(str(file_path), always_2d=True)
+            gain = float(self._stem_preview_volume_by_name.get(str(stem_name), 0.7))
+            preview = np.asarray(audio, dtype=np.float32) * max(0.0, min(1.0, gain))
+            sd.stop()
+            sd.play(preview, int(sample_rate), blocking=False)
+            self._stem_preview_playing_name = str(stem_name)
+            self.update_status(f"Previewing stem: {stem_name}")
+        except Exception as exc:
+            QMessageBox.warning(self, "Stem Preview", f"Could not preview stem:\n{exc}")
+
+    def _stop_stem_preview_playback(self) -> None:
+        try:
+            import sounddevice as sd  # type: ignore
+            sd.stop()
+        except Exception:
+            pass
+        self._stem_preview_playing_name = None
+
+    def _populate_stem_transfer_checklist(self) -> None:
+        if not hasattr(self, "stem_transfer_checklist"):
+            return
+        self.stem_transfer_checklist.clear()
+        if not self._latest_stem_results:
+            return
+        ordered_names = [name for name in ["vocals", "drums", "bass", "guitar", "piano", "other"] if name in self._latest_stem_results]
+        extras = [name for name in self._latest_stem_results.keys() if name not in ordered_names]
+        for stem_name in ordered_names + extras:
+            stem_path = Path(self._latest_stem_results[stem_name])
+            item = QListWidgetItem(f"{stem_name.title()}  ({self._format_file_size(stem_path)})")
+            item.setData(Qt.ItemDataRole.UserRole, stem_name)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Checked)
+            self.stem_transfer_checklist.addItem(item)
+
+    def _checked_stem_names(self) -> list[str]:
+        names: list[str] = []
+        if not hasattr(self, "stem_transfer_checklist"):
+            return names
+        for idx in range(self.stem_transfer_checklist.count()):
+            item = self.stem_transfer_checklist.item(idx)
+            if item is None:
+                continue
+            if item.checkState() != Qt.CheckState.Checked:
+                continue
+            stem_name = str(item.data(Qt.ItemDataRole.UserRole) or "").strip()
+            if stem_name and stem_name in self._latest_stem_results:
+                names.append(stem_name)
+        return names
+
+    def _copy_selected_stems_to_project_folder(self, stem_names: list[str]) -> Optional[Path]:
+        if not stem_names:
+            return None
+        if not hasattr(self, "stem_transfer_save_checkbox") or not self.stem_transfer_save_checkbox.isChecked():
+            return None
+        subfolder_pattern = "stems"
+        if hasattr(self, "stem_transfer_subfolder_input"):
+            subfolder_pattern = str(self.stem_transfer_subfolder_input.text() or "stems").strip() or "stems"
+        target_root = self._project_folder_for_transfer() / subfolder_pattern
+        target_root.mkdir(parents=True, exist_ok=True)
+        for stem_name in stem_names:
+            src = Path(self._latest_stem_results[stem_name])
+            if not src.exists():
+                continue
+            try:
+                shutil.copy2(str(src), str(target_root / src.name))
+            except Exception:
+                continue
+        return target_root
+
+    def _transfer_selected_stems_to_project(self) -> None:
+        if not self._latest_stem_results:
+            QMessageBox.information(self, "Transfer Stems", "No stem results are ready to transfer.")
+            return
+        checked = self._checked_stem_names()
+        if not checked:
+            QMessageBox.information(self, "Transfer Stems", "Select at least one stem to transfer.")
+            return
+        selected_stems = {name: self._latest_stem_results[name] for name in checked}
+        pre_count = len(self.current_project.tracks)
+        insert_mode = "append"
+        if hasattr(self, "stem_transfer_insert_combo"):
+            insert_mode = str(self.stem_transfer_insert_combo.currentData() or "append").strip().lower()
+        self.next_clip_id = add_stems_to_project(
+            self.current_project,
+            selected_stems,
+            self._latest_stem_output_dir or Path("."),
+            next_clip_id_start=self.next_clip_id,
+        )
+        if insert_mode == "top":
+            total_tracks = len(self.current_project.tracks)
+            new_count = max(0, total_tracks - pre_count)
+            if new_count > 0:
+                order = list(range(pre_count, total_tracks)) + list(range(0, pre_count))
+                remap = {old_idx: new_idx for new_idx, old_idx in enumerate(order)}
+                self.current_project.tracks = [self.current_project.tracks[idx] for idx in order]
+                for clip in self.current_project.clips:
+                    original = int(getattr(clip, "track_index", 0))
+                    if original in remap:
+                        clip.track_index = int(remap[original])
+        if hasattr(self, "stem_transfer_auto_color_checkbox") and self.stem_transfer_auto_color_checkbox.isChecked():
+            color_map = {
+                "vocals": "#f36f9f",
+                "drums": "#f6bd60",
+                "bass": "#4dd7ff",
+                "guitar": "#7fd29c",
+                "piano": "#b79cff",
+                "other": "#9aa7b6",
+            }
+            for track in self.current_project.tracks[pre_count:]:
+                stem_key = str(track.name or "").strip().lower()
+                if stem_key in color_map:
+                    track.color_hex = color_map[stem_key]
+
+        copied_dir = self._copy_selected_stems_to_project_folder(checked)
+        self.sync_project_tracks_to_recording_engine()
+        self.refresh_track_list()
+        self.refresh_timeline()
+
+        message = f"Transferred {len(checked)} stem(s) to project tracks."
+        if copied_dir is not None:
+            message += f" Copies saved to {copied_dir}."
+        self._set_stem_status("Stem transfer complete.", detail=message)
+        self.update_status(message)
+
+    def _send_selected_stem_to_ace_step(self) -> None:
+        if not self._latest_stem_results:
+            QMessageBox.information(self, "Transfer to ACE-Step", "No stem results are ready.")
+            return
+        checked = self._checked_stem_names()
+        if not checked:
+            QMessageBox.information(self, "Transfer to ACE-Step", "Select at least one stem first.")
+            return
+        selected = checked[0]
+        stem_path = self._latest_stem_results[selected]
+        self._switch_to_tab("Music")
+        self.update_status(f"Stem ready for ACE-Step reference: {selected} ({stem_path})")
+        QMessageBox.information(
+            self,
+            "Transfer to ACE-Step",
+            f"Selected stem prepared: {selected}\n{stem_path}\n\nUse the Music tab to continue generation with this reference.",
+        )
 
     def _update_stem_backend_summary(self) -> None:
         if not hasattr(self, "stem_backend_label"):
@@ -729,6 +1565,109 @@ class EchoProWindow(QMainWindow):
         else:
             backend_text += f" needs setup - {capability['reason']}"
         self.stem_backend_label.setText(backend_text)
+        self._refresh_stem_device_indicator()
+
+    def _refresh_stem_device_indicator(self) -> None:
+        if not hasattr(self, "stem_vram_indicator"):
+            return
+        capability = get_stem_backend_capability()
+        selected_device = "auto"
+        if hasattr(self, "stem_device_combo"):
+            current = self.stem_device_combo.currentData()
+            if isinstance(current, str):
+                selected_device = current.lower()
+        force_cpu = bool(getattr(self, "stem_force_cpu_checkbox", QCheckBox()).isChecked()) if hasattr(self, "stem_force_cpu_checkbox") else False
+
+        if not bool(capability.get("ready", False)):
+            text = "Runtime missing"
+            color = "#d34f5a"
+        elif force_cpu or selected_device == "cpu":
+            text = "CPU mode"
+            color = "#e6a23c"
+        elif selected_device == "cuda":
+            text = "GPU candidate"
+            color = "#26d07c"
+        else:
+            text = "Auto-detect"
+            color = "#2cc7de"
+
+        self.stem_vram_indicator.setText(text)
+        self.stem_vram_indicator.setStyleSheet(
+            f"color:{color}; font-family:Consolas, monospace; font-size:11px; font-weight:600;"
+        )
+
+    def _set_stem_processing_state(self, processing: bool) -> None:
+        self._stem_is_processing = bool(processing)
+        split_button = getattr(self, "stem_split_btn", None)
+        cancel_button = getattr(self, "stem_cancel_btn", None)
+
+        if split_button is None:
+            return
+
+        if processing:
+            self._stem_started_at = time.monotonic()
+            split_button.setText("Separating...")
+            split_button.setEnabled(False)
+            self._stem_pulse_state = False
+            self._apply_stem_processing_button_style()
+            if not hasattr(self, "_stem_pulse_timer"):
+                self._stem_pulse_timer = QTimer(self)
+                self._stem_pulse_timer.setInterval(420)
+                self._stem_pulse_timer.timeout.connect(self._on_stem_processing_pulse)
+            self._stem_pulse_timer.start()
+            if cancel_button is not None:
+                cancel_button.setVisible(True)
+                cancel_button.setEnabled(True)
+            self._set_stem_progress_state_label("Processing...")
+            return
+
+        if hasattr(self, "_stem_pulse_timer"):
+            self._stem_pulse_timer.stop()
+        split_button.setText("Separate")
+        split_button.setStyleSheet(
+            "QPushButton {"
+            " background:#1f6f3f;"
+            " color:#f5fff7;"
+            " border:1px solid #3dc57a;"
+            " border-radius:6px;"
+            " padding:8px 12px;"
+            " font-weight:700;"
+            "}"
+            "QPushButton:hover { background:#278c4f; }"
+            "QPushButton:pressed { background:#166138; }"
+            "QPushButton:disabled { background:#2a3038; color:#8e98a6; border-color:#3a4655; }"
+        )
+        if cancel_button is not None:
+            cancel_button.setVisible(False)
+            cancel_button.setEnabled(False)
+
+        self._stem_started_at = None
+
+        self._refresh_stem_section_state()
+
+    def _apply_stem_processing_button_style(self) -> None:
+        split_button = getattr(self, "stem_split_btn", None)
+        if split_button is None:
+            return
+        active_bg = "#a0621e" if self._stem_pulse_state else "#8b4f18"
+        active_border = "#ffc062" if self._stem_pulse_state else "#d69a48"
+        split_button.setStyleSheet(
+            "QPushButton {"
+            f" background:{active_bg};"
+            " color:#fff6e8;"
+            f" border:1px solid {active_border};"
+            " border-radius:6px;"
+            " padding:8px 12px;"
+            " font-weight:700;"
+            "}"
+            "QPushButton:disabled { color:#fff0dc; }"
+        )
+
+    def _on_stem_processing_pulse(self) -> None:
+        if not bool(self._stem_is_processing):
+            return
+        self._stem_pulse_state = not bool(self._stem_pulse_state)
+        self._apply_stem_processing_button_style()
 
     def _refresh_stem_section_state(self) -> None:
         self._update_stem_backend_summary()
@@ -737,10 +1676,13 @@ class EchoProWindow(QMainWindow):
 
         selected_source = self.stem_source_path
         source_exists = selected_source is not None and selected_source.exists()
-        self.stem_split_btn.setEnabled(bool(source_exists))
+        self.stem_split_btn.setEnabled(bool(source_exists) and not bool(self._stem_is_processing))
 
         if hasattr(self, "stem_source_input"):
             self.stem_source_input.setText(str(selected_source) if selected_source is not None else "")
+
+        if hasattr(self, "stem_source_drop_zone"):
+            self.stem_source_drop_zone.set_current_path(selected_source)
 
         if hasattr(self, "stem_output_label"):
             if selected_source is not None:
@@ -751,8 +1693,142 @@ class EchoProWindow(QMainWindow):
                 self.stem_output_dir = None
                 self.stem_output_label.setText("Output folder: choose source audio to preview the stem folder.")
 
+        if hasattr(self, "stem_transfer_target_label"):
+            self.stem_transfer_target_label.setText(f"Project folder: {self._project_folder_for_transfer()}")
+
         if not source_exists and hasattr(self, "stem_status_label"):
             self.stem_status_label.setText("Choose source audio to enable Demucs splitting.")
+
+        self._refresh_stem_device_indicator()
+
+    def _clear_stem_worker(self) -> None:
+        if self._stem_worker_thread is not None:
+            self._stem_worker_thread.quit()
+            self._stem_worker_thread.wait(2000)
+            self._stem_worker_thread.deleteLater()
+        self._stem_worker_thread = None
+        self._stem_worker = None
+        self._set_stem_processing_state(False)
+
+    def _on_stem_worker_progress(self, message: str) -> None:
+        text = str(message).strip()
+        if not text:
+            return
+        self._set_stem_status(text, detail=text)
+        self.update_status(text)
+
+    def _on_stem_worker_completed(self, payload: dict) -> None:
+        self._clear_stem_worker()
+        stems = payload.get("stems", {}) if isinstance(payload, dict) else {}
+        if not isinstance(stems, dict) or not stems:
+            self._set_stem_status("Stem split failed.", detail="No stems were returned by Demucs.")
+            QMessageBox.warning(self, "Stems", "Demucs completed but no stems were returned.")
+            return
+
+        output_dir_raw = payload.get("output_dir", "") if isinstance(payload, dict) else ""
+        output_dir = Path(str(output_dir_raw)) if output_dir_raw else Path(".")
+        model_name = str(payload.get("model_name", self._selected_demucs_model())) if isinstance(payload, dict) else self._selected_demucs_model()
+        source_name = str(payload.get("source_name", "source audio")) if isinstance(payload, dict) else "source audio"
+
+        self._latest_stem_results = {str(name): str(path) for name, path in stems.items()}
+        self._latest_stem_output_dir = output_dir
+        self._populate_stem_transfer_checklist()
+        self._refresh_stem_preview_rows()
+
+        if hasattr(self, "stem_transfer_btn"):
+            self.stem_transfer_btn.setEnabled(True)
+        if hasattr(self, "stem_to_ace_btn"):
+            self.stem_to_ace_btn.setEnabled(True)
+        if hasattr(self, "stem_overall_progress"):
+            self.stem_overall_progress.setValue(100)
+        self._set_stem_progress_state_label("Complete")
+        self._update_stem_elapsed_eta(100)
+
+        stem_count = len(stems)
+        self._set_stem_status(
+            f"Stem split complete: {stem_count} stems ready from {source_name}.",
+            detail=f"Demucs completed with {stem_count} stems from {model_name}. Select transfer options to continue.",
+        )
+        self.update_status("Stems ready for transfer")
+
+    def _on_stem_worker_cancelled(self, message: str) -> None:
+        self._clear_stem_worker()
+        text = str(message).strip() or "Stem separation cancelled."
+        self._set_stem_status("Stem split cancelled.", detail=text)
+        self.update_status("Stems cancelled")
+
+    def _on_stem_worker_failed(self, error_kind: str, message: str) -> None:
+        self._clear_stem_worker()
+        text = str(message).strip() or "Demucs failed."
+        kind = str(error_kind).strip().lower()
+
+        if kind == "dependency":
+            self._set_stem_status("Stem backend needs setup.", detail=text)
+            install_choice = QMessageBox.question(
+                self,
+                "Missing dependency",
+                f"{text}\n\nRun dependency update now?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if install_choice == QMessageBox.StandardButton.Yes and self._run_dependency_update_dialog("update"):
+                if self.stem_source_path is not None and self.stem_source_path.exists():
+                    self._start_stem_separation_worker(self.stem_source_path)
+                return
+            self.update_status("Stems dependency issue")
+            return
+
+        self._set_stem_status("Stem split failed.", detail=text)
+        QMessageBox.critical(self, "Error", f"Failed to split stems:\n{text}")
+        self.update_status("Stems error")
+
+    def _start_stem_separation_worker(self, song_path: Path) -> None:
+        if self._stem_is_processing:
+            self.update_status("Stem separation is already running")
+            return
+        if not song_path.exists() or not song_path.is_file():
+            QMessageBox.warning(self, "Stems", "Selected source audio does not exist.")
+            return
+
+        self._set_stem_source_path(song_path)
+        model_name = self._selected_demucs_model()
+        output_dir = song_path.parent / "echo_stems" / song_path.stem
+        self._latest_stem_results = {}
+        self._latest_stem_output_dir = output_dir
+        self._stop_stem_preview_playback()
+        self._populate_stem_transfer_checklist()
+        self._refresh_stem_preview_rows()
+        if hasattr(self, "stem_transfer_btn"):
+            self.stem_transfer_btn.setEnabled(False)
+        if hasattr(self, "stem_to_ace_btn"):
+            self.stem_to_ace_btn.setEnabled(False)
+        self._reset_stem_progress_ui(state_text="Loading model...")
+        self._set_stem_status(
+            f"Preparing Demucs split with {model_name}.",
+            detail=f"Source: {song_path.name}",
+            reset_activity=True,
+        )
+        self.update_status("Running Demucs... this may take a while.")
+
+        self._stem_worker_thread = QThread(self)
+        self._stem_worker = StemSeparationWorker(source_path=song_path, output_dir=output_dir, model_name=model_name)
+        self._stem_worker.moveToThread(self._stem_worker_thread)
+
+        self._stem_worker_thread.started.connect(self._stem_worker.run)
+        self._stem_worker.progress.connect(self._on_stem_worker_progress)
+        self._stem_worker.completed.connect(self._on_stem_worker_completed)
+        self._stem_worker.failed.connect(self._on_stem_worker_failed)
+        self._stem_worker.cancelled.connect(self._on_stem_worker_cancelled)
+
+        self._set_stem_processing_state(True)
+        self._stem_worker_thread.start()
+
+    def cancel_selected_stem_split(self) -> None:
+        worker = self._stem_worker
+        if worker is None or not self._stem_is_processing:
+            return
+        worker.request_cancel()
+        self._set_stem_status("Cancelling stem split...", detail="Cancellation requested.")
+        self.update_status("Cancelling Demucs separation...")
 
     def _set_stem_source_path(self, song_path: Optional[Path]) -> None:
         self.stem_source_path = song_path.resolve() if song_path is not None else None
@@ -763,6 +1839,20 @@ class EchoProWindow(QMainWindow):
                 detail=f"Selected source audio: {self.stem_source_path.name}",
                 reset_activity=True,
             )
+
+    def _on_stem_source_dropped(self, song_path: Path) -> None:
+        if not song_path.exists() or not song_path.is_file():
+            self.update_status("Dropped source path is not a file")
+            return
+        self._set_stem_source_path(song_path)
+
+    def _show_demucs_model_manager_placeholder(self) -> None:
+        QMessageBox.information(
+            self,
+            "Manage Demucs Models",
+            "Model management is being moved into Settings -> Model Manager.\n"
+            "For now, install/update model assets via install_echo_pro.bat install/update.",
+        )
 
     def choose_stem_source_audio(self) -> None:
         initial_dir = ""
@@ -792,7 +1882,7 @@ class EchoProWindow(QMainWindow):
             self.choose_stem_source_audio()
             if self.stem_source_path is None or not self.stem_source_path.exists():
                 return
-        self._split_song_into_stems_for_path(self.stem_source_path)
+        self._start_stem_separation_worker(self.stem_source_path)
 
     def _build_recording_meters(self):
         while self.meter_container.count():
@@ -815,11 +1905,13 @@ class EchoProWindow(QMainWindow):
 
     def sync_project_tracks_to_recording_engine(self):
         for idx, project_track in enumerate(self.current_project.tracks):
+            self._enforce_track_runtime_policy(idx, project_track)
             engine_track = self.recording_controller.engine.get_track(idx)
             if engine_track is None:
                 continue
             engine_track.name = project_track.name
             engine_track.set_volume_db(project_track.volume_db)
+            engine_track.pan = float(getattr(project_track, "pan", 0.0))
             engine_track.muted = project_track.muted
             engine_track.soloed = project_track.soloed
 
@@ -854,7 +1946,9 @@ class EchoProWindow(QMainWindow):
                 flags.append("A")
 
             flag_text = f" [{' '.join(flags)}]" if flags else ""
-            self.track_list.addItem(f"{idx}: {track.name} ({track.volume_db:.1f} dB){flag_text}")
+            track_type = str(getattr(track, "track_type", "Audio") or "Audio")
+            type_text = f" [{track_type}]" if track_type != "Audio" else ""
+            self.track_list.addItem(f"{idx}: {track.name}{type_text} ({track.volume_db:.1f} dB){flag_text}")
 
         row = -1
         if self.current_project.tracks:
@@ -892,6 +1986,291 @@ class EchoProWindow(QMainWindow):
             self.take_track_combo.setCurrentIndex(combo_index)
         else:
             self.refresh_take_review_list()
+
+        self._sync_timeline_automation_target_for_track(int(row))
+
+    def _on_timeline_track_selected(self, track_index: int) -> None:
+        if track_index < 0 or track_index >= len(self.current_project.tracks):
+            return
+        if self.track_list.currentRow() != int(track_index):
+            self.track_list.setCurrentRow(int(track_index))
+            return
+        self.on_track_selection_changed(int(track_index))
+
+    def _on_timeline_track_double_click(self, track_index: int) -> None:
+        if not (0 <= int(track_index) < len(self.current_project.tracks)):
+            return
+        self.selected_track_index = int(track_index)
+        if hasattr(self, "track_list") and self.track_list.currentRow() != int(track_index):
+            self.track_list.setCurrentRow(int(track_index))
+        open_editor = getattr(self, "open_single_track_editor", None)
+        if callable(open_editor):
+            open_editor(int(track_index))
+
+    def _clip_fade_state(self, clip: Clip) -> Tuple[int, int, str, str]:
+        metadata = dict(getattr(clip, "metadata", {}) or {})
+        length_ms = max(1, int(getattr(clip, "length_ms", 1)))
+        fade_in_ms = max(0, min(length_ms, int(metadata.get("fade_in_ms", 0) or 0)))
+        fade_out_ms = max(0, min(length_ms, int(metadata.get("fade_out_ms", 0) or 0)))
+        fade_in_curve = str(metadata.get("fade_in_curve", "Linear") or "Linear")
+        fade_out_curve = str(metadata.get("fade_out_curve", "Linear") or "Linear")
+        return int(fade_in_ms), int(fade_out_ms), fade_in_curve, fade_out_curve
+
+    def _set_clip_fade_state(
+        self,
+        clip: Clip,
+        *,
+        fade_in_ms: int,
+        fade_out_ms: int,
+        fade_in_curve: str,
+        fade_out_curve: str,
+    ) -> None:
+        metadata = dict(getattr(clip, "metadata", {}) or {})
+        length_ms = max(1, int(getattr(clip, "length_ms", 1)))
+        metadata["fade_in_ms"] = max(0, min(length_ms, int(fade_in_ms)))
+        metadata["fade_out_ms"] = max(0, min(length_ms, int(fade_out_ms)))
+        metadata["fade_in_curve"] = str(fade_in_curve or "Linear")
+        metadata["fade_out_curve"] = str(fade_out_curve or "Linear")
+        clip.metadata = metadata
+
+    def _begin_clip_fade_edit(self, clip_id: int) -> None:
+        clip = self._find_clip_by_id(int(clip_id))
+        if clip is None:
+            return
+        current_signature = self._clip_fade_state(clip)
+        active = self._clip_fade_edit_state
+        if active is not None and int(active.get("clip_id", -1)) == int(clip_id):
+            return
+        self._clip_fade_edit_state = {
+            "clip_id": int(clip_id),
+            "snapshot": self._snapshot_project_edit_state(),
+            "signature": current_signature,
+            "defer_notice_shown": False,
+        }
+
+    def _commit_clip_fade_edit(self, clip_id: int, description: str) -> None:
+        active = self._clip_fade_edit_state
+        clip = self._find_clip_by_id(int(clip_id))
+        if active is None or clip is None:
+            return
+        if int(active.get("clip_id", -1)) != int(clip_id):
+            return
+        original_signature = tuple(active.get("signature", (0, 0, "Linear", "Linear")))
+        if tuple(self._clip_fade_state(clip)) != original_signature:
+            self._push_project_snapshot(str(description), active["snapshot"])
+        self._clip_fade_edit_state = None
+
+    def _sync_fade_popover_from_clip(self, clip_id: int) -> None:
+        if self._clip_fade_popover is None:
+            return
+        if not self._clip_fade_popover.isVisible() or self._clip_fade_popover.clip_id() != int(clip_id):
+            return
+        clip = self._find_clip_by_id(int(clip_id))
+        if clip is None:
+            return
+        fade_in_ms, fade_out_ms, fade_in_curve, fade_out_curve = self._clip_fade_state(clip)
+        self._clip_fade_popover.set_clip_context(
+            int(clip_id),
+            fade_in_ms=fade_in_ms,
+            fade_out_ms=fade_out_ms,
+            fade_in_curve=fade_in_curve,
+            fade_out_curve=fade_out_curve,
+        )
+
+    def _on_timeline_clip_fade_changed(self, clip_id: int, fade_in_ms: int, fade_out_ms: int, commit: bool) -> None:
+        clip = self._find_clip_by_id(int(clip_id))
+        if clip is None:
+            return
+        self._begin_clip_fade_edit(int(clip_id))
+        _old_in, _old_out, in_curve, out_curve = self._clip_fade_state(clip)
+        self._set_clip_fade_state(
+            clip,
+            fade_in_ms=int(fade_in_ms),
+            fade_out_ms=int(fade_out_ms),
+            fade_in_curve=in_curve,
+            fade_out_curve=out_curve,
+        )
+        self._sync_fade_popover_from_clip(int(clip_id))
+        if commit:
+            self._commit_clip_fade_edit(int(clip_id), f"Clip {clip_id} fade drag")
+            self._refresh_active_project_playback_mix(f"clip {clip_id} fades")
+            self.update_status(
+                f"Clip {clip_id} fades: in {int(fade_in_ms)}ms, out {int(fade_out_ms)}ms"
+            )
+
+    def _on_fade_popover_changed(
+        self,
+        clip_id: int,
+        fade_in_ms: int,
+        fade_out_ms: int,
+        fade_in_curve: str,
+        fade_out_curve: str,
+    ) -> None:
+        clip = self._find_clip_by_id(int(clip_id))
+        if clip is None:
+            return
+        self._begin_clip_fade_edit(int(clip_id))
+        self._set_clip_fade_state(
+            clip,
+            fade_in_ms=int(fade_in_ms),
+            fade_out_ms=int(fade_out_ms),
+            fade_in_curve=str(fade_in_curve),
+            fade_out_curve=str(fade_out_curve),
+        )
+        active = self._clip_fade_edit_state
+        if self._is_project_playback_running() and isinstance(active, dict) and not bool(active.get("defer_notice_shown", False)):
+            active["defer_notice_shown"] = True
+            self.update_status("Fade popover edits are queued and will apply when you close the popover")
+        self.timeline.update()
+
+    def _on_fade_popover_closed(self, clip_id: int) -> None:
+        self._commit_clip_fade_edit(int(clip_id), f"Clip {clip_id} fade settings")
+        self._refresh_active_project_playback_mix(f"clip {clip_id} fade settings")
+
+    def _show_clip_fade_settings_popover(self, clip_id: int) -> None:
+        clip = self._find_clip_by_id(int(clip_id))
+        if clip is None:
+            QMessageBox.warning(self, "Fade Settings", "The selected clip no longer exists.")
+            return
+
+        if self._clip_fade_popover is None:
+            self._clip_fade_popover = ClipFadeSettingsPopover(self)
+            self._clip_fade_popover.bind(self._on_fade_popover_changed, self._on_fade_popover_closed)
+
+        active_clip_id = self._clip_fade_popover.clip_id()
+        if (
+            active_clip_id is not None
+            and int(active_clip_id) != int(clip_id)
+            and self._clip_fade_popover.isVisible()
+        ):
+            self._commit_clip_fade_edit(int(active_clip_id), f"Clip {active_clip_id} fade settings")
+
+        self._begin_clip_fade_edit(int(clip_id))
+        fade_in_ms, fade_out_ms, fade_in_curve, fade_out_curve = self._clip_fade_state(clip)
+        self._clip_fade_popover.set_clip_context(
+            int(clip_id),
+            fade_in_ms=fade_in_ms,
+            fade_out_ms=fade_out_ms,
+            fade_in_curve=fade_in_curve,
+            fade_out_curve=fade_out_curve,
+        )
+        cursor_pos = QCursor.pos()
+        self._clip_fade_popover.move(cursor_pos.x() + 12, cursor_pos.y() + 12)
+        self._clip_fade_popover.show()
+        self._clip_fade_popover.raise_()
+        self._clip_fade_popover.activateWindow()
+
+    def _normalize_automation_parameter_key(self, parameter: str) -> str:
+        normalized = str(parameter or "").strip().lower()
+        if normalized in {"volume_db", "pan", "send_a", "send_b"}:
+            return normalized
+        return "volume_db"
+
+    def _track_automation_parameter(self, track_index: int) -> str:
+        if not (0 <= int(track_index) < len(self.current_project.tracks)):
+            return "volume_db"
+        track = self.current_project.tracks[int(track_index)]
+        settings = track.playback_settings
+        stored = self._automation_parameter_by_track.get(int(track_index))
+        if stored is not None:
+            return self._normalize_automation_parameter_key(stored)
+        meta_value = getattr(settings, "active_automation_parameter", "volume_db")
+        selected = self._normalize_automation_parameter_key(str(meta_value or "volume_db"))
+        self._automation_parameter_by_track[int(track_index)] = selected
+        return selected
+
+    def _track_automation_points(self, track_index: int, parameter: str) -> list[dict]:
+        if not (0 <= int(track_index) < len(self.current_project.tracks)):
+            return []
+        normalized_parameter = self._normalize_automation_parameter_key(parameter)
+        track = self.current_project.tracks[int(track_index)]
+        automation_map = track.playback_settings.automation
+        if not isinstance(automation_map, dict):
+            track.playback_settings.automation = {}
+            automation_map = track.playback_settings.automation
+        points = automation_map.get(normalized_parameter, [])
+        if not isinstance(points, list):
+            return []
+        cleaned_points: list[dict] = []
+        for point in points:
+            if not isinstance(point, dict):
+                continue
+            try:
+                time_ms = max(0, int(point.get("time_ms", 0)))
+                value = max(0.0, min(1.0, float(point.get("value", 0.5))))
+            except (TypeError, ValueError):
+                continue
+            cleaned_points.append({"time_ms": time_ms, "value": value})
+        cleaned_points.sort(key=lambda item: int(item["time_ms"]))
+        return cleaned_points
+
+    def _set_track_automation_parameter(self, track_index: int, parameter: str) -> None:
+        if not (0 <= int(track_index) < len(self.current_project.tracks)):
+            return
+        normalized_parameter = self._normalize_automation_parameter_key(parameter)
+        track = self.current_project.tracks[int(track_index)]
+        settings = track.playback_settings
+        previous = self._track_automation_parameter(int(track_index))
+        if previous == normalized_parameter:
+            self._sync_timeline_automation_target_for_track(int(track_index))
+            return
+        pre_change_snapshot = self._snapshot_project_edit_state()
+        self._automation_parameter_by_track[int(track_index)] = normalized_parameter
+        settings.active_automation_parameter = normalized_parameter
+        self._push_project_snapshot(f"Track {track_index + 1} automation target", pre_change_snapshot)
+        self._sync_timeline_automation_target_for_track(int(track_index))
+        self.update_status(f"Track {track_index + 1} automation target: {normalized_parameter.replace('_', ' ').title()}")
+
+    def _sync_timeline_automation_target_for_track(self, track_index: int) -> None:
+        if not hasattr(self, "timeline"):
+            return
+        if not (0 <= int(track_index) < len(self.current_project.tracks)):
+            return
+        parameter = self._track_automation_parameter(int(track_index))
+        self.timeline.set_active_automation_parameter(int(track_index), parameter)
+        points = self._track_automation_points(int(track_index), parameter)
+        self.timeline.set_track_automation_points(int(track_index), parameter, points)
+
+    def _on_track_automation_parameter_changed(self, track_index: int, parameter: str) -> None:
+        self._set_track_automation_parameter(int(track_index), str(parameter))
+
+    def _on_timeline_automation_points_changed(self, track_index: int, parameter: str, points: list[dict]) -> None:
+        if not (0 <= int(track_index) < len(self.current_project.tracks)):
+            return
+        normalized_parameter = self._normalize_automation_parameter_key(parameter)
+        sanitized_points: list[dict] = []
+        for point in points:
+            if not isinstance(point, dict):
+                continue
+            try:
+                time_ms = max(0, int(point.get("time_ms", 0)))
+                value = max(0.0, min(1.0, float(point.get("value", 0.5))))
+            except (TypeError, ValueError):
+                continue
+            sanitized_points.append({"time_ms": time_ms, "value": value})
+        sanitized_points.sort(key=lambda item: int(item["time_ms"]))
+
+        track = self.current_project.tracks[int(track_index)]
+        settings = track.playback_settings
+        if not isinstance(settings.automation, dict):
+            settings.automation = {}
+        current_points = self._track_automation_points(int(track_index), normalized_parameter)
+        if current_points == sanitized_points:
+            return
+
+        pre_change_snapshot = self._snapshot_project_edit_state()
+        settings.automation[normalized_parameter] = sanitized_points
+        settings.active_automation_parameter = normalized_parameter
+        self._automation_parameter_by_track[int(track_index)] = normalized_parameter
+        self.timeline.set_track_automation_points(int(track_index), normalized_parameter, sanitized_points)
+        self._push_project_snapshot(
+            f"Track {track_index + 1} automation {normalized_parameter.replace('_', ' ')}",
+            pre_change_snapshot,
+        )
+        self._refresh_active_project_playback_mix(
+            f"track {track_index + 1} automation {normalized_parameter.replace('_', ' ')}"
+        )
+        self.update_status(f"Automation updated on track {track_index + 1} ({normalized_parameter.replace('_', ' ')})")
 
     def refresh_take_track_selector(self):
         selected_track_id = self.take_track_combo.currentData()
@@ -1624,6 +3003,11 @@ class EchoProWindow(QMainWindow):
             QMessageBox.warning(self, "Input error", "Track name cannot be empty.")
             return
 
+        if self.current_project.tracks[track_index].name == new_name:
+            return
+
+        self._mark_project_edit(f"Rename track {track_index + 1}")
+
         self.current_project.tracks[track_index].name = new_name
         self.sync_project_tracks_to_recording_engine()
         self._build_recording_meters()
@@ -1640,6 +3024,8 @@ class EchoProWindow(QMainWindow):
         target_index = track_index + delta
         if target_index < 0 or target_index >= len(self.current_project.tracks):
             return
+
+        self._mark_project_edit(f"Move track {track_index + 1}")
 
         tracks = self.current_project.tracks
         tracks[track_index], tracks[target_index] = tracks[target_index], tracks[track_index]
@@ -1687,6 +3073,8 @@ class EchoProWindow(QMainWindow):
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
+
+        self._mark_project_edit(f"Delete track {track.name}")
 
         self.current_project.tracks.pop(track_index)
         self.current_project.clips = [clip for clip in self.current_project.clips if clip.track_index != track_index]
@@ -1786,8 +3174,9 @@ class EchoProWindow(QMainWindow):
             loop_text = "off"
 
         roll_text = f"{status.pre_roll_bars:.2f}/{status.post_roll_bars:.2f} bars"
+        monitor_text = f"{'on' if status.monitoring_enabled else 'off'} @ {int(status.monitor_gain_percent)}%"
         self.recording_status_label.setText(
-            f"Recording: {state} | Tempo: {status.current_tempo_bpm} BPM | Time Sig: {status.time_signature} | Count-In: {count_in_bars} bar(s) | Roll(pre/post): {roll_text} | Punch: {punch_text} | Loop: {loop_text} | Armed: {armed_text}"
+            f"Recording: {state} | Tempo: {status.current_tempo_bpm} BPM | Time Sig: {status.time_signature} | Count-In: {count_in_bars} bar(s) | Roll(pre/post): {roll_text} | Punch: {punch_text} | Loop: {loop_text} | Monitor: {monitor_text} | Armed: {armed_text}"
         )
 
     def sync_recording_controls_from_controller(self):
@@ -1819,6 +3208,10 @@ class EchoProWindow(QMainWindow):
             loop_end_bars = self.recording_controller.samples_to_bars(self.recording_controller.loop_end_samples)
             self.loop_end_bar_input.setText(f"{loop_end_bars:.2f}")
 
+        mixer_layout = getattr(self, "main_mixer_view", None)
+        if mixer_layout is not None and hasattr(mixer_layout, "_sync_mixer_transport_controls_from_window"):
+            mixer_layout._sync_mixer_transport_controls_from_window()
+
     def refresh_recording_meters(self):
         levels = self.recording_controller.get_meter_levels()
         for track_id, meter in self.recording_meters.items():
@@ -1840,8 +3233,7 @@ class EchoProWindow(QMainWindow):
             self._clear_recovery_snapshot()
             self.refresh_timeline()
             self.refresh_take_review_list()
-            self.transport_bar.record_button.setEnabled(True)
-            self.transport_bar.stop_button.setEnabled(False)
+            self._set_recording_transport_button_state(can_record=True, can_stop=False)
             self._sync_metronome_button_state(False)
             self.update_status(
                 f"Recording boundary reached: transport auto-stopped @ sample {status_after_stop.last_auto_stop_sample}"
@@ -1887,7 +3279,21 @@ class EchoProWindow(QMainWindow):
 
         self.selected_input_device_id = self.input_device_combo.currentData()
         self.selected_output_device_id = self.output_device_combo.currentData()
+        if self.selected_input_device_id is not None:
+            device_manager.select_input_device(int(self.selected_input_device_id))
+        if self.selected_output_device_id is not None:
+            device_manager.select_output_device(int(self.selected_output_device_id))
+
+        if hasattr(self, "sample_rate_combo"):
+            sample_rate_index = self.sample_rate_combo.findData(int(device_manager.selected_sample_rate))
+            if sample_rate_index >= 0:
+                self.sample_rate_combo.setCurrentIndex(sample_rate_index)
         self.update_status("Audio device list refreshed")
+        self._refresh_status_bar_telemetry()
+
+        mixer_layout = getattr(self, "main_mixer_view", None)
+        if mixer_layout is not None and hasattr(mixer_layout, "_sync_mixer_transport_controls_from_window"):
+            mixer_layout._sync_mixer_transport_controls_from_window()
 
     def test_audio_devices(self):
         input_id = self.input_device_combo.currentData()
@@ -1925,6 +3331,14 @@ class EchoProWindow(QMainWindow):
                 f"Result: {message}\n\n{details}",
             )
             self.update_status("Device test failed")
+
+    def _on_sample_rate_changed(self, *_args) -> None:
+        if not hasattr(self, "sample_rate_combo"):
+            return
+        selected_sample_rate = self.sample_rate_combo.currentData()
+        if isinstance(selected_sample_rate, int) and selected_sample_rate > 0:
+            device_manager.set_sample_rate(int(selected_sample_rate))
+            self._refresh_status_bar_telemetry()
 
     def run_p5a_regression_checks(self):
         self.update_status("Running P5A regression checks...")
@@ -2083,6 +3497,9 @@ class EchoProWindow(QMainWindow):
         self.recording_controller.set_punch_enabled(enabled)
         self.update_status("Punch mode enabled" if enabled else "Punch mode disabled")
         self.update_recording_status_label()
+        mixer_layout = getattr(self, "main_mixer_view", None)
+        if mixer_layout is not None and hasattr(mixer_layout, "_sync_mixer_transport_controls_from_window"):
+            mixer_layout._sync_mixer_transport_controls_from_window()
 
     def set_recording_punch_range(self):
         punch_in_text = self.punch_in_bar_input.text().strip()
@@ -2115,6 +3532,9 @@ class EchoProWindow(QMainWindow):
             f"({punch_in_bars:.2f} bars to {'manual stop' if punch_out_bars is None else f'{punch_out_bars:.2f} bars'})"
         )
         self.update_recording_status_label()
+        mixer_layout = getattr(self, "main_mixer_view", None)
+        if mixer_layout is not None and hasattr(mixer_layout, "_sync_mixer_transport_controls_from_window"):
+            mixer_layout._sync_mixer_transport_controls_from_window()
 
     def on_loop_mode_changed(self, *_args):
         enabled = bool(self.loop_mode_combo.currentData())
@@ -2125,6 +3545,9 @@ class EchoProWindow(QMainWindow):
         self.recording_controller.set_loop_enabled(enabled)
         self.update_status("Loop mode enabled" if enabled else "Loop mode disabled")
         self.update_recording_status_label()
+        mixer_layout = getattr(self, "main_mixer_view", None)
+        if mixer_layout is not None and hasattr(mixer_layout, "_sync_mixer_transport_controls_from_window"):
+            mixer_layout._sync_mixer_transport_controls_from_window()
 
     def set_recording_loop_range(self):
         loop_start_text = self.loop_start_bar_input.text().strip()
@@ -2156,6 +3579,9 @@ class EchoProWindow(QMainWindow):
 
         self.update_status(f"Loop range set ({loop_start_bars:.2f} to {loop_end_bars:.2f} bars)")
         self.update_recording_status_label()
+        mixer_layout = getattr(self, "main_mixer_view", None)
+        if mixer_layout is not None and hasattr(mixer_layout, "_sync_mixer_transport_controls_from_window"):
+            mixer_layout._sync_mixer_transport_controls_from_window()
 
     def toggle_metronome(self):
         if self.recording_controller.metronome.is_running:
@@ -2205,8 +3631,7 @@ class EchoProWindow(QMainWindow):
 
         self._capture_recovery_snapshot("recording_started", interrupted=True)
 
-        self.transport_bar.record_button.setEnabled(False)
-        self.transport_bar.stop_button.setEnabled(True)
+        self._set_recording_transport_button_state(can_record=False, can_stop=True)
         self.update_status(f"Recording started (Input {selected_input}, Output {selected_output})")
         self.update_recording_status_label()
 
@@ -2220,8 +3645,7 @@ class EchoProWindow(QMainWindow):
             self._clear_recovery_snapshot()
             self.refresh_timeline()
 
-        self.transport_bar.record_button.setEnabled(True)
-        self.transport_bar.stop_button.setEnabled(False)
+        self._set_recording_transport_button_state(can_record=True, can_stop=False)
         self._sync_metronome_button_state(False)
         self.refresh_take_review_list()
         self.update_status("Recording stopped")
@@ -2230,7 +3654,9 @@ class EchoProWindow(QMainWindow):
     def undo_last_recording_take(self):
         take = self.recording_controller.undo_last_take()
         if take is None:
-            self.update_status("Nothing to undo")
+            if not self.undo_project_edit():
+                self.update_status("Nothing to undo")
+                return
         else:
             self._sync_take_clips_for_track(int(take.track_id))
             self.refresh_timeline()
@@ -2241,7 +3667,9 @@ class EchoProWindow(QMainWindow):
     def redo_last_recording_take(self):
         take = self.recording_controller.redo_last_take()
         if take is None:
-            self.update_status("Nothing to redo")
+            if not self.redo_project_edit():
+                self.update_status("Nothing to redo")
+                return
         else:
             self._sync_take_clips_for_track(int(take.track_id))
             self.refresh_timeline()
@@ -2251,15 +3679,310 @@ class EchoProWindow(QMainWindow):
 
     def update_status(self, text: str):
         self.status.showMessage(text)
+        self._refresh_status_bar_telemetry()
+
+    def _snapshot_project_edit_state(self) -> dict:
+        return {
+            "project": copy.deepcopy(self.current_project),
+            "next_clip_id": int(self.next_clip_id),
+            "selected_track_index": self.selected_track_index,
+            "project_playhead_ms": int(self.project_playhead_ms),
+        }
+
+    def _restore_project_edit_state(self, snapshot: dict) -> None:
+        self.current_project = copy.deepcopy(snapshot.get("project", self.current_project))
+        self.next_clip_id = int(snapshot.get("next_clip_id", self.next_clip_id))
+        self.selected_track_index = snapshot.get("selected_track_index", self.selected_track_index)
+        self.project_playhead_ms = int(snapshot.get("project_playhead_ms", self.project_playhead_ms))
+
+        if self.selected_track_index is not None and not (0 <= int(self.selected_track_index) < len(self.current_project.tracks)):
+            self.selected_track_index = len(self.current_project.tracks) - 1 if self.current_project.tracks else None
+
+        self.sync_project_tracks_to_recording_engine()
+        self._build_recording_meters()
+        self.refresh_track_list()
+        self.refresh_take_track_selector()
+        self.refresh_take_review_list()
+        self.refresh_timeline()
+        self._update_playback_position_label()
+
+    def _clear_project_history(self) -> None:
+        self._project_undo_stack.clear()
+        self._project_redo_stack.clear()
+
+    def _push_project_snapshot(self, description: str, snapshot: dict) -> None:
+        if self._project_history_suspended:
+            return
+        self._project_undo_stack.append({
+            "description": str(description),
+            "snapshot": snapshot,
+        })
+        if len(self._project_undo_stack) > int(self._project_history_limit):
+            self._project_undo_stack = self._project_undo_stack[-int(self._project_history_limit):]
+        self._project_redo_stack.clear()
+
+    def _mark_project_edit(self, description: str) -> None:
+        self._push_project_snapshot(str(description), self._snapshot_project_edit_state())
+
+    def undo_project_edit(self) -> bool:
+        if not self._project_undo_stack:
+            return False
+        entry = self._project_undo_stack.pop()
+        self._project_redo_stack.append({
+            "description": str(entry.get("description", "")),
+            "snapshot": self._snapshot_project_edit_state(),
+        })
+        self._project_history_suspended = True
+        try:
+            self._restore_project_edit_state(entry["snapshot"])
+        finally:
+            self._project_history_suspended = False
+        self.update_status(f"Undo: {entry.get('description', 'Project edit')}")
+        return True
+
+    def redo_project_edit(self) -> bool:
+        if not self._project_redo_stack:
+            return False
+        entry = self._project_redo_stack.pop()
+        self._project_undo_stack.append({
+            "description": str(entry.get("description", "")),
+            "snapshot": self._snapshot_project_edit_state(),
+        })
+        self._project_history_suspended = True
+        try:
+            self._restore_project_edit_state(entry["snapshot"])
+        finally:
+            self._project_history_suspended = False
+        self.update_status(f"Redo: {entry.get('description', 'Project edit')}")
+        return True
+
+    def toggle_mixer_sidebar(self) -> None:
+        mixer_layout = getattr(self, "main_mixer_view", None)
+        callback = getattr(mixer_layout, "toggle_sidebar", None)
+        if callable(callback):
+            callback()
+            self.update_status("Toggled Mixer sidebar")
+            return
+        self.update_status("Mixer sidebar toggle is unavailable")
+
+    def open_app_settings_dialog(self) -> None:
+        if hasattr(self, "tabs"):
+            for index in range(self.tabs.count()):
+                if self.tabs.tabText(index) == "Recording":
+                    self.tabs.setCurrentIndex(index)
+                    break
+        message = (
+            "Global settings currently live in the Recording tab.\n\n"
+            "Use Audio Devices for input/output routing, sample rate selection, and device tests."
+        )
+        QMessageBox.information(self, "Settings", message)
+        self.update_status("Opened settings (Recording tab)")
+
+    def export_project_mix_dialog(self) -> None:
+        if not self.current_project.clips:
+            QMessageBox.information(self, "Export Mix", "Add at least one clip before exporting a mix.")
+            return
+
+        default_name = f"{self.current_project.name or 'Untitled'}_mix.wav"
+        default_path = PROJECTS_DIR / default_name
+        target_path_str, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Project Mix",
+            str(default_path),
+            "WAV Files (*.wav);;FLAC Files (*.flac);;All Files (*)",
+        )
+        if not target_path_str:
+            return
+
+        target_path = Path(target_path_str)
+        try:
+            mix = mix_project_to_segment(self.current_project)
+            if mix.shape[0] == 0:
+                QMessageBox.warning(self, "Export Mix", "The rendered mix is empty.")
+                return
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            sf.write(str(target_path), mix, TARGET_SAMPLE_RATE)
+        except Exception as exc:
+            QMessageBox.critical(self, "Export Mix", f"Failed to export mix:\n{exc}")
+            return
+
+        self.update_status(f"Exported mix to {target_path.name}")
+
+    def set_master_eq_enabled(self, enabled: bool) -> None:
+        metadata = dict(getattr(self.current_project, "metadata", {}) or {})
+        metadata["master_eq_enabled"] = bool(enabled)
+        self.current_project.metadata = metadata
+        self.update_status(f"Master EQ {'enabled' if enabled else 'bypassed'}")
+
+    def set_master_limiter_threshold_db(self, threshold_db: int) -> None:
+        metadata = dict(getattr(self.current_project, "metadata", {}) or {})
+        metadata["master_limiter_threshold_db"] = max(-24, min(0, int(threshold_db)))
+        self.current_project.metadata = metadata
+
+    def open_master_effects_chain(self) -> None:
+        self.open_app_settings_dialog()
+        QMessageBox.information(
+            self,
+            "Master Effects Chain",
+            "Master effects are applied at export/playback render time in this build.\n"
+            "Track-level FX and fades are configured per channel strip via FX/EQ buttons.",
+        )
 
     def _update_playback_position_label(self) -> None:
         self.playback_position_label.setText(f"Playhead {self.project_playhead_ms / 1000.0:.2f}s")
 
-    def _set_project_playhead_ms(self, value_ms: int) -> None:
+    def _set_project_playhead_ms(self, value_ms: int, *, sync_controller: bool = True) -> None:
         project_end_ms = project_duration_ms(self.current_project)
         self.project_playhead_ms = max(0, min(int(value_ms), project_end_ms))
         self.timeline.set_playhead_ms(self.project_playhead_ms)
+        if sync_controller:
+            timeline_controller = getattr(self, "timeline_controller", None)
+            if timeline_controller is not None:
+                timeline_controller.set_playhead(self.project_playhead_ms)
         self._update_playback_position_label()
+
+    def _timeline_zoom_factor(self) -> float:
+        timeline_controller = getattr(self, "timeline_controller", None)
+        if timeline_controller is not None:
+            return float(timeline_controller.get_zoom_factor())
+        if hasattr(self, "timeline") and hasattr(self.timeline, "get_zoom_factor"):
+            return float(self.timeline.get_zoom_factor())
+        return 1.0
+
+    def _update_timeline_zoom_readout(self) -> None:
+        if not hasattr(self, "timeline_zoom_label"):
+            return
+        zoom_percent = int(round(self._timeline_zoom_factor() * 100.0))
+        self.timeline_zoom_label.setText(f"Zoom {zoom_percent}%")
+
+    def _set_timeline_zoom_factor(self, zoom_factor: float, *, anchor_view_x: Optional[int] = None) -> None:
+        if not hasattr(self, "timeline") or not hasattr(self, "timeline_scroll"):
+            return
+
+        current_zoom = self._timeline_zoom_factor()
+        next_zoom = max(0.0625, min(64.0, float(zoom_factor)))
+        if abs(next_zoom - current_zoom) <= 1e-9:
+            self._update_timeline_zoom_readout()
+            return
+
+        scroll_bar = self.timeline_scroll.horizontalScrollBar()
+        viewport_width = int(self.timeline_scroll.viewport().width())
+        view_x = int(anchor_view_x) if anchor_view_x is not None else int(viewport_width / 2)
+        view_x = max(0, min(viewport_width, view_x))
+        absolute_before_px = int(scroll_bar.value()) + view_x
+        normalized_anchor = float(absolute_before_px) / max(1e-9, current_zoom)
+
+        timeline_controller = getattr(self, "timeline_controller", None)
+        if timeline_controller is not None:
+            timeline_controller.set_zoom_factor(next_zoom)
+        else:
+            self.timeline.set_zoom_factor(next_zoom)
+
+        absolute_after_px = int(round(normalized_anchor * next_zoom))
+        new_scroll_value = max(scroll_bar.minimum(), min(scroll_bar.maximum(), absolute_after_px - view_x))
+        scroll_bar.setValue(new_scroll_value)
+        self._update_timeline_zoom_readout()
+
+    def zoom_timeline_in(self) -> None:
+        self._set_timeline_zoom_factor(self._timeline_zoom_factor() * float(self._timeline_zoom_step_ratio))
+        self.update_status(f"Timeline zoom: {int(round(self._timeline_zoom_factor() * 100.0))}%")
+
+    def zoom_timeline_out(self) -> None:
+        self._set_timeline_zoom_factor(self._timeline_zoom_factor() / float(self._timeline_zoom_step_ratio))
+        self.update_status(f"Timeline zoom: {int(round(self._timeline_zoom_factor() * 100.0))}%")
+
+    def reset_timeline_zoom(self) -> None:
+        self._set_timeline_zoom_factor(1.0)
+        self.update_status("Timeline zoom reset to 100%")
+
+    def _on_timeline_zoom_request(self, steps: int, anchor_x: int) -> None:
+        step_count = max(1, abs(int(steps)))
+        if int(steps) >= 0:
+            target_zoom = self._timeline_zoom_factor() * (float(self._timeline_zoom_step_ratio) ** step_count)
+        else:
+            target_zoom = self._timeline_zoom_factor() / (float(self._timeline_zoom_step_ratio) ** step_count)
+        self._set_timeline_zoom_factor(target_zoom, anchor_view_x=int(anchor_x))
+        self.update_status(f"Timeline zoom: {int(round(self._timeline_zoom_factor() * 100.0))}%")
+
+    def _connect_timeline_controller_bridge(self) -> None:
+        timeline_controller = getattr(self, "timeline_controller", None)
+        if timeline_controller is None or self._timeline_controller_bridge_connected:
+            return
+        if not hasattr(self, "timeline_scroll"):
+            return
+
+        timeline_controller.playhead_changed.connect(self._on_timeline_controller_playhead_changed)
+        timeline_controller.zoom_factor_changed.connect(self._on_timeline_controller_zoom_changed)
+        timeline_controller.scroll_position_changed.connect(self._on_timeline_controller_scroll_changed)
+        self.timeline_scroll.horizontalScrollBar().valueChanged.connect(self._on_timeline_scroll_bar_value_changed)
+        self._timeline_controller_bridge_connected = True
+
+        self._on_timeline_controller_scroll_changed(int(timeline_controller.get_scroll_position()))
+        self._on_timeline_controller_playhead_changed(int(timeline_controller.get_playhead()))
+        self._on_timeline_controller_zoom_changed(float(timeline_controller.get_zoom_factor()))
+
+    def _on_timeline_controller_playhead_changed(self, playhead_ms: int) -> None:
+        self._set_project_playhead_ms(int(playhead_ms), sync_controller=False)
+
+    def _on_timeline_controller_zoom_changed(self, zoom_factor: float) -> None:
+        if hasattr(self, "timeline"):
+            self.timeline.set_zoom_factor(float(zoom_factor))
+        self._update_timeline_zoom_readout()
+
+    def _on_timeline_controller_scroll_changed(self, scroll_position_px: int) -> None:
+        if not hasattr(self, "timeline_scroll"):
+            return
+        bar = self.timeline_scroll.horizontalScrollBar()
+        clamped_value = max(bar.minimum(), min(int(scroll_position_px), bar.maximum()))
+        if bar.value() == clamped_value:
+            return
+        self._syncing_timeline_scroll = True
+        try:
+            bar.setValue(clamped_value)
+        finally:
+            self._syncing_timeline_scroll = False
+
+    def _on_timeline_scroll_bar_value_changed(self, value: int) -> None:
+        if self._syncing_timeline_scroll:
+            return
+        timeline_controller = getattr(self, "timeline_controller", None)
+        if timeline_controller is not None:
+            timeline_controller.set_scroll_position(int(value))
+
+    def _default_skip_step_ms(self) -> int:
+        timeline_controller = getattr(self, "timeline_controller", None)
+        bpm = 120.0
+        time_signature = "4/4"
+        if timeline_controller is not None:
+            bpm = float(timeline_controller.get_bpm())
+            time_signature = str(timeline_controller.get_time_signature())
+        numerator_text, _, denominator_text = time_signature.partition("/")
+        try:
+            numerator = max(1, int(numerator_text))
+        except ValueError:
+            numerator = 4
+        try:
+            denominator = max(1, int(denominator_text or "4"))
+        except ValueError:
+            denominator = 4
+        beat_seconds = 60.0 / max(1.0, bpm)
+        bar_seconds = beat_seconds * float(numerator) * (4.0 / float(denominator))
+        return max(250, int(round(bar_seconds * 1000.0)))
+
+    def _on_timeline_time_range_changed(
+        self,
+        track_index: Optional[int],
+        start_ms: Optional[int],
+        end_ms: Optional[int],
+    ) -> None:
+        if not hasattr(self, "comp_start_sec_input") or not hasattr(self, "comp_end_sec_input"):
+            return
+        if track_index is None or start_ms is None or end_ms is None:
+            self.comp_start_sec_input.setText("")
+            self.comp_end_sec_input.setText("")
+            return
+        self.comp_start_sec_input.setText(f"{max(0, int(start_ms)) / 1000.0:.3f}")
+        self.comp_end_sec_input.setText(f"{max(0, int(end_ms)) / 1000.0:.3f}")
 
     def _current_transport_target_range(self) -> Tuple[int, int, str]:
         selected_range = self.timeline.get_selected_time_range_ms()
@@ -2277,17 +4000,64 @@ class EchoProWindow(QMainWindow):
 
     def jump_to_transport_start(self) -> None:
         start_ms, _end_ms, source = self._current_transport_target_range()
+        if source == "project":
+            step_ms = self._default_skip_step_ms()
+            target_ms = max(0, int(self.project_playhead_ms) - int(step_ms))
+            self._set_project_playhead_ms(int(target_ms))
+            self.update_status(f"Skipped back {step_ms / 1000.0:.2f}s to {target_ms / 1000.0:.2f}s")
+            return
         self._set_project_playhead_ms(int(start_ms))
         self.update_status(f"Moved playhead to {source} start at {start_ms / 1000.0:.2f}s")
 
     def jump_to_transport_end(self) -> None:
         _start_ms, end_ms, source = self._current_transport_target_range()
+        if source == "project":
+            step_ms = self._default_skip_step_ms()
+            project_end_ms = int(project_duration_ms(self.current_project))
+            target_ms = min(project_end_ms, int(self.project_playhead_ms) + int(step_ms))
+            self._set_project_playhead_ms(int(target_ms))
+            self.update_status(f"Skipped forward {step_ms / 1000.0:.2f}s to {target_ms / 1000.0:.2f}s")
+            return
         self._set_project_playhead_ms(int(end_ms))
         self.update_status(f"Moved playhead to {source} end at {end_ms / 1000.0:.2f}s")
 
     def _update_project_playback_controls(self, is_playing: bool) -> None:
         self.play_project_btn.setEnabled(not is_playing)
         self.stop_project_btn.setEnabled(is_playing)
+
+    def _is_project_playback_running(self) -> bool:
+        return bool(self._project_playback_started_at is not None and is_playback_active())
+
+    def _refresh_active_project_playback_mix(self, reason: str) -> bool:
+        if not self._is_project_playback_running():
+            return False
+
+        elapsed_ms = int(max(0.0, (time.monotonic() - float(self._project_playback_started_at or 0.0)) * 1000.0))
+        current_ms = min(int(self._project_playback_end_ms), int(self._project_playback_start_ms) + elapsed_ms)
+        self._set_project_playhead_ms(current_ms)
+
+        try:
+            played_duration_ms = play_project(self.current_project, start_ms=int(current_ms), blocking=False)
+        except Exception as exc:
+            QMessageBox.critical(self, "Playback error", f"Could not refresh playback mix:\n{exc}")
+            self.update_status("Playback remix failed")
+            return False
+
+        if played_duration_ms <= 0:
+            self._finish_project_playback(stopped_manually=True)
+            return False
+
+        self._project_playback_segment = self._render_project_playback_segment(start_ms=int(current_ms), end_ms=None)
+        self._project_playback_lufs_integrated_db = -70.0
+        self._project_playback_start_ms = int(current_ms)
+        self._project_playback_end_ms = int(current_ms) + int(played_duration_ms)
+        self._project_playback_manual_stop = False
+        self._project_playback_started_at = time.monotonic()
+        self._update_project_playback_controls(True)
+        self.project_playback_timer.start()
+        self._update_master_playback_visuals()
+        self.update_status(f"Applied {reason}; playback remixed from {current_ms / 1000.0:.2f}s")
+        return True
 
     def _finish_project_playback(self, *, stopped_manually: bool) -> None:
         self.project_playback_timer.stop()
@@ -2302,6 +4072,10 @@ class EchoProWindow(QMainWindow):
             self.update_status(f"Playback stopped at {self.project_playhead_ms / 1000.0:.2f}s")
         self._project_playback_started_at = None
         self._project_playback_manual_stop = False
+        self._project_playback_segment = None
+        mixer_layout = getattr(self, "main_mixer_view", None)
+        if mixer_layout is not None and hasattr(mixer_layout, "reset_master_playback_metrics"):
+            mixer_layout.reset_master_playback_metrics()
         self._update_project_playback_controls(False)
 
     def _poll_project_playback(self) -> None:
@@ -2313,9 +4087,84 @@ class EchoProWindow(QMainWindow):
         elapsed_ms = int(max(0.0, (time.monotonic() - self._project_playback_started_at) * 1000.0))
         current_ms = min(self._project_playback_end_ms, self._project_playback_start_ms + elapsed_ms)
         self._set_project_playhead_ms(current_ms)
+        self._update_master_playback_visuals()
 
         if not is_playback_active():
             self._finish_project_playback(stopped_manually=self._project_playback_manual_stop)
+
+    def _render_project_playback_segment(self, *, start_ms: int, end_ms: Optional[int]) -> np.ndarray:
+        mix = mix_project_to_segment(self.current_project)
+        if mix.shape[0] == 0:
+            return np.zeros((0, 2), dtype=np.float32)
+        start_frame = min(max(0, int(round((float(start_ms) / 1000.0) * TARGET_SAMPLE_RATE))), mix.shape[0])
+        end_frame = mix.shape[0]
+        if end_ms is not None:
+            end_frame = min(
+                max(start_frame, int(round((float(max(0, int(end_ms))) / 1000.0) * TARGET_SAMPLE_RATE))),
+                mix.shape[0],
+            )
+        return mix[start_frame:end_frame, :]
+
+    def _waveform_preview_from_window(self, window: np.ndarray, columns: int = 12) -> str:
+        if window.shape[0] <= 0:
+            return "▁" * int(columns)
+        mono = np.mean(np.abs(window), axis=1)
+        if mono.size <= 0:
+            return "▁" * int(columns)
+        sample_positions = np.linspace(0, mono.size - 1, int(max(2, columns)), dtype=np.int32)
+        sampled = mono[sample_positions]
+        glyphs = "▁▂▃▄▅▆▇█"
+        out = []
+        for value in sampled:
+            normalized = max(0.0, min(1.0, float(value)))
+            idx = min(len(glyphs) - 1, int(round(normalized * (len(glyphs) - 1))))
+            out.append(glyphs[idx])
+        return "".join(out)
+
+    def _update_master_playback_visuals(self) -> None:
+        if not self._is_project_playback_running() or self._project_playback_segment is None:
+            return
+        segment = self._project_playback_segment
+        if segment.shape[0] <= 0:
+            return
+
+        elapsed_ms = int(max(0.0, (time.monotonic() - float(self._project_playback_started_at or 0.0)) * 1000.0))
+        elapsed_frames = int(round((float(elapsed_ms) / 1000.0) * TARGET_SAMPLE_RATE))
+        frame_index = max(1, min(segment.shape[0], elapsed_frames))
+        window_frames = max(256, int(round(0.05 * TARGET_SAMPLE_RATE)))
+        start = max(0, frame_index - window_frames)
+        meter_window = segment[start:frame_index, :]
+        if meter_window.shape[0] <= 0:
+            return
+
+        rms_left = float(np.sqrt(np.mean(np.square(meter_window[:, 0], dtype=np.float64))) + 1e-12)
+        rms_right = float(np.sqrt(np.mean(np.square(meter_window[:, 1], dtype=np.float64))) + 1e-12)
+        left_db = max(-60.0, min(6.0, 20.0 * float(np.log10(rms_left))))
+        right_db = max(-60.0, min(6.0, 20.0 * float(np.log10(rms_right))))
+
+        peak_left = float(np.max(np.abs(meter_window[:, 0]))) if meter_window.shape[0] > 0 else 0.0
+        peak_right = float(np.max(np.abs(meter_window[:, 1]))) if meter_window.shape[0] > 0 else 0.0
+        peak_left_db = max(-80.0, min(6.0, 20.0 * float(np.log10(peak_left + 1e-12))))
+        peak_right_db = max(-80.0, min(6.0, 20.0 * float(np.log10(peak_right + 1e-12))))
+
+        loudness_proxy = max(left_db, right_db)
+        alpha = 0.985
+        self._project_playback_lufs_integrated_db = (
+            alpha * float(self._project_playback_lufs_integrated_db)
+        ) + ((1.0 - alpha) * float(loudness_proxy))
+        display_lufs = max(-70.0, min(3.0, float(self._project_playback_lufs_integrated_db) - 0.8))
+        waveform_preview = self._waveform_preview_from_window(meter_window, columns=12)
+
+        mixer_layout = getattr(self, "main_mixer_view", None)
+        if mixer_layout is not None and hasattr(mixer_layout, "update_master_playback_metrics"):
+            mixer_layout.update_master_playback_metrics(
+                left_db=float(left_db),
+                right_db=float(right_db),
+                peak_left_db=float(peak_left_db),
+                peak_right_db=float(peak_right_db),
+                lufs_integrated_db=float(display_lufs),
+                waveform_preview=waveform_preview,
+            )
 
     def stop_current_project_playback(self) -> None:
         if self._project_playback_started_at is None and not is_playback_active():
@@ -2329,6 +4178,7 @@ class EchoProWindow(QMainWindow):
         self.timeline.set_project(self.current_project)
         self.timeline.set_selected_track(self.selected_track_index)
         self._set_project_playhead_ms(self.project_playhead_ms)
+        self.timeline.clear_automation_points()
         self.timeline.clear_comp_regions()
         for track_id in range(len(self.current_project.tracks)):
             comp_regions = self.recording_controller.session.get_comp_regions_for_track(int(track_id))
@@ -2344,8 +4194,35 @@ class EchoProWindow(QMainWindow):
                 if bool(region.enabled)
             ]
             self.timeline.set_comp_regions_for_track(int(track_id), serialized)
+            parameter = self._track_automation_parameter(int(track_id))
+            self.timeline.set_active_automation_parameter(int(track_id), parameter)
+            self.timeline.set_track_automation_points(
+                int(track_id),
+                parameter,
+                self._track_automation_points(int(track_id), parameter),
+            )
         self.timeline.updateGeometry()
         self.timeline.update()
+        mixer_layout = getattr(self, "main_mixer_view", None)
+        if mixer_layout is not None:
+            if hasattr(mixer_layout, "set_timeline_content_width"):
+                mixer_layout.set_timeline_content_width(int(self.timeline.width()))
+            if hasattr(mixer_layout, "_sync_master_processing_from_window"):
+                mixer_layout._sync_master_processing_from_window()
+        timeline_controller = getattr(self, "timeline_controller", None)
+        if timeline_controller is not None:
+            self._on_timeline_controller_scroll_changed(int(timeline_controller.get_scroll_position()))
+        fade_state = self._clip_fade_edit_state
+        if fade_state is not None:
+            clip_id = int(fade_state.get("clip_id", -1))
+            if self._find_clip_by_id(clip_id) is None:
+                self._clip_fade_edit_state = None
+        if self._clip_fade_popover is not None and self._clip_fade_popover.isVisible():
+            popover_clip_id = self._clip_fade_popover.clip_id()
+            if popover_clip_id is None or self._find_clip_by_id(int(popover_clip_id)) is None:
+                self._clip_fade_popover.hide()
+            else:
+                self._sync_fade_popover_from_clip(int(popover_clip_id))
 
     def _parse_int_field(self, text: str, *, field_name: str, allow_empty: bool = False, default_value: Optional[int] = None) -> Optional[int]:
         value = text.strip()
@@ -2400,21 +4277,108 @@ class EchoProWindow(QMainWindow):
         else:
             self.current_project.metadata.pop("song_generation_state", None)
 
-    def new_project(self):
+    def _default_new_project_folder(self) -> Path:
+        if self._project_save_directory is not None:
+            return Path(self._project_save_directory)
+        try:
+            PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        return Path(PROJECTS_DIR)
+
+    def _build_new_project_template_tracks(self, template_id: str) -> list[Track]:
+        def _mk(track_name: str, track_type: str, color_hex: str) -> Track:
+            default_input, _can_arm = self._track_runtime_policy(track_type)
+            return Track(name=track_name, track_type=track_type, color_hex=color_hex, input_source=default_input)
+
+        normalized = str(template_id or "empty").strip().lower()
+        if normalized == "basic_4_track":
+            return [
+                _mk("Audio 1", "Audio", "#00F0FF"),
+                _mk("Audio 2", "Audio", "#44D0FF"),
+                _mk("Audio 3", "Audio", "#4DD78B"),
+                _mk("Audio 4", "Audio", "#D8AA49"),
+            ]
+        if normalized == "podcast":
+            return [
+                _mk("Host Mic", "Audio", "#00F0FF"),
+                _mk("Guest Mic", "Audio", "#44D0FF"),
+                _mk("Music Bed", "Bus", "#D8AA49"),
+                _mk("SFX", "Audio", "#FF8A65"),
+            ]
+        if normalized == "beat_maker":
+            return [
+                _mk("Drums", "Audio", "#FF6F61"),
+                _mk("Bass", "Audio", "#F6BD60"),
+                _mk("Melody", "MIDI", "#A280FF"),
+                _mk("Vox", "Audio", "#8BD3DD"),
+            ]
+        if normalized == "ai_stems_session":
+            return [
+                _mk("Reference Mix", "Audio", "#00F0FF"),
+                _mk("Vocals Stem", "AI Stem", "#44D07A"),
+                _mk("Drums Stem", "AI Stem", "#F6BD60"),
+                _mk("Bass Stem", "AI Stem", "#4DD7FF"),
+                _mk("Other Stem", "AI Stem", "#C78BFF"),
+            ]
+        return []
+
+    def _apply_new_project_audio_defaults(self, *, bpm: int, sample_rate: int) -> None:
+        self.recording_controller.set_tempo(int(bpm))
+        self.recording_controller.set_time_signature(4, 4)
+        if hasattr(self, "sample_rate_combo"):
+            target_idx = self.sample_rate_combo.findData(int(sample_rate))
+            if target_idx >= 0:
+                self.sample_rate_combo.setCurrentIndex(int(target_idx))
+            else:
+                device_manager.set_sample_rate(int(sample_rate))
+        else:
+            device_manager.set_sample_rate(int(sample_rate))
+
+        timeline_controller = getattr(self, "timeline_controller", None)
+        if timeline_controller is not None:
+            timeline_controller.set_bpm(float(bpm))
+            timeline_controller.set_time_signature("4/4")
+            timeline_controller.set_sample_rate(int(sample_rate))
+
+    def _create_project_from_dialog_config(self, config: dict) -> None:
+        project_name = str(config.get("project_name", "Untitled") or "Untitled").strip() or "Untitled"
+        template_id = str(config.get("template_id", "empty") or "empty").strip().lower()
+        selected_folder = Path(str(config.get("project_folder", self._default_new_project_folder())))
+        sample_rate = int(config.get("sample_rate", 44100) or 44100)
+        bpm = int(config.get("bpm", 120) or 120)
+
         if self._project_playback_started_at is not None or is_playback_active():
             self.stop_current_project_playback()
-        self.current_project = new_empty_project("Untitled")
-        self.project_name_label.setText("Project: Untitled")
+
+        self.current_project = new_empty_project(project_name)
+        self.current_project.tracks = self._build_new_project_template_tracks(template_id)
+        self.current_project.metadata["project_template"] = template_id
+        self.current_project.metadata["project_sample_rate"] = int(sample_rate)
+        self.current_project.metadata["project_tempo_bpm"] = int(bpm)
+        self.current_project.metadata["project_folder"] = str(selected_folder)
+        self.project_name_label.setText(f"Project: {project_name}")
+
         self.next_clip_id = 1
         self.last_song_generation = None
         self.project_playhead_ms = 0
         self._persist_song_generation_metadata()
         self.recording_controller = RecordingController("new_session", self.current_project.name)
         self.recording_controller.restore_session_preferences()
+        self._apply_new_project_audio_defaults(bpm=int(bpm), sample_rate=int(sample_rate))
+        self._clear_project_history()
         self.selected_track_index = None
+        self._project_save_directory = selected_folder
+
+        for track_idx in range(len(self.current_project.tracks)):
+            self.recording_controller.session.ensure_track(int(track_idx))
+
         self.sync_project_tracks_to_recording_engine()
         self.sync_recording_controls_from_controller()
         self._build_recording_meters()
+        rebuild_mixer_rows = getattr(self, "_rebuild_mixer_rows", None)
+        if callable(rebuild_mixer_rows):
+            rebuild_mixer_rows()
         self._apply_take_review_preferences()
         self.refresh_track_list()
         self.refresh_take_track_selector()
@@ -2424,7 +4388,34 @@ class EchoProWindow(QMainWindow):
         self._prompt_recovery_for_current_session()
         self.refresh_recovery_history()
         self.refresh_timeline()
-        self.update_status("New project created")
+        self._saved_project_fingerprint = None
+        self._refresh_status_bar_telemetry()
+        template_label = template_id.replace("_", " ").title()
+        self.update_status(f"New project created: {project_name} ({template_label}, {sample_rate} Hz, {bpm} BPM)")
+
+    def new_project(self):
+        default_sample_rate = int(device_manager.selected_sample_rate)
+        if hasattr(self, "sample_rate_combo"):
+            selected_sample_rate = self.sample_rate_combo.currentData()
+            if isinstance(selected_sample_rate, int) and selected_sample_rate > 0:
+                default_sample_rate = int(selected_sample_rate)
+
+        default_bpm = int(self.recording_controller.status.current_tempo_bpm)
+        timeline_controller = getattr(self, "timeline_controller", None)
+        if timeline_controller is not None:
+            default_bpm = int(round(float(timeline_controller.get_bpm())))
+
+        dialog = NewProjectDialog(
+            initial_name="Untitled",
+            initial_folder=self._default_new_project_folder(),
+            initial_sample_rate=int(default_sample_rate),
+            initial_bpm=int(default_bpm),
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted or not isinstance(dialog.result_config, dict):
+            self.update_status("New project creation cancelled")
+            return
+        self._create_project_from_dialog_config(dialog.result_config)
 
     def open_project(self):
         filename, _ = QFileDialog.getOpenFileName(
@@ -2440,6 +4431,7 @@ class EchoProWindow(QMainWindow):
                 self.stop_current_project_playback()
             proj = load_project(Path(filename))
             self.current_project = proj
+            self._project_save_directory = Path(filename).resolve().parent
             self.project_name_label.setText(f"Project: {proj.name}")
             self._restore_song_generation_metadata()
             self.project_playhead_ms = 0
@@ -2450,6 +4442,7 @@ class EchoProWindow(QMainWindow):
             self.next_clip_id = max_id + 1
             self.recording_controller = RecordingController(f"session_{proj.name.replace(' ', '_')}", proj.name)
             self.recording_controller.restore_session_preferences()
+            self._clear_project_history()
             self.selected_track_index = None
             self.sync_project_tracks_to_recording_engine()
             self.sync_recording_controls_from_controller()
@@ -2463,15 +4456,18 @@ class EchoProWindow(QMainWindow):
             self._prompt_recovery_for_current_session()
             self.refresh_recovery_history()
             self.refresh_timeline()
+            self._mark_project_saved_state()
             self.update_status(f"Opened project: {filename}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to open project:\n{e}")
 
     def save_project_dialog(self):
+        default_dir = self._project_save_directory if self._project_save_directory is not None else PROJECTS_DIR
+        initial_path = str(Path(default_dir) / f"{self.current_project.name or 'Untitled'}.eproj")
         filename, _ = QFileDialog.getSaveFileName(
             self,
             "Save Echo Pro Project",
-            "",
+            initial_path,
             "Echo Projects (*.eproj)"
         )
         if not filename:
@@ -2481,8 +4477,11 @@ class EchoProWindow(QMainWindow):
         try:
             path = Path(filename)
             self.current_project.name = path.stem
+            self.current_project.metadata["project_folder"] = str(path.parent)
+            self._project_save_directory = path.resolve().parent
             save_project(self.current_project, path)
             self.project_name_label.setText(f"Project: {self.current_project.name}")
+            self._mark_project_saved_state()
             self.update_status(f"Saved project: {filename}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save project:\n{e}")
@@ -2496,6 +4495,7 @@ class EchoProWindow(QMainWindow):
                     self.stop_current_project_playback()
                 proj = load_project(Path(filename))
                 self.current_project = proj
+                self._project_save_directory = Path(filename).resolve().parent
                 self.project_name_label.setText(f"Project: {proj.name}")
                 self._restore_song_generation_metadata()
                 self.project_playhead_ms = 0
@@ -2506,6 +4506,7 @@ class EchoProWindow(QMainWindow):
                 self.next_clip_id = max_id + 1
                 self.recording_controller = RecordingController(f"session_{proj.name.replace(' ', '_')}", proj.name)
                 self.recording_controller.restore_session_preferences()
+                self._clear_project_history()
                 self.selected_track_index = None
                 self.sync_project_tracks_to_recording_engine()
                 self.sync_recording_controls_from_controller()
@@ -2517,24 +4518,139 @@ class EchoProWindow(QMainWindow):
                 self.refresh_alter_section_selector()
                 self.update_recording_status_label()
                 self._prompt_recovery_for_current_session()
+                self.refresh_recovery_history()
                 self.refresh_timeline()
+                self._mark_project_saved_state()
                 self.update_status(f"Opened project from library: {filename}")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to open project:\n{e}")
 
     def add_track(self):
         name = self.track_name_input.text().strip()
-        if not name:
-            name = f"Track {len(self.current_project.tracks)}"
-        self.current_project.tracks.append(Track(name=name))
+        self._add_track_with_type("Audio", name=name if name else None, clear_name_input=True)
+
+    def _prompt_track_type(self) -> Optional[str]:
+        options = ["Audio", "AI Stem", "MIDI", "Bus"]
+        selected, accepted = QInputDialog.getItem(
+            self,
+            "Add Track",
+            "Track type",
+            options,
+            current=0,
+            editable=False,
+        )
+        if not accepted:
+            return None
+        track_type = str(selected).strip()
+        return self._normalize_track_type_label(track_type)
+
+    def _normalize_track_type_label(self, track_type: str) -> str:
+        normalized = str(track_type).strip().lower()
+        if normalized == "ai stem":
+            return "AI Stem"
+        if normalized == "midi":
+            return "MIDI"
+        if normalized == "bus":
+            return "Bus"
+        return "Audio"
+
+    def _track_runtime_policy(self, track_type: str) -> tuple[str, bool]:
+        normalized = self._normalize_track_type_label(track_type)
+        if normalized == "AI Stem":
+            return "Stem", False
+        if normalized == "MIDI":
+            return "MIDI", False
+        if normalized == "Bus":
+            return "Bus", False
+        return "Auto", True
+
+    def _enforce_track_runtime_policy(self, track_index: int, track: Track) -> None:
+        track_type = self._normalize_track_type_label(getattr(track, "track_type", "Audio"))
+        track.track_type = track_type
+        expected_input_source, can_arm = self._track_runtime_policy(track_type)
+        if track.input_source != expected_input_source:
+            track.input_source = expected_input_source
+        if not can_arm and track_index in self.recording_controller.armed_tracks:
+            self.recording_controller.disarm_track(track_index)
+
+    def _track_defaults_for_type(self, track_type: str) -> tuple[str, str]:
+        normalized = self._normalize_track_type_label(track_type)
+        if normalized == "AI Stem":
+            return "#44D07A", "Stem"
+        if normalized == "MIDI":
+            return "#A280FF", "MIDI"
+        if normalized == "Bus":
+            return "#D8AA49", "Bus"
+        return "#00F0FF", "Auto"
+
+    def _add_track_with_type(self, track_type: str, *, name: Optional[str] = None, clear_name_input: bool = False, capture_history: bool = True) -> None:
+        type_label = self._normalize_track_type_label(track_type)
+        color_hex, input_source = self._track_defaults_for_type(type_label)
+        track_index = len(self.current_project.tracks)
+        default_name = f"{type_label} {track_index + 1}"
+        track_name = str(name).strip() if name is not None else ""
+        if not track_name:
+            track_name = default_name
+
+        if capture_history:
+            self._mark_project_edit(f"Add {type_label} track")
+
+        self.current_project.tracks.append(
+            Track(name=track_name, track_type=type_label, color_hex=color_hex, input_source=input_source)
+        )
         self.recording_controller.session.ensure_track(len(self.current_project.tracks) - 1)
         self.selected_track_index = len(self.current_project.tracks) - 1
-        self.track_name_input.clear()
+        if clear_name_input and hasattr(self, "track_name_input"):
+            self.track_name_input.clear()
         self.sync_project_tracks_to_recording_engine()
         self._build_recording_meters()
         self.refresh_track_list()
         self.refresh_timeline()
-        self.update_status(f"Added track: {name}")
+        self.update_status(f"Added {type_label} track: {track_name}")
+
+    def _on_add_track_from_mixer(self) -> None:
+        track_type = self._prompt_track_type()
+        if track_type is None:
+            return
+        self._add_track_with_type(track_type)
+
+    def _build_add_track_strip_widget(self) -> QWidget:
+        strip = QFrame()
+        strip.setObjectName("AddTrackStrip")
+        strip.setFixedWidth(220)
+        strip.setMinimumHeight(520)
+        strip.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        strip.setStyleSheet(
+            "QFrame#AddTrackStrip { background:#111923; border:1px dashed #2D3A4A; border-radius:6px; }"
+            "QLabel#AddTrackStripHint { color:#6f8398; font-size:9px; }"
+            "QPushButton#AddTrackStripButton { background:#1C2B3B; border:1px solid #3D5D7A; color:#D9E8F6; font-weight:bold; border-radius:4px; }"
+            "QPushButton#AddTrackStripButton:hover { border-color:#74C7FF; color:#FFFFFF; }"
+            "QPushButton#AddTrackStripButton:pressed { background:#22384D; }"
+        )
+        layout = QVBoxLayout(strip)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(6)
+
+        title = QLabel("TRACKS")
+        title.setStyleSheet("color:#7f94a9; font-size:10px; font-weight:bold; letter-spacing:1px;")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        hint = QLabel("Add a new channel strip")
+        hint.setObjectName("AddTrackStripHint")
+        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(hint)
+
+        layout.addStretch()
+
+        add_button = QPushButton("+ Add Track")
+        add_button.setObjectName("AddTrackStripButton")
+        add_button.setToolTip("Add a new track and choose its type (Audio / AI Stem / MIDI / Bus)")
+        add_button.clicked.connect(self._on_add_track_from_mixer)
+        add_button.setMinimumHeight(38)
+        layout.addWidget(add_button)
+
+        return strip
 
     def add_clip_from_file(self):
         track_index = self._parse_track_index(self.clip_track_index_input.text(), field_name="Track index")
@@ -2569,6 +4685,7 @@ class EchoProWindow(QMainWindow):
         try:
             length_ms = get_audio_length_ms(str(file_path))
             start_ms = int(start_sec * 1000)
+            self._mark_project_edit(f"Add clip to track {track_index + 1}")
             clip = Clip(
                 id=self.next_clip_id,
                 track_index=track_index,
@@ -2596,6 +4713,7 @@ class EchoProWindow(QMainWindow):
         self.sync_project_tracks_to_recording_engine()
         self.refresh_track_list()
         self.refresh_timeline()
+        self._refresh_active_project_playback_mix(f"track {track_index + 1} volume")
         self.update_status(f"Track {track_index} volume set to {db} dB")
 
     def play_current_project(self):
@@ -2610,12 +4728,15 @@ class EchoProWindow(QMainWindow):
             if played_duration_ms <= 0:
                 self.update_status("Nothing to play from the current playhead position")
                 return
+            self._project_playback_segment = self._render_project_playback_segment(start_ms=int(start_ms), end_ms=None)
+            self._project_playback_lufs_integrated_db = -70.0
             self._project_playback_start_ms = start_ms
             self._project_playback_end_ms = start_ms + int(played_duration_ms)
             self._project_playback_manual_stop = False
             self._project_playback_started_at = time.monotonic()
             self._update_project_playback_controls(True)
             self.project_playback_timer.start()
+            self._update_master_playback_visuals()
         except Exception as e:
             QMessageBox.critical(self, "Playback error", f"Could not play project:\n{e}")
             self.update_status("Playback error")
@@ -2810,7 +4931,20 @@ class EchoProWindow(QMainWindow):
             self._refresh_stem_section_state()
 
     def split_song_into_stems(self):
-        self.run_selected_stem_split()
+        if hasattr(self, "tabs") and hasattr(self, "stem_tab"):
+            index = self.tabs.indexOf(self.stem_tab)
+            if index >= 0:
+                self.tabs.setCurrentIndex(index)
+
+        if self.stem_source_path is None:
+            self.choose_stem_source_audio()
+        else:
+            self._set_stem_status(
+                "Stem source ready.",
+                detail="Source selected. Click Run Stem Separation in the Stem Separation tab.",
+            )
+
+        self._refresh_stem_section_state()
 
     def open_voice_manager(self):
         dlg = VoiceManagerDialog(self)
@@ -3198,6 +5332,7 @@ class TabbedEchoProWindow(EchoProWindow):
 
         self.status = QStatusBar()
         self.setStatusBar(self.status)
+        self._setup_status_bar_widgets()
 
         self._initialize_shared_window_timers(start_recording_timer=False)
 
@@ -3221,6 +5356,8 @@ class TabbedEchoProWindow(EchoProWindow):
         self._prompt_recovery_for_current_session()
         self.refresh_recovery_history()
         self.refresh_timeline()
+        self._update_timeline_zoom_readout()
+        self._refresh_status_bar_telemetry()
         self.update_status("Ready")
 
     def _build_ui(self) -> None:
@@ -3260,10 +5397,19 @@ class TabbedEchoProWindow(EchoProWindow):
         self.tabs = QTabWidget()
         # Add Mixer tab as the first/primary tab (item 1.4 - main DAW layout)
         # Wired with TimelineSyncController (Group 2.1) as single source of truth
-        self.mixer_layout = MainMixerLayout(timeline_controller=self.timeline_controller)
-        self.tabs.addTab(self.mixer_layout, "Mixer")
+        self.main_mixer_view = MainMixerLayout(timeline_controller=self.timeline_controller)
+        self.mixer_transport_bar = TransportBar()
+        self.mixer_transport_bar.record_button.clicked.connect(self.start_recording_session)
+        self.mixer_transport_bar.stop_button.clicked.connect(self.stop_recording_session)
+        self.mixer_transport_bar.undo_button.clicked.connect(self.undo_last_recording_take)
+        self.mixer_transport_bar.redo_button.clicked.connect(self.redo_last_recording_take)
+        self.mixer_transport_bar.click_button.clicked.connect(self.toggle_metronome)
+        self.mixer_transport_bar.stop_button.setEnabled(False)
+        self.main_mixer_view.set_transport_bar(self.mixer_transport_bar)
+        self.tabs.addTab(self.main_mixer_view, "Mixer")
         self.tabs.addTab(self._wrap_scroll(self._build_overview_tab()), "Home")
         self.tabs.addTab(self._wrap_scroll(self._build_recording_tab()), "Recording")
+        self.tabs.addTab(self._build_demucs_tab(), "Stem Separation")
         self.tabs.addTab(self._wrap_scroll(self._build_voice_tab()), "Voice FX")
         self.tabs.addTab(self._wrap_scroll(self._build_music_tab()), "Music")
         self.tabs.addTab(self._wrap_scroll(self._build_tools_tab()), "Tools")
@@ -3283,6 +5429,113 @@ class TabbedEchoProWindow(EchoProWindow):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         scroll.setWidget(content)
         return scroll
+
+    def _ensure_single_track_editor_tab(self) -> QWidget:
+        if self._single_track_editor_tab is not None:
+            return self._single_track_editor_tab
+
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+
+        self.single_track_editor_title = QLabel("Single Track Editor")
+        self.single_track_editor_title.setStyleSheet("font-size:14px; font-weight:bold; color:#E2E2E5;")
+        layout.addWidget(self.single_track_editor_title)
+
+        self.single_track_editor_summary = QLabel("Double-click a waveform clip to focus a track.")
+        self.single_track_editor_summary.setWordWrap(True)
+        self.single_track_editor_summary.setStyleSheet("color:#aab4be;")
+        layout.addWidget(self.single_track_editor_summary)
+
+        self.single_track_editor_clip_list = QListWidget()
+        self.single_track_editor_clip_list.setToolTip("Clips on the focused track")
+        layout.addWidget(self.single_track_editor_clip_list, stretch=1)
+
+        action_row = QHBoxLayout()
+        jump_btn = QPushButton("Jump To First Clip")
+        jump_btn.clicked.connect(self._single_track_editor_jump_to_first_clip)
+        action_row.addWidget(jump_btn)
+
+        playback_btn = QPushButton("Playback Settings…")
+        playback_btn.clicked.connect(self._single_track_editor_open_playback_settings)
+        action_row.addWidget(playback_btn)
+
+        close_btn = QPushButton("Close Editor")
+        close_btn.clicked.connect(self._close_single_track_editor)
+        action_row.addWidget(close_btn)
+        action_row.addStretch()
+        layout.addLayout(action_row)
+
+        self._single_track_editor_tab = tab
+        return tab
+
+    def _refresh_single_track_editor(self) -> None:
+        if self._single_track_editor_tab is None:
+            return
+        track_index = self._single_track_editor_track_index
+        if track_index is None or not (0 <= int(track_index) < len(self.current_project.tracks)):
+            self.single_track_editor_title.setText("Single Track Editor")
+            self.single_track_editor_summary.setText("Double-click a waveform clip to focus a track.")
+            self.single_track_editor_clip_list.clear()
+            return
+
+        track = self.current_project.tracks[int(track_index)]
+        clips = [clip for clip in self.current_project.clips if int(clip.track_index) == int(track_index)]
+        clips.sort(key=lambda clip: int(clip.start_ms))
+        self.single_track_editor_title.setText(f"Single Track Editor - Track {int(track_index) + 1}: {track.name}")
+        self.single_track_editor_summary.setText(
+            f"Track type: {getattr(track, 'track_type', 'Audio')} | Clips: {len(clips)} | "
+            "This surface is track-focused and does not modify other tracks."
+        )
+        self.single_track_editor_clip_list.clear()
+        for clip in clips:
+            fade_in_ms = int((getattr(clip, "metadata", {}) or {}).get("fade_in_ms", 0) or 0)
+            fade_out_ms = int((getattr(clip, "metadata", {}) or {}).get("fade_out_ms", 0) or 0)
+            clip_name = str((getattr(clip, "metadata", {}) or {}).get("display_name", "")).strip() or Path(clip.file_path).name
+            self.single_track_editor_clip_list.addItem(
+                f"Clip {int(clip.id)} | {clip_name} | Start {int(clip.start_ms)}ms | Len {int(clip.length_ms)}ms | FadeIn {fade_in_ms}ms | FadeOut {fade_out_ms}ms"
+            )
+
+    def open_single_track_editor(self, track_index: int) -> None:
+        if not (0 <= int(track_index) < len(self.current_project.tracks)):
+            return
+        tab = self._ensure_single_track_editor_tab()
+        tab_index = self.tabs.indexOf(tab)
+        if tab_index < 0:
+            tab_index = self.tabs.addTab(tab, "Track Editor")
+        self._single_track_editor_track_index = int(track_index)
+        self._refresh_single_track_editor()
+        self.tabs.setCurrentIndex(tab_index)
+        self.update_status(f"Opened Track Editor for track {int(track_index) + 1}")
+
+    def _close_single_track_editor(self) -> None:
+        if self._single_track_editor_tab is None:
+            return
+        tab_index = self.tabs.indexOf(self._single_track_editor_tab)
+        if tab_index >= 0:
+            self.tabs.removeTab(tab_index)
+        self._single_track_editor_track_index = None
+
+    def _single_track_editor_open_playback_settings(self) -> None:
+        track_index = self._single_track_editor_track_index
+        if track_index is None:
+            return
+        self._open_track_playback_settings(int(track_index))
+        self._refresh_single_track_editor()
+
+    def _single_track_editor_jump_to_first_clip(self) -> None:
+        track_index = self._single_track_editor_track_index
+        if track_index is None:
+            return
+        clips = [clip for clip in self.current_project.clips if int(clip.track_index) == int(track_index)]
+        if not clips:
+            QMessageBox.information(self, "Track Editor", "This track has no clips yet.")
+            return
+        first_clip = min(clips, key=lambda clip: int(clip.start_ms))
+        self._set_project_playhead_ms(int(first_clip.start_ms))
+        self._switch_to_tab("Home")
+        self.update_status(f"Playhead moved to first clip on track {int(track_index) + 1}")
 
     def _build_overview_tab(self) -> QWidget:
         tab = QWidget()
@@ -3473,18 +5726,60 @@ class TabbedEchoProWindow(EchoProWindow):
         wave_layout = QVBoxLayout(wave_content)
         wave_layout.setContentsMargins(4, 4, 4, 4)
         self.timeline = TimelineWidget(self.current_project)
+        self.timeline.on_zoom_request = self._on_timeline_zoom_request
         self.timeline.setMinimumHeight(360)
         self.timeline.on_project_changed = self._on_timeline_project_changed
         self.timeline.on_comp_range_selected = self.on_timeline_comp_range_selected
+        self.timeline.on_time_range_changed = self._on_timeline_time_range_changed
+        self.timeline.on_automation_points_changed = self._on_timeline_automation_points_changed
+        self.timeline.on_clip_fade_changed = self._on_timeline_clip_fade_changed
+        self.timeline.on_track_double_click = self._on_timeline_track_double_click
         self.timeline.on_add_clip_at = self._on_timeline_add_clip_at
+        self.timeline.on_clip_action = self._handle_timeline_clip_action
+        self.timeline.on_track_selected = self._on_timeline_track_selected
         self.timeline_scroll = QScrollArea()
         self.timeline_scroll.setWidgetResizable(False)
         self.timeline_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.timeline_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.timeline_scroll.setMinimumHeight(380)
         self.timeline_scroll.setWidget(self.timeline)
-        wave_hint = QLabel("Right-click on the timeline to add a clip at any position. "
-                           "Click a clip to select it; Del/Backspace to delete.")
+        self._connect_timeline_controller_bridge()
+
+        wave_controls = QHBoxLayout()
+        wave_controls.setSpacing(8)
+
+        zoom_out_btn = QPushButton("-")
+        zoom_out_btn.setFixedWidth(30)
+        zoom_out_btn.setToolTip("Zoom out timeline (Ctrl+-)")
+        zoom_out_btn.setShortcut("Ctrl+-")
+        zoom_out_btn.clicked.connect(self.zoom_timeline_out)
+        wave_controls.addWidget(zoom_out_btn)
+
+        zoom_in_btn = QPushButton("+")
+        zoom_in_btn.setFixedWidth(30)
+        zoom_in_btn.setToolTip("Zoom in timeline (Ctrl+=)")
+        zoom_in_btn.setShortcut("Ctrl+=")
+        zoom_in_btn.clicked.connect(self.zoom_timeline_in)
+        wave_controls.addWidget(zoom_in_btn)
+
+        zoom_reset_btn = QPushButton("100%")
+        zoom_reset_btn.setFixedWidth(56)
+        zoom_reset_btn.setToolTip("Reset timeline zoom (Ctrl+0)")
+        zoom_reset_btn.setShortcut("Ctrl+0")
+        zoom_reset_btn.clicked.connect(self.reset_timeline_zoom)
+        wave_controls.addWidget(zoom_reset_btn)
+
+        self.timeline_zoom_label = QLabel("Zoom 100%")
+        self.timeline_zoom_label.setStyleSheet("color:#aab4be; font-size:10px;")
+        wave_controls.addWidget(self.timeline_zoom_label)
+        wave_controls.addStretch()
+        wave_layout.addLayout(wave_controls)
+
+        wave_hint = QLabel(
+            "Right-click to add clips. Del/Backspace deletes clips. Ctrl+Scroll zooms around the cursor. "
+            "Alt+click edits selection start; Shift+click edits selection end. "
+            "Select a clip and drag edge fade handles or use right-click Fade Settings…"
+        )
         wave_hint.setStyleSheet("color:#aab4be; font-style:italic; font-size:10px;")
         wave_layout.addWidget(wave_hint)
         wave_layout.addWidget(self.timeline_scroll)
@@ -3515,12 +5810,12 @@ class TabbedEchoProWindow(EchoProWindow):
         mixer_layout_outer.addWidget(self.mixer_scroll)
         mixer_panel = CollapsiblePanel("Studio Mixer", mixer_content)
 
-        splitter = QSplitter(Qt.Orientation.Vertical)
-        splitter.addWidget(wave_panel)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(mixer_panel)
-        splitter.setStretchFactor(0, 2)
-        splitter.setStretchFactor(1, 3)
-        splitter.setSizes([420, 520])
+        splitter.addWidget(wave_panel)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([280, 1080])
         layout.addWidget(splitter, stretch=1)
 
         return tab
@@ -3544,6 +5839,7 @@ class TabbedEchoProWindow(EchoProWindow):
             return
         try:
             length_ms = get_audio_length_ms(str(file_path))
+            self._mark_project_edit(f"Add clip at {start_ms / 1000.0:.2f}s")
             clip = Clip(
                 id=self.next_clip_id,
                 track_index=track_index,
@@ -3557,6 +5853,209 @@ class TabbedEchoProWindow(EchoProWindow):
             self.update_status(f"Added clip on track {track_index} at {start_ms / 1000:.2f}s from {file_path.name}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to add clip:\n{e}")
+
+    def add_clip_from_browser_path(self, file_path: Path, *, create_new_track: bool = False) -> bool:
+        """Add an audio file selected from the mixer Browser sidebar into the project."""
+        path = Path(file_path)
+        if not path.exists():
+            QMessageBox.warning(self, "Browser Add", "Selected browser file no longer exists.")
+            return False
+
+        target_track_index = self.selected_track_index
+        should_create_track = bool(create_new_track or target_track_index is None or target_track_index < 0 or target_track_index >= len(self.current_project.tracks))
+        if should_create_track:
+            self._mark_project_edit("Add browser clip to new track")
+            self._add_track_with_type("Audio", capture_history=False)
+            target_track_index = len(self.current_project.tracks) - 1
+        else:
+            self._mark_project_edit(f"Add browser clip to track {int(target_track_index) + 1}")
+
+        try:
+            length_ms = get_audio_length_ms(str(path))
+            start_ms = max(0, int(self.project_playhead_ms))
+            clip = Clip(
+                id=self.next_clip_id,
+                track_index=int(target_track_index),
+                file_path=str(path),
+                start_ms=start_ms,
+                length_ms=length_ms,
+            )
+            self.current_project.clips.append(clip)
+            self.next_clip_id += 1
+            self.refresh_timeline()
+            self.update_status(
+                f"Added clip from Browser to track {int(target_track_index) + 1} at {start_ms / 1000.0:.2f}s: {path.name}"
+            )
+            return True
+        except Exception as e:
+            QMessageBox.critical(self, "Browser Add", f"Failed to add browser clip:\n{e}")
+            return False
+
+    def _handle_timeline_clip_action(self, action: str, clip_id: int) -> None:
+        clip = next((item for item in self.current_project.clips if int(item.id) == int(clip_id)), None)
+        if clip is None:
+            self.update_status("Clip action ignored: clip no longer exists")
+            return
+
+        if action == "duplicate":
+            self._mark_project_edit(f"Duplicate clip {clip_id}")
+            duplicated = Clip(
+                id=self.next_clip_id,
+                track_index=int(clip.track_index),
+                file_path=str(clip.file_path),
+                start_ms=int(clip.start_ms) + 250,
+                length_ms=int(clip.length_ms),
+                metadata=dict(getattr(clip, "metadata", {}) or {}),
+            )
+            self.current_project.clips.append(duplicated)
+            self.next_clip_id += 1
+            self.refresh_timeline()
+            self.update_status(f"Duplicated clip {clip_id} to clip {duplicated.id}")
+            return
+
+        if action == "demucs":
+            self.stem_source_input.setText(str(clip.file_path))
+            self._refresh_stem_section_state()
+            self._switch_to_tab("Tools")
+            self.update_status(f"Loaded clip {clip_id} into Demucs source")
+            return
+
+        if action == "ace_step":
+            self._switch_to_tab("Music")
+            self.update_status(f"Switched to Music tab for clip {clip_id}; ACE-Step transfer wiring is still pending")
+            return
+
+        if action == "rename":
+            current_name = str((getattr(clip, "metadata", {}) or {}).get("display_name", "")).strip() or Path(clip.file_path).name
+            new_name, accepted = QInputDialog.getText(self, "Rename Clip", "Clip name", text=current_name)
+            if not accepted:
+                return
+            cleaned_name = str(new_name).strip()
+            if not cleaned_name:
+                QMessageBox.warning(self, "Rename Clip", "Clip name cannot be empty.")
+                return
+            metadata = dict(getattr(clip, "metadata", {}) or {})
+            self._mark_project_edit(f"Rename clip {clip_id}")
+            metadata["display_name"] = cleaned_name
+            clip.metadata = metadata
+            self.refresh_timeline()
+            self.update_status(f"Renamed clip {clip_id} to {cleaned_name}")
+            return
+
+        if action == "export":
+            source_path = Path(clip.file_path)
+            if not source_path.exists():
+                QMessageBox.warning(self, "Export Clip", "Source clip file is missing on disk.")
+                return
+
+            clip_name = str((getattr(clip, "metadata", {}) or {}).get("display_name", "")).strip() or source_path.stem
+            default_suffix = source_path.suffix or ".wav"
+            default_name = f"{clip_name}{default_suffix}"
+            target_path_str, _ = QFileDialog.getSaveFileName(
+                self,
+                "Export Clip",
+                str(source_path.with_name(default_name)),
+                "Audio Files (*.wav *.mp3 *.flac *.ogg);;All Files (*)",
+            )
+            if not target_path_str:
+                return
+
+            target_path = Path(target_path_str)
+            if target_path.resolve() == source_path.resolve():
+                QMessageBox.information(self, "Export Clip", "Source and target are the same file. Choose a different path.")
+                return
+
+            try:
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source_path, target_path)
+            except Exception as error:
+                QMessageBox.critical(self, "Export Clip", f"Failed to export clip:\n{error}")
+                return
+
+            self.update_status(f"Exported clip {clip_id} to {target_path.name}")
+            return
+
+        if action == "properties":
+            pre_change_snapshot = self._snapshot_project_edit_state()
+            previous_name = str((getattr(clip, "metadata", {}) or {}).get("display_name", "")).strip() or Path(clip.file_path).name
+            renamed = self._show_clip_properties_dialog(clip)
+            if renamed:
+                current_name = str((getattr(clip, "metadata", {}) or {}).get("display_name", "")).strip() or Path(clip.file_path).name
+                if current_name != previous_name:
+                    self._push_project_snapshot(f"Edit clip {clip_id} properties", pre_change_snapshot)
+                self.refresh_timeline()
+                clip_name = str((getattr(clip, "metadata", {}) or {}).get("display_name", "")).strip() or Path(clip.file_path).name
+                self.update_status(f"Updated properties for clip {clip_id}: {clip_name}")
+            else:
+                self.update_status(f"Displayed properties for clip {clip_id}")
+            return
+
+        if action == "fade_settings":
+            self._show_clip_fade_settings_popover(int(clip_id))
+            self.update_status(f"Opened fade settings for clip {clip_id}")
+            return
+
+    def _show_clip_properties_dialog(self, clip: Clip) -> bool:
+        source_path = Path(clip.file_path)
+        metadata = dict(getattr(clip, "metadata", {}) or {})
+        current_name = str(metadata.get("display_name", "")).strip() or source_path.name
+        track_index = int(clip.track_index)
+        track_name = self.current_project.tracks[track_index].name if 0 <= track_index < len(self.current_project.tracks) else f"Track {track_index}"
+        start_sec = float(int(clip.start_ms)) / 1000.0
+        length_sec = float(max(0, int(clip.length_ms))) / 1000.0
+        file_size_text = "unknown"
+        if source_path.exists():
+            try:
+                file_size_text = f"{source_path.stat().st_size:,} bytes"
+            except OSError:
+                file_size_text = "unavailable"
+        metadata_keys = ", ".join(sorted(metadata.keys())) or "none"
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Clip Properties")
+        layout = QVBoxLayout(dialog)
+        form = QFormLayout()
+
+        name_input = QLineEdit(current_name)
+        name_input.selectAll()
+        form.addRow("Name", name_input)
+        form.addRow("Source file", QLabel(source_path.name))
+        form.addRow("Path", QLabel(str(source_path)))
+        form.addRow("Track", QLabel(f"{track_name} ({track_index})"))
+        form.addRow("Start", QLabel(f"{start_sec:.2f}s"))
+        form.addRow("Length", QLabel(f"{length_sec:.2f}s"))
+        form.addRow("File size", QLabel(file_size_text))
+        form.addRow("Metadata keys", QLabel(metadata_keys))
+        layout.addLayout(form)
+
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog)
+
+        def _accept_if_valid() -> None:
+            if not name_input.text().strip():
+                QMessageBox.warning(dialog, "Clip Properties", "Clip name cannot be empty.")
+                return
+            dialog.accept()
+
+        button_box.accepted.connect(_accept_if_valid)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+
+        if dialog.exec() != QDialog.Accepted:
+            return False
+
+        new_name = name_input.text().strip()
+        previous_name = str(metadata.get("display_name", "")).strip() or source_path.name
+        if new_name == previous_name:
+            return False
+        metadata["display_name"] = new_name
+        clip.metadata = metadata
+        return True
+
+    def _switch_to_tab(self, tab_name: str) -> None:
+        for index in range(self.tabs.count()):
+            if self.tabs.tabText(index) == tab_name:
+                self.tabs.setCurrentIndex(index)
+                return
 
 
 
@@ -3582,6 +6081,7 @@ class TabbedEchoProWindow(EchoProWindow):
         for sr_label, sr_value in [("44.1 kHz", 44100), ("48 kHz", 48000), ("88.2 kHz", 88200), ("96 kHz", 96000)]:
             self.sample_rate_combo.addItem(sr_label, sr_value)
         self.sample_rate_combo.setToolTip("Recording sample rate (applies to new sessions)")
+        self.sample_rate_combo.currentIndexChanged.connect(self._on_sample_rate_changed)
         device_layout.addWidget(self.sample_rate_combo)
 
         for symbol, slot, tip in [
@@ -3924,15 +6424,314 @@ class TabbedEchoProWindow(EchoProWindow):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
 
-        stems_group = QGroupBox("Project Tools")
-        stems_layout = QHBoxLayout(stems_group)
-        stems_btn = QPushButton("Split Song into Stems")
-        stems_btn.clicked.connect(self.split_song_into_stems)
-        self._configure_symbol_button(stems_btn, "\u2702", "Split song into stems")
-        stems_layout.addWidget(stems_btn)
-        layout.addWidget(stems_group)
+        tools_group = QGroupBox("Project Tools")
+        tools_layout = QVBoxLayout(tools_group)
+        open_demucs_btn = QPushButton("Open Stem Separation Tab")
+        open_demucs_btn.setToolTip("Jump to the full-page Demucs workspace")
+        open_demucs_btn.clicked.connect(lambda: self._switch_to_tab("Stem Separation"))
+        tools_layout.addWidget(open_demucs_btn)
+        layout.addWidget(tools_group)
 
         layout.addStretch()
+        return tab
+
+    def _build_demucs_tab(self) -> QWidget:
+        tab = QWidget()
+        root = QHBoxLayout(tab)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(10)
+
+        left_panel = QFrame()
+        left_panel.setFrameShape(QFrame.Shape.StyledPanel)
+        left_panel.setFixedWidth(360)
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(10, 10, 10, 10)
+        left_layout.setSpacing(10)
+
+        heading = QLabel("Stem Separation (Demucs)")
+        heading.setStyleSheet("font-size:15px; font-weight:700; color:#dfe9f3;")
+        left_layout.addWidget(heading)
+
+        self.stem_source_drop_zone = StemSourceDropZone(self._on_stem_source_dropped, self)
+        left_layout.addWidget(self.stem_source_drop_zone)
+
+        source_row = QHBoxLayout()
+        self.stem_source_input = QLineEdit()
+        self.stem_source_input.setReadOnly(True)
+        self.stem_source_input.setPlaceholderText("Drop a file above or choose source audio")
+        source_row.addWidget(self.stem_source_input)
+        choose_btn = QPushButton("Browse...")
+        choose_btn.clicked.connect(self.choose_stem_source_audio)
+        source_row.addWidget(choose_btn)
+        left_layout.addLayout(source_row)
+
+        model_row = QHBoxLayout()
+        model_row.addWidget(QLabel("Separation Model"))
+        model_row.addStretch()
+        manage_models_btn = QPushButton("Manage Models...")
+        manage_models_btn.setFlat(True)
+        manage_models_btn.setStyleSheet("color:#79c6ff;")
+        manage_models_btn.clicked.connect(self._show_demucs_model_manager_placeholder)
+        model_row.addWidget(manage_models_btn)
+        left_layout.addLayout(model_row)
+
+        self.stem_model_combo = QComboBox()
+        for model_name, model_label in DEMUCS_MODEL_OPTIONS:
+            self.stem_model_combo.addItem(f"{model_name} - {model_label}", model_name)
+        default_model_index = self.stem_model_combo.findData(DEFAULT_DEMUCS_MODEL)
+        if default_model_index >= 0:
+            self.stem_model_combo.setCurrentIndex(default_model_index)
+        left_layout.addWidget(self.stem_model_combo)
+
+        device_row = QHBoxLayout()
+        device_row.addWidget(QLabel("Device"))
+        self.stem_device_combo = QComboBox()
+        self.stem_device_combo.addItem("Auto-detect", "auto")
+        self.stem_device_combo.addItem("CUDA (GPU)", "cuda")
+        self.stem_device_combo.addItem("CPU", "cpu")
+        self.stem_device_combo.currentIndexChanged.connect(self._refresh_stem_device_indicator)
+        device_row.addWidget(self.stem_device_combo, stretch=1)
+        self.stem_vram_indicator = QLabel("Auto-detect")
+        self.stem_vram_indicator.setToolTip("Device readiness indicator")
+        device_row.addWidget(self.stem_vram_indicator)
+        left_layout.addLayout(device_row)
+
+        self.stem_force_cpu_checkbox = QCheckBox("Force CPU")
+        self.stem_force_cpu_checkbox.toggled.connect(self._refresh_stem_device_indicator)
+        left_layout.addWidget(self.stem_force_cpu_checkbox)
+
+        shifts_row = QHBoxLayout()
+        shifts_row.addWidget(QLabel("Shifts"))
+        self.stem_shifts_spin = QSpinBox()
+        self.stem_shifts_spin.setRange(1, 8)
+        self.stem_shifts_spin.setValue(2)
+        self.stem_shifts_spin.setToolTip("Number of equivariant shifts (quality vs speed)")
+        shifts_row.addWidget(self.stem_shifts_spin)
+        shifts_row.addWidget(QLabel("Two-stem mode"))
+        self.stem_two_stem_combo = QComboBox()
+        self.stem_two_stem_combo.addItem("Off", "off")
+        self.stem_two_stem_combo.addItem("Vocals", "vocals")
+        self.stem_two_stem_combo.addItem("Instrumental", "instrumental")
+        shifts_row.addWidget(self.stem_two_stem_combo)
+        left_layout.addLayout(shifts_row)
+
+        output_group = QGroupBox("Output Settings")
+        output_layout = QGridLayout(output_group)
+        output_layout.addWidget(QLabel("Format"), 0, 0)
+        self.stem_output_format_combo = QComboBox()
+        self.stem_output_format_combo.addItems(["wav", "flac", "mp3"])
+        output_layout.addWidget(self.stem_output_format_combo, 0, 1)
+
+        output_layout.addWidget(QLabel("Sample Rate"), 1, 0)
+        self.stem_output_sample_rate_combo = QComboBox()
+        for label, value in [("44.1 kHz", 44100), ("48 kHz", 48000), ("96 kHz", 96000)]:
+            self.stem_output_sample_rate_combo.addItem(label, value)
+        output_layout.addWidget(self.stem_output_sample_rate_combo, 1, 1)
+
+        self.stem_normalize_checkbox = QCheckBox("Normalize output")
+        self.stem_normalize_checkbox.setChecked(True)
+        output_layout.addWidget(self.stem_normalize_checkbox, 2, 0, 1, 2)
+        left_layout.addWidget(output_group)
+
+        self.stem_output_label = QLabel("Output folder: choose source audio to preview the stem folder.")
+        self.stem_output_label.setWordWrap(True)
+        self.stem_output_label.setStyleSheet("color:#8aa0b3; font-size:11px;")
+        left_layout.addWidget(self.stem_output_label)
+
+        self.stem_split_btn = QPushButton("Separate")
+        self.stem_split_btn.clicked.connect(self.run_selected_stem_split)
+        left_layout.addWidget(self.stem_split_btn)
+
+        self.stem_cancel_btn = QPushButton("Cancel")
+        self.stem_cancel_btn.setVisible(False)
+        self.stem_cancel_btn.setStyleSheet(
+            "QPushButton {"
+            " background:#5a2121;"
+            " color:#ffeaea;"
+            " border:1px solid #a85050;"
+            " border-radius:6px;"
+            " padding:8px 12px;"
+            " font-weight:600;"
+            "}"
+            "QPushButton:hover { background:#6d2727; }"
+            "QPushButton:pressed { background:#4a1b1b; }"
+        )
+        self.stem_cancel_btn.clicked.connect(self.cancel_selected_stem_split)
+        left_layout.addWidget(self.stem_cancel_btn)
+        left_layout.addStretch()
+
+        center_panel = QFrame()
+        center_panel.setFrameShape(QFrame.Shape.StyledPanel)
+        center_layout = QVBoxLayout(center_panel)
+        center_layout.setContentsMargins(10, 10, 10, 10)
+        center_layout.setSpacing(8)
+
+        self.stem_backend_label = QLabel()
+        self.stem_backend_label.setWordWrap(True)
+        center_layout.addWidget(self.stem_backend_label)
+
+        self.stem_status_label = QLabel("Choose source audio to enable Demucs splitting.")
+        self.stem_status_label.setWordWrap(True)
+        center_layout.addWidget(self.stem_status_label)
+
+        progress_group = QGroupBox("Progress")
+        progress_layout = QVBoxLayout(progress_group)
+        progress_layout.setSpacing(6)
+
+        self.stem_progress_state_label = QLabel("Idle")
+        self.stem_progress_state_label.setStyleSheet("color:#a9c4da; font-weight:600;")
+        progress_layout.addWidget(self.stem_progress_state_label)
+
+        self.stem_overall_progress = QProgressBar()
+        self.stem_overall_progress.setRange(0, 100)
+        self.stem_overall_progress.setValue(0)
+        self.stem_overall_progress.setFormat("%p%")
+        progress_layout.addWidget(self.stem_overall_progress)
+
+        time_row = QHBoxLayout()
+        self.stem_elapsed_label = QLabel("Elapsed: 0s")
+        self.stem_eta_label = QLabel("ETA: --")
+        self.stem_elapsed_label.setStyleSheet("color:#8aa0b3;")
+        self.stem_eta_label.setStyleSheet("color:#8aa0b3;")
+        time_row.addWidget(self.stem_elapsed_label)
+        time_row.addStretch()
+        time_row.addWidget(self.stem_eta_label)
+        progress_layout.addLayout(time_row)
+
+        per_stem_grid = QGridLayout()
+        per_stem_grid.setHorizontalSpacing(8)
+        per_stem_grid.setVerticalSpacing(5)
+        self.stem_per_stem_bars = {}
+        for idx, stem_name in enumerate(["vocals", "drums", "bass", "guitar", "piano", "other"]):
+            label = QLabel(stem_name.title())
+            label.setStyleSheet("color:#b8cad9; font-size:11px;")
+            bar = QProgressBar()
+            bar.setRange(0, 100)
+            bar.setValue(0)
+            bar.setTextVisible(False)
+            per_stem_grid.addWidget(label, idx, 0)
+            per_stem_grid.addWidget(bar, idx, 1)
+            self.stem_per_stem_bars[stem_name] = bar
+        progress_layout.addLayout(per_stem_grid)
+        center_layout.addWidget(progress_group)
+
+        log_group = QGroupBox("Activity Log")
+        log_layout = QVBoxLayout(log_group)
+        log_toolbar = QHBoxLayout()
+        log_toolbar.addWidget(QLabel("Filter"))
+        self.stem_log_filter_combo = QComboBox()
+        self.stem_log_filter_combo.addItem("All", "all")
+        self.stem_log_filter_combo.addItem("Info", "info")
+        self.stem_log_filter_combo.addItem("Warnings", "warn")
+        self.stem_log_filter_combo.addItem("Errors", "error")
+        self.stem_log_filter_combo.currentIndexChanged.connect(self._on_stem_log_filter_changed)
+        log_toolbar.addWidget(self.stem_log_filter_combo)
+        copy_log_btn = QPushButton("Copy")
+        copy_log_btn.clicked.connect(self._copy_stem_log)
+        log_toolbar.addWidget(copy_log_btn)
+        save_log_btn = QPushButton("Save")
+        save_log_btn.clicked.connect(self._save_stem_log)
+        log_toolbar.addWidget(save_log_btn)
+        clear_log_btn = QPushButton("Clear")
+        clear_log_btn.clicked.connect(self._clear_stem_log)
+        log_toolbar.addWidget(clear_log_btn)
+        log_toolbar.addStretch()
+        log_layout.addLayout(log_toolbar)
+
+        self.stem_activity_view = QTextEdit()
+        self.stem_activity_view.setReadOnly(True)
+        self.stem_activity_view.setMinimumHeight(150)
+        self.stem_activity_view.setStyleSheet("font-family:Consolas, monospace; font-size:11px;")
+        self.stem_activity_view.setToolTip("Recent Demucs activity, progress, and completion messages")
+        log_layout.addWidget(self.stem_activity_view)
+        center_layout.addWidget(log_group)
+
+        preview_group = QGroupBox("Output Preview")
+        preview_layout = QVBoxLayout(preview_group)
+        self.stem_preview_rows_layout = QVBoxLayout()
+        preview_layout.addLayout(self.stem_preview_rows_layout)
+        center_layout.addWidget(preview_group, stretch=1)
+
+        right_panel = QFrame()
+        right_panel.setFrameShape(QFrame.Shape.StyledPanel)
+        right_panel.setFixedWidth(300)
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(10, 10, 10, 10)
+        right_layout.setSpacing(8)
+        right_layout.addWidget(QLabel("Transfer Options"))
+
+        send_group = QGroupBox("Send to Main Tracks")
+        send_layout = QVBoxLayout(send_group)
+        send_mode_row = QHBoxLayout()
+        send_mode_row.addWidget(QLabel("Insert Position"))
+        self.stem_transfer_insert_combo = QComboBox()
+        self.stem_transfer_insert_combo.addItem("Append at end", "append")
+        self.stem_transfer_insert_combo.addItem("Insert at top", "top")
+        send_mode_row.addWidget(self.stem_transfer_insert_combo)
+        send_layout.addLayout(send_mode_row)
+        self.stem_transfer_auto_color_checkbox = QCheckBox("Auto color-code stems")
+        self.stem_transfer_auto_color_checkbox.setChecked(True)
+        send_layout.addWidget(self.stem_transfer_auto_color_checkbox)
+        right_layout.addWidget(send_group)
+
+        save_group = QGroupBox("Save to Project Folder")
+        save_layout = QVBoxLayout(save_group)
+        self.stem_transfer_save_checkbox = QCheckBox("Copy selected stems to project folder")
+        self.stem_transfer_save_checkbox.setChecked(True)
+        save_layout.addWidget(self.stem_transfer_save_checkbox)
+        self.stem_transfer_target_label = QLabel("Project folder: --")
+        self.stem_transfer_target_label.setWordWrap(True)
+        self.stem_transfer_target_label.setStyleSheet("color:#8aa0b3; font-size:11px;")
+        save_layout.addWidget(self.stem_transfer_target_label)
+        subfolder_row = QHBoxLayout()
+        subfolder_row.addWidget(QLabel("Subfolder"))
+        self.stem_transfer_subfolder_input = QLineEdit("stems")
+        subfolder_row.addWidget(self.stem_transfer_subfolder_input)
+        save_layout.addLayout(subfolder_row)
+        right_layout.addWidget(save_group)
+
+        checklist_group = QGroupBox("Stem Outputs")
+        checklist_layout = QVBoxLayout(checklist_group)
+        self.stem_transfer_checklist = QListWidget()
+        self.stem_transfer_checklist.setAlternatingRowColors(True)
+        self.stem_transfer_checklist.setMinimumHeight(170)
+        checklist_layout.addWidget(self.stem_transfer_checklist)
+        right_layout.addWidget(checklist_group)
+
+        self.stem_to_ace_btn = QPushButton("→ Transfer to ACE-Step")
+        self.stem_to_ace_btn.clicked.connect(self._send_selected_stem_to_ace_step)
+        self.stem_to_ace_btn.setEnabled(False)
+        right_layout.addWidget(self.stem_to_ace_btn)
+
+        self.stem_transfer_btn = QPushButton("Transfer")
+        self.stem_transfer_btn.setEnabled(False)
+        self.stem_transfer_btn.clicked.connect(self._transfer_selected_stems_to_project)
+        self.stem_transfer_btn.setStyleSheet(
+            "QPushButton {"
+            " background:#00d6e6;"
+            " color:#041016;"
+            " font-weight:700;"
+            " border:1px solid #00f0ff;"
+            " border-radius:6px;"
+            " padding:8px 12px;"
+            "}"
+            "QPushButton:hover { background:#1ce8f5; }"
+            "QPushButton:disabled { background:#2a3038; color:#8e98a6; border-color:#3a4655; }"
+        )
+        right_layout.addWidget(self.stem_transfer_btn)
+        right_layout.addStretch()
+
+        root.addWidget(left_panel)
+        root.addWidget(center_panel, stretch=1)
+        root.addWidget(right_panel)
+
+        self._refresh_stem_section_state()
+        self._set_stem_processing_state(False)
+        self._reset_stem_progress_ui(state_text="Idle")
+        self._populate_stem_transfer_checklist()
+        self._refresh_stem_preview_rows()
+        self._append_stem_activity("Stem separation workspace ready.", reset=True)
+
         return tab
 
     def _build_help_tab(self) -> QWidget:
@@ -4169,35 +6968,186 @@ together using the <b>Comp Range</b> tool in the timeline. The take review and c
                 idx,
                 track.name,
                 on_volume_change=self._on_track_volume_changed,
+                on_pan_change=self._on_track_pan_changed,
                 on_mute_toggle=self._set_track_muted,
                 on_solo_toggle=self._set_track_soloed,
+                on_arm_toggle=self._set_track_armed,
+                on_name_change=self._rename_track_from_mixer,
+                on_color_change=self._set_track_color,
+                on_input_change=self._set_track_input_source,
+                on_send_change=self._on_track_send_changed,
+                on_automation_param_change=self._on_track_automation_parameter_changed,
                 on_open_playback_settings=self._open_track_playback_settings,
             )
             row.set_volume_db(track.volume_db)
+            row.set_pan(getattr(track, "pan", 0.0))
             row.set_mute(track.muted)
             row.set_solo(track.soloed)
+            row.set_armed(idx in self.recording_controller.status.active_track_ids)
+            row.set_track_name(track.name)
+            row.set_track_color(getattr(track, "color_hex", "#00F0FF"))
+            row.set_input_source(getattr(track, "input_source", "Auto"))
+            row.set_send_levels(float(getattr(track, "send_a", 0.0)), float(getattr(track, "send_b", 0.0)))
+            row.set_automation_parameter(self._track_automation_parameter(idx))
             summary, tooltip = self._track_playback_summary(track)
             row.set_playback_summary(summary, tooltip)
             self.mixer_layout.insertWidget(self.mixer_layout.count() - 1, row)
             self.mixer_rows.append(row)
 
+        self.mixer_layout.insertWidget(self.mixer_layout.count() - 1, self._build_add_track_strip_widget())
+
     def _on_track_volume_changed(self, track_index: int, db: float) -> None:
         if 0 <= track_index < len(self.current_project.tracks):
-            self.current_project.tracks[track_index].volume_db = db
+            track = self.current_project.tracks[track_index]
+            current_value = float(getattr(track, "volume_db", 0.0))
+            next_value = float(db)
+            if abs(current_value - next_value) <= 1e-6:
+                return
+            pre_change_snapshot = self._snapshot_project_edit_state()
+            track.volume_db = next_value
+            self._push_project_snapshot(f"Track {track_index + 1} volume", pre_change_snapshot)
             self.sync_project_tracks_to_recording_engine()
-            self.update_status(f"Track {track_index + 1} volume: {db:+.0f} dB")
+            self._refresh_active_project_playback_mix(f"track {track_index + 1} volume")
+            self.update_status(f"Track {track_index + 1} volume: {next_value:+.0f} dB")
+
+    def _on_track_pan_changed(self, track_index: int, pan: float) -> None:
+        if 0 <= track_index < len(self.current_project.tracks):
+            track = self.current_project.tracks[track_index]
+            current_value = float(getattr(track, "pan", 0.0))
+            next_value = max(-1.0, min(1.0, float(pan)))
+            if abs(current_value - next_value) <= 1e-6:
+                return
+            pre_change_snapshot = self._snapshot_project_edit_state()
+            track.pan = next_value
+            self._push_project_snapshot(f"Track {track_index + 1} pan", pre_change_snapshot)
+            self.sync_project_tracks_to_recording_engine()
+            self._refresh_active_project_playback_mix(f"track {track_index + 1} pan")
+            self.update_status(f"Track {track_index + 1} pan: {track.pan:+.2f}")
+
+    def _on_track_send_changed(self, track_index: int, bus: str, level: float) -> None:
+        if not (0 <= track_index < len(self.current_project.tracks)):
+            return
+        track = self.current_project.tracks[track_index]
+        normalized = max(0.0, min(1.0, float(level)))
+        pre_change_snapshot = self._snapshot_project_edit_state()
+        if str(bus).lower() == "a":
+            current_value = float(getattr(track, "send_a", 0.0))
+            if abs(current_value - normalized) <= 1e-6:
+                return
+            track.send_a = normalized
+            bus_name = "Bus 1"
+        else:
+            current_value = float(getattr(track, "send_b", 0.0))
+            if abs(current_value - normalized) <= 1e-6:
+                return
+            track.send_b = normalized
+            bus_name = "Bus 2"
+        self._push_project_snapshot(f"Track {track_index + 1} {bus_name} send", pre_change_snapshot)
+        self._refresh_active_project_playback_mix(f"track {track_index + 1} {bus_name} send")
+        self.update_status(f"Track {track_index + 1} {bus_name} send: {int(round(normalized * 100.0))}%")
 
     def _set_track_muted(self, track_index: int, muted: bool) -> None:
         if 0 <= track_index < len(self.current_project.tracks):
-            self.current_project.tracks[track_index].muted = bool(muted)
+            track = self.current_project.tracks[track_index]
+            next_value = bool(muted)
+            if bool(getattr(track, "muted", False)) == next_value:
+                return
+            pre_change_snapshot = self._snapshot_project_edit_state()
+            track.muted = next_value
+            self._push_project_snapshot(f"Track {track_index + 1} mute", pre_change_snapshot)
             self.sync_project_tracks_to_recording_engine()
+            self._refresh_active_project_playback_mix(f"track {track_index + 1} mute")
             self.refresh_track_list()
 
     def _set_track_soloed(self, track_index: int, soloed: bool) -> None:
         if 0 <= track_index < len(self.current_project.tracks):
-            self.current_project.tracks[track_index].soloed = bool(soloed)
+            track = self.current_project.tracks[track_index]
+            next_value = bool(soloed)
+            if bool(getattr(track, "soloed", False)) == next_value:
+                return
+            pre_change_snapshot = self._snapshot_project_edit_state()
+            track.soloed = next_value
+            self._push_project_snapshot(f"Track {track_index + 1} solo", pre_change_snapshot)
             self.sync_project_tracks_to_recording_engine()
+            self._refresh_active_project_playback_mix(f"track {track_index + 1} solo")
             self.refresh_track_list()
+
+    def _set_track_armed(self, track_index: int, armed: bool) -> None:
+        if track_index < 0 or track_index >= len(self.current_project.tracks):
+            return
+        track = self.current_project.tracks[track_index]
+        track_type = self._normalize_track_type_label(getattr(track, "track_type", "Audio"))
+        _expected_input_source, can_arm = self._track_runtime_policy(track_type)
+        if armed and not can_arm:
+            QMessageBox.information(
+                self,
+                "Recording",
+                f"{track_type} tracks are playback/routing only in this build and cannot be record-armed.",
+            )
+            self.recording_controller.disarm_track(track_index)
+            self.refresh_track_list()
+            self.update_recording_status_label()
+            self.update_status(f"Track {track_index + 1} remains disarmed ({track_type})")
+            return
+        if armed:
+            if track_index not in self.recording_controller.armed_tracks:
+                if not self.recording_controller.arm_track(track_index):
+                    QMessageBox.warning(self, "Recording", self.recording_controller.status.last_error or "Could not arm track.")
+        else:
+            if track_index in self.recording_controller.armed_tracks:
+                self.recording_controller.disarm_track(track_index)
+        self.refresh_track_list()
+        self.update_recording_status_label()
+        self.update_status(f"Track {track_index + 1} {'armed' if track_index in self.recording_controller.armed_tracks else 'disarmed'}")
+
+    def _rename_track_from_mixer(self, track_index: int, name: str) -> None:
+        if track_index < 0 or track_index >= len(self.current_project.tracks):
+            return
+        cleaned_name = name.strip() or f"Track {track_index}"
+        track = self.current_project.tracks[track_index]
+        if track.name == cleaned_name:
+            return
+        pre_change_snapshot = self._snapshot_project_edit_state()
+        track.name = cleaned_name
+        self._push_project_snapshot(f"Rename track {track_index + 1}", pre_change_snapshot)
+        self.sync_project_tracks_to_recording_engine()
+        self.refresh_track_list()
+        self.refresh_timeline()
+        self.update_status(f"Renamed track {track_index} to {cleaned_name}")
+
+    def _set_track_color(self, track_index: int, color_hex: str) -> None:
+        if 0 <= track_index < len(self.current_project.tracks):
+            track = self.current_project.tracks[track_index]
+            next_color = color_hex or "#00F0FF"
+            if str(getattr(track, "color_hex", "#00F0FF")) == next_color:
+                return
+            pre_change_snapshot = self._snapshot_project_edit_state()
+            track.color_hex = next_color
+            self._push_project_snapshot(f"Track {track_index + 1} color", pre_change_snapshot)
+            self.refresh_timeline()
+
+    def _set_track_input_source(self, track_index: int, input_source: str) -> None:
+        if 0 <= track_index < len(self.current_project.tracks):
+            track = self.current_project.tracks[track_index]
+            track_type = self._normalize_track_type_label(getattr(track, "track_type", "Audio"))
+            expected_input_source, _can_arm = self._track_runtime_policy(track_type)
+            next_input_source = expected_input_source
+            if track_type == "Audio":
+                next_input_source = input_source or expected_input_source
+            else:
+                if input_source and input_source != expected_input_source:
+                    self.update_status(
+                        f"Track {track_index + 1} input locked to {expected_input_source} for {track_type} tracks"
+                    )
+                    self.refresh_track_list()
+                    return
+            current_input_source = str(getattr(track, "input_source", ""))
+            if current_input_source == next_input_source:
+                return
+            pre_change_snapshot = self._snapshot_project_edit_state()
+            track.input_source = next_input_source
+            self._push_project_snapshot(f"Track {track_index + 1} input", pre_change_snapshot)
+            self.update_status(f"Track {track_index + 1} input: {track.input_source}")
 
     def _count_enabled_track_effects(self, track: Track) -> int:
         effects = track.playback_settings.effects
@@ -4246,11 +7196,13 @@ together using the <b>Comp Range</b> tool in the timeline. The take review and c
         track.playback_settings = updated_settings
         self.refresh_track_list()
         self.refresh_timeline()
+        self._refresh_active_project_playback_mix(f"track {track_index + 1} playback settings")
         self.update_status(f"Updated playback settings for track {track_index + 1}")
 
     def refresh_track_list(self):
         super().refresh_track_list()
         self._rebuild_mixer_rows()
+        self._refresh_single_track_editor()
 
     def open_voice_manager(self):
         super().open_voice_manager()
@@ -4264,6 +7216,11 @@ together using the <b>Comp Range</b> tool in the timeline. The take review and c
             track_levels = levels.get(track_id)
             if track_levels is not None:
                 row.update_meter(track_levels["current_db"], track_levels["peak_db"])
+        mixer_layout = getattr(self, "main_mixer_view", None)
+        if self._is_project_playback_running():
+            return
+        if mixer_layout is not None and hasattr(mixer_layout, "update_master_levels"):
+            mixer_layout.update_master_levels(levels, self.current_project.tracks)
 
 
 EchoProWindow = TabbedEchoProWindow
