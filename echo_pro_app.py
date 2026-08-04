@@ -83,6 +83,7 @@ from app.ui.widgets.collapsible_panel import CollapsiblePanel
 from app.ui.widgets.title_bar import CustomTitleBar
 from app.ui.widgets.track_mixer_row import TrackMixerRow
 from app.ui.widgets.main_mixer_layout import MainMixerLayout
+from app.controllers import TimelineSyncController
 
 # Symbolic stereo waveform placeholder shown in the Master Output section.
 _MASTER_WAVEFORM_PLACEHOLDER = (
@@ -3192,6 +3193,9 @@ class TabbedEchoProWindow(EchoProWindow):
         self._initialize_shared_window_state()
         self.mixer_rows = []
 
+        # Initialize Group 2.1: TimelineSyncController (single source of truth for timeline state)
+        self.timeline_controller = TimelineSyncController()
+
         self.status = QStatusBar()
         self.setStatusBar(self.status)
 
@@ -3255,7 +3259,8 @@ class TabbedEchoProWindow(EchoProWindow):
 
         self.tabs = QTabWidget()
         # Add Mixer tab as the first/primary tab (item 1.4 - main DAW layout)
-        self.mixer_layout = MainMixerLayout()
+        # Wired with TimelineSyncController (Group 2.1) as single source of truth
+        self.mixer_layout = MainMixerLayout(timeline_controller=self.timeline_controller)
         self.tabs.addTab(self.mixer_layout, "Mixer")
         self.tabs.addTab(self._wrap_scroll(self._build_overview_tab()), "Home")
         self.tabs.addTab(self._wrap_scroll(self._build_recording_tab()), "Recording")

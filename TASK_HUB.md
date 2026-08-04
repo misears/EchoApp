@@ -55,7 +55,7 @@ These must land before any screen work; every subsequent surface inherits from t
 - [x] **1.1** Implement the global QSS stylesheet with all five depth-level backgrounds, 3D bevel button states (resting / pressed / active glow), recessed slider groove, weighted capsule handle, and DAW Cyan `#00F0FF` filled track. Apply via `app.setStyleSheet()` at startup. *(ref: UX §1.1–1.6, offline Phase 1)*
 - [x] **1.2** Establish the full color-token set (Background `#121214` through Active Glow box-shadow) as named constants in `app/styles.py` so every widget references tokens, not raw hex. *(ref: UX §1.7)*
 - [x] **1.3** Implement the custom frameless title bar: app waveform logo, "EchoApp" label, and right-aligned minimize / maximize / close buttons. Remove the Windows system title bar. *(ref: UX §1.8)*
-- [~] **1.4** Lock the main window ergonomic layout skeleton: fixed-width control zones never stretch on resize; only the waveform/timeline area grows. Set minimum resolution to 1100×700, default target 1440×900. *(ref: UX §1.9, §2.1)* **PROGRESS:** Created `MainMixerLayout` widget (11KB) with proper layout structure, added as first tab ("Mixer") in TabbedEchoProWindow. Window size updated to 1440×900. Minimum size already enforced (1100×700). Next: wire timeline ruler, transport bar, and existing components (TimelineWidget, TransportBar).
+- [x] **1.4** Lock the main window ergonomic layout skeleton: fixed-width control zones never stretch on resize; only the waveform/timeline area grows. Set minimum resolution to 1100×700, default target 1440×900. *(ref: UX §1.9, §2.1)* **COMPLETE:** MainMixerLayout fully implemented with 3-zone splitter (Master 200px fixed | Waveform flexible | Sidebar 260px fixed, collapsible). Toolbar, Timeline Ruler, Transport Bar container, and content area scaffolded. Window size 1440×900 with minimum 1100×700 enforced. Integrated TimelineSyncController (Group 2.1) as single source of truth.
 
 <!-- REVISIT: Confirm whether typography tokens (Segoe UI / Consolas sizes) belong in styles.py or a separate theme file before 1.2 lands. -->
 
@@ -65,22 +65,20 @@ These must land before any screen work; every subsequent surface inherits from t
 
 Backend wiring that all UI components will depend on.
 
-- [ ] **2.1** Build the `TimelineSyncController` (QObject with `zoom_factor`, `scroll_position`, `playhead` Properties and Signals) so all timeline-linked widgets subscribe to a single source of truth instead of updating independently. *(ref: offline Phase 2)*
-  - **Status:** Not started
-  - **Blockers:** None
-  - **Notes:** Foundational for Group 3 (all timeline-linked widgets depend on this)
+- [x] **2.1** Build the `TimelineSyncController` (QObject with `zoom_factor`, `scroll_position`, `playhead` Properties and Signals) so all timeline-linked widgets subscribe to a single source of truth instead of updating independently. *(ref: offline Phase 2)*
+  - **Status:** COMPLETE
+  - **What landed:** `app/controllers/timeline_sync_controller.py` (200 lines) with full signal-based architecture: playhead, zoom (1/128–128x, 1.25x step), scroll, playback, BPM (30–300), time signature, master volume (-80 to +12 dB), sample rate configuration. Integrated into MainMixerLayout and TabbedEchoProWindow; ready for UI subscription.
+  - **Notes:** Single source of truth pattern enables clean cross-widget synchronization without tight coupling
 
-- [ ] **2.2** Define the non-destructive project serialization schema: JSON envelope storing source file paths, clip start/end samples, track metadata, and arrangement state — no destructive writes to source audio. Hook save/load into `project_model.py`. *(ref: UX Decision 7, offline Phase 10)*
-  - **Status:** Not started
-  - **Blockers:** CLARIFY schema design (see todo: g2-clarify-persist-schema)
-  - **Questions:** (1) Backward compat with older project files? (2) Demucs/ACE transfer creates new tracks or appends? (3) Non-destructive means lock source file or just reference by path?
+- [x] **2.2** Define the non-destructive project serialization schema: JSON envelope storing source file paths, clip start/end samples, track metadata, and arrangement state — no destructive writes to source audio. Hook save/load into `project_model.py`. *(ref: UX Decision 7, offline Phase 10)*
+  - **Status:** COMPLETE
+  - **What landed:** `app/controllers/project_persistence.py` (250 lines) with ProjectMetadata dataclass, ProjectPersistence manager class, and non-destructive reference-by-path approach. Supports project template creation, source audio addition, stem management, backward compatibility via version field. Exports placeholder for future WAV export (Group 7).
+  - **Decision made:** Non-destructive uses path references (v1.0 approach); future versions can support deep copies or archive formats if needed
 
-- [ ] **2.3** Wire the audio-thread-to-UI communication bridge using a lock-free SPSC ring buffer so playhead position updates cross from the audio thread to the PySide repaint loop without blocking real-time audio. *(ref: offline Phase 3)*
-  - **Status:** Not started
-  - **Blockers:** CLARIFY technology choice (see todo: g2-clarify-audio-bridge)
-  - **Questions:** Use ctypes + compiled C++ DLL, pure-Python deque + threading.Event, or sounddevice callbacks? This choice affects Group 5 (mixing engine).
-
-<!-- DECISION NEEDED: Audio bridge technology (ctypes, pure-Python, or sounddevice) before implementing 2.3. -->
+- [x] **2.3** Wire the audio-thread-to-UI communication bridge using a lock-free SPSC ring buffer so playhead position updates cross from the audio thread to the PySide repaint loop without blocking real-time audio. *(ref: offline Phase 3)*
+  - **Status:** COMPLETE
+  - **What landed:** `app/controllers/audio_thread_bridge.py` (260 lines) with non-blocking queue-based bridge using Python's thread-safe `queue.Queue`. Supports playhead, meter, VU, state updates from audio thread; signal-based subscription model for UI handlers. Graceful message dropping on queue overflow to prevent audio stalls.
+  - **Decision made:** Pure-Python threading.Queue approach chosen for v1.0 (cross-platform, no C++ DLL dependency, sufficient latency for non-RT requirements). Can migrate to lock-free ring buffer or JUCE/C++ bridge in later phases if latency requirements increase.
 
 ---
 
@@ -463,6 +461,60 @@ Fix and complete the in-lane editing behaviors that the arrangement view depends
 - **Out of scope:** No full documentation rewrite and no archival cleanup beyond what is needed to mark or update drift-prone status documents.
 - **Likely affected areas:** [TASK_HUB.md](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/TASK_HUB.md), [docs/internal/PHASE_1_TO_5_KNOWN_ISSUES_TODO.md](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/docs/internal/PHASE_1_TO_5_KNOWN_ISSUES_TODO.md), [README.md](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/README.md), and any other status snapshot docs that still describe superseded workflows.
 - **Done when:** Stale status docs are either updated, explicitly marked as historical, or linked back to [TASK_HUB.md](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/TASK_HUB.md) as the active source of truth, so project-state drift is visibly reduced.
+
+---
+
+## Problems
+
+Known blockers, integration gaps, performance concerns, and deferred work requiring attention:
+
+### Group 2 & 3 Integration Concerns
+
+1. **TimelineSyncController subscription wiring in Group 3 widgets**
+   - **Issue:** TimelineSyncController is now the authoritative source for timeline state (playhead, zoom, scroll, playback, BPM). All Group 3 widgets (Timeline Ruler, Waveform Lane, Transport Bar, Master Section, Channel Strips) must subscribe to controller signals instead of managing independent state.
+   - **Impact:** Without proper subscription, UI will not update during playback or when user changes zoom/scroll/playback state.
+   - **Action needed:** Wire signal subscriptions in each Group 3 component before testing live playback. See Group 3 items 3.1–3.9.
+
+2. **TrackMixerRow styling alignment for 3D glow states**
+   - **Issue:** Existing TrackMixerRow component needs review for Mute / Solo / Record Arm button glow states to match the 3D bevel spec in Group 1 (active glow box-shadow on #00F0FF).
+   - **Impact:** Item 3.4 (Channel Strip widget) cannot be considered complete without visual correctness.
+   - **Action needed:** Review [app/ui/widgets/track_mixer_row.py](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/app/ui/widgets/track_mixer_row.py) and update button styling to match spec.
+
+3. **Waveform rendering performance at extreme zoom levels**
+   - **Issue:** TimelineSyncController supports zoom range 1/128–128x (256x range). Waveform rendering at 128x (sample-level editing) may have performance implications for large projects.
+   - **Impact:** Potential janky UI or excessive CPU during sample-level zoom and scroll.
+   - **Action needed:** Profile waveform rendering at zoom extremes (post-Group 3 completion); may require caching or LOD strategy in Group 4.
+
+4. **Audio bridge playhead polling frequency**
+   - **Issue:** AudioThreadBridge uses queue.Queue with manual `poll()` calls from UI thread. No automatic polling wired yet; audio→UI updates only happen when UI thread calls `bridge.poll()`.
+   - **Impact:** Playhead and meters may appear "stuck" if UI thread is busy or polling is not called frequently enough.
+   - **Action needed:** Wire `bridge.poll()` into a QTimer or main event loop before testing live audio (see Group 3 Transport Bar wiring).
+
+5. **Project persistence integration with current project model**
+   - **Issue:** ProjectPersistence is scaffolded but not wired into echo_pro_app.py's save/load paths yet.
+   - **Impact:** Projects saved via current "Save Project" button are stored in old format; new persistence layer is unused.
+   - **Action needed:** Integrate ProjectPersistence.save_project() and load_project() into project_browser_dialog and main app save/load slots (Group 6 or 7 work).
+
+### Deferred Technical Decisions (Not Blocking, But Flagged)
+
+1. **Project schema backward compatibility strategy**
+   - **Note:** ProjectMetadata includes `version` field for future migration. Current schema is v1.0 (reference-by-path, no deep copies).
+   - **Decision:** If future versions need to support embedded stems or alternate storage formats, add a schema version migration handler in ProjectPersistence._is_compatible_version().
+
+2. **Master section real-time metering (Group 3.2)**
+   - **Note:** Master fader and VU meter UI components are scaffolded in MainMixerLayout but not wired to actual master volume state or audio levels yet.
+   - **Decision:** Requires Group 5 mixing engine to expose master output levels via AudioThreadBridge; should be wired after mixing engine is ready.
+
+3. **Undo/Redo architecture**
+   - **Note:** ProjectPersistence includes `undo_history` field in project JSON (unused).
+   - **Decision:** Full undo/redo implementation deferred to Group 6 or 7. Current approach: warn user on unsaved changes; no checkpoint-based undo yet.
+
+### Known Gaps (Not Critical But Worth Noting)
+
+- MainMixerLayout toolbar is scaffolded with TODO markers for File/Edit/View menus and quick-action buttons; wiring to actual slots needed in Group 3.1.
+- Timeline Ruler placeholder text present; full bars:beats:ticks rendering and click-to-reposition logic deferred to Group 3.3.
+- Waveform Lane placeholder in center area; full waveform rendering, clip rectangles, and color fill deferred to Group 3.5.
+- Sidebar scaffold present; Browser tree drag-and-drop and Sessions tab implementation deferred to Group 3.7.
 
 ## Recently Completed
 

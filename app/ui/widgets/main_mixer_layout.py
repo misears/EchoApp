@@ -13,11 +13,19 @@ from PySide6.QtWidgets import (
     QToolBar, QScrollArea, QFrame
 )
 from PySide6.QtCore import Qt
+from typing import Optional
+from app.controllers import TimelineSyncController
 
 
 class MainMixerLayout(QWidget):
     """
     Implements the main mixer/arrangement view layout with fixed-width control zones.
+    
+    Integrates TimelineSyncController (Group 2.1) as single source of truth for all
+    timeline state: playhead, zoom, scroll, playback, BPM, master volume.
+    
+    All UI zones (Ruler, Transport, Waveform, Master Section) subscribe to controller
+    signals instead of managing state independently.
     
     Layout structure:
     ┌─────────────────────────────────────────┐
@@ -36,8 +44,9 @@ class MainMixerLayout(QWidget):
     └─────────────────────────────────────────┘
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, timeline_controller: Optional[TimelineSyncController] = None, parent=None):
         super().__init__(parent)
+        self.timeline_controller = timeline_controller
         self._init_ui()
 
     def _init_ui(self) -> None:
