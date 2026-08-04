@@ -2,9 +2,9 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Run P5A Regression Checks",
+      "label": "Run UI Smoke Checks",
       "type": "shell",
-      "command": "${workspaceFolder}/tools/dev/run_p5a_checks.bat",
+      "command": "${workspaceFolder}/tools/dev/run_ui_smoke_checks.bat",
       "group": "test",
       "problemMatcher": []
     },

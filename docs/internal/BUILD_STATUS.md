@@ -253,8 +253,8 @@ All Phase 1-4 features are implemented and ready to test:
 1. [x] **Run linter** to verify no new errors introduced
 2. [x] **Clean stale entries** in this status document when issues are resolved
 3. [x] **Verify no import errors** with `python -m py_compile *.py`
-4. [x] **Run Phase 5 regression runner**: `python p5a_regression_runner.py` (latest: 14 passed, 0 failed — re-confirmed 2026-07-24)
-5. [x] **One-command shortcut added**: `run_p5a_checks.bat` (also available as VS Code task `Run P5A Regression Checks`)
+4. [x] **Legacy Phase 5 regression runner retired**: the old phase-5 regression wrapper is no longer the default validation route.
+5. [x] **One-command smoke shortcut added**: `run_ui_smoke_checks.bat` (also available as VS Code task `Run UI Smoke Checks`)
 6. [x] **Syntax check Phase 1-5 modules**: `python -m py_compile echo_pro_app.py recording_controller.py audio_engine.py recording_session.py recording_ui_components.py` — all OK (2026-07-24)
 
 ### Phase 5 (Recording Polish)
@@ -281,7 +281,7 @@ All Phase 1-4 features are implemented and ready to test:
 ### Testing & QA
 
 1. [ ] Run full workflow test (create → edit → save → load)
-2. [x] Run scripted P5A checks (count-in transition, stop-during-count-in, device error path)
+2. [x] Run scripted phase-5 checks (count-in transition, stop-during-count-in, device error path)
 3. [ ] Test all error paths (missing files, corrupted projects)
 4. [ ] Test on Windows 10 and Windows 11
 5. [ ] Test with various audio formats

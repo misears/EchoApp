@@ -224,19 +224,31 @@ Fix and complete the in-lane editing behaviors that the arrangement view depends
 
 ### Group 8 — AI Tab: ACE-Step Generation
 
-- [ ] **8.1** Create the "AI Generation (ACE-Step)" full-page tab: model dropdown (checkpoint discovery from models dir, type badges), LoRA adapter dropdown with "+ Add Custom LoRA…", inline VRAM indicator, Force CPU checkbox. *(ref: UX §4.2)*
-- [ ] **8.2** Implement Style Tags and Instruments pill inputs: type-and-Enter pill creation, suggestion dropdown while typing, × removal per pill, 12-pill visible max with scroll, "Clear All" link; "No specific instruments" checkbox. *(ref: UX §4.3–4.4)*
-- [ ] **8.3** Implement Audio Reference section: source dropdown (None / Upload / Active Track / Last Demucs Stem), waveform thumbnail, Influence Strength slider (0.0–1.0), start/end time fields. *(ref: UX §4.5)*
-- [ ] **8.4** Expose all Generation Settings controls: Duration slider+input (5–300s), Steps (10–150), CFG scale (1.0–20.0), Seed + randomize dice, Lock seed checkbox, Scheduler dropdown (Euler / Euler Ancestral / DPM++ 2M / DPM++ SDE / DDIM / PNDM), ERG weight, ELA weight (grayed without lyrics), Batch count (1–8) with estimated time, Output format. *(ref: UX §4.6)*
-- [ ] **8.5** Build the right column prompts area: main textarea (min 5 lines), collapsible negative prompt, collapsible line-numbered lyrics field; full-width Generate button (green idle / amber pulsing processing with ETA); collapsible real-time terminal log. *(ref: UX §4.7–4.8)*
-- [ ] **8.6** Build results grid: waveform thumbnail cards with duration, seed, Play, Loop, star/favorite; quick-action row (Regenerate same/new seed, Vary subtle/strong); Transfer panel mirroring Demucs transfer options plus "Send to Demucs" tile. *(ref: UX §4.9–4.10)*
+- **Status (2026-08-04):** Complete in the Python UI path. `echo_pro_app.py` now includes the full ACE-Step page with model/LoRA selection, chip inputs with suggestions, audio-reference source + trim/influence controls, complete generation settings, prompt/negative/lyrics areas, processing-state UX, metadata-consistent result cards, quick rerun actions, and bidirectional ACE↔Demucs transfer handoff.
+
+- **Finish plan (to close Group 8):**
+  - [x] **8P.1 Chip UX completion:** popup typeahead suggestions + compact scroll lanes are now in place, with chip add/remove and clear-all behavior wired.
+  - [x] **8P.2 Audio-reference trimming pass:** reference start/end fields now validate numeric/non-negative input, selected range is shown in the preview label, and generation calls persist reference trim/source/path metadata in `generation_payload`.
+  - [x] **8P.3 Generate-state polish:** Generate now pulses amber during processing with ETA text shown inline; idle style/text restore correctly after completion/failure.
+  - [x] **8P.4 Transfer parity with Demucs:** "Send to Demucs" now routes through selected-result handoff with file-existence validation, pre-seeds stem source/output context, and keeps ACE/Demucs transfer options synchronized bidirectionally.
+  - [x] **8P.5 Results-card metadata consistency:** result entries now persist normalized output format/sample-rate fields, cards display seed/duration/format/sample-rate consistently, and quick actions re-apply output/reference metadata to generation controls before rerun.
+  - [x] **8P.6 Close criteria:** executed `python -m py_compile echo_pro_app.py music_generator.py t2m_interface.py` plus `tools/dev/run_ui_smoke_checks.bat`; smoke harness now includes `ace_generation_flow` (generate → play/loop/favorite → quick rerun → transfer + Demucs handoff) and passed without exceptions.
+
+- [x] **8.1** Create the "AI Generation (ACE-Step)" full-page tab: model dropdown (checkpoint discovery from models dir, type badges), LoRA adapter dropdown with "+ Add Custom LoRA…", inline VRAM indicator, Force CPU checkbox. *(ref: UX §4.2)*
+- [x] **8.2** Implement Style Tags and Instruments pill inputs: type-and-Enter pill creation, suggestion dropdown while typing, × removal per pill, 12-pill visible max with scroll, "Clear All" link; "No specific instruments" checkbox. *(ref: UX §4.3–4.4)*
+- [x] **8.3** Implement Audio Reference section: source dropdown (None / Upload / Active Track / Last Demucs Stem), waveform thumbnail, Influence Strength slider (0.0–1.0), start/end time fields. *(ref: UX §4.5)*
+- [x] **8.4** Expose all Generation Settings controls: Duration slider+input (5–300s), Steps (10–150), CFG scale (1.0–20.0), Seed + randomize dice, Lock seed checkbox, Scheduler dropdown (Euler / Euler Ancestral / DPM++ 2M / DPM++ SDE / DDIM / PNDM), ERG weight, ELA weight (grayed without lyrics), Batch count (1–8) with estimated time, Output format. *(ref: UX §4.6)*
+- [x] **8.5** Build the right column prompts area: main textarea (min 5 lines), collapsible negative prompt, collapsible line-numbered lyrics field; full-width Generate button (green idle / amber pulsing processing with ETA); collapsible real-time terminal log. *(ref: UX §4.7–4.8)*
+- [x] **8.6** Build results grid: waveform thumbnail cards with duration, seed, Play, Loop, star/favorite; quick-action row (Regenerate same/new seed, Vary subtle/strong); Transfer panel mirroring Demucs transfer options plus "Send to Demucs" tile. *(ref: UX §4.9–4.10)*
 
 ---
 
 ### Group 9 — Mastering Chain Page
 
-- [ ] **9.1** Build the mastering chain full-page view: horizontal 3D raised-card signal chain — Input Trim → 4-Band Parametric EQ (visual frequency curve) → Compressor (threshold / ratio / attack / release / knee / makeup, VU meters) → Stereo Widener → Limiter (threshold / ceiling / release, clip LED, true peak readout) → Output. Bypass button per block (red glow when bypassed). Arrow connectors between blocks. *(ref: UX §5.1, offline Phase 8)*
-- [ ] **9.2** Implement the LUFS meter panel: Integrated / Short-term / Momentary / LU Range / True Peak readouts in cyan monospace; target preset dropdown (Spotify −14 / YouTube −16 / EBU R128 −23 / ATSC −24 / Custom); dashed amber target line on LUFS history scrolling chart; Integrated readout color-coded green/amber/red vs target. *(ref: UX §5.2, Decisions 5)*
+- **Status (2026-08-04):** Complete in the Python UI path. `echo_pro_app.py` now includes the full Mastering tab signal chain, persisted per-block controls, bypass toggles, compressor VU/gain-reduction meters, limiter clip/true-peak readout, live LUFS history chart with target line, and integrated color-state feedback against target.
+
+- [x] **9.1** Build the mastering chain full-page view: horizontal 3D raised-card signal chain — Input Trim → 4-Band Parametric EQ (visual frequency curve) → Compressor (threshold / ratio / attack / release / knee / makeup, VU meters) → Stereo Widener → Limiter (threshold / ceiling / release, clip LED, true peak readout) → Output. Bypass button per block (red glow when bypassed). Arrow connectors between blocks. *(ref: UX §5.1, offline Phase 8)*
+- [x] **9.2** Implement the LUFS meter panel: Integrated / Short-term / Momentary / LU Range / True Peak readouts in cyan monospace; target preset dropdown (Spotify −14 / YouTube −16 / EBU R128 −23 / ATSC −24 / Custom); dashed amber target line on LUFS history scrolling chart; Integrated readout color-coded green/amber/red vs target. *(ref: UX §5.2, Decisions 5)*
 
 <!-- REVISIT: The offline blueprint has C++ mastering_chain.cpp (atomic bypass). Confirm before 9.1 whether the Python implementation uses numpy DSP or calls a compiled extension — this changes the scope of 9.1 significantly. -->
 
@@ -350,7 +362,7 @@ Fix and complete the in-lane editing behaviors that the arrangement view depends
 - Confirmed that the project-playback freeze issue is no longer reproducing in manual playback checks.
 - Added a [cleanup prompt](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/.github/prompts/cleanup.prompt.md) for archiving obsolete files and reducing project-folder clutter safely.
 - Converted the main Home controls plus the Recording tab's transport, setup, take-review, and comp/recovery actions to compact icon-style buttons with hover labels as a first pass on the broader control declutter work.
-- Removed developer-only P5A/P5B regression actions from general user-facing tabs and aligned the phase implementation prompt with the repo instructions.
+- Removed developer-only phase-5 regression actions from general user-facing tabs and aligned the phase implementation prompt with the repo instructions.
 - Fixed the active tabbed Home UI path so playback transport controls actually render and source launches export the Echo Pro data root consistently.
 - Added a root-level [Start_Echo.bat](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/Start_Echo.bat) launcher that bootstraps the runtime venv, ensures core app packages are present, and starts Echo Pro from source.
 - Added Home-tab playback transport controls with non-blocking play/stop, a visible playhead, and jump-to-selection-or-clip navigation.
