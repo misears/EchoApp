@@ -55,7 +55,7 @@ These must land before any screen work; every subsequent surface inherits from t
 - [x] **1.1** Implement the global QSS stylesheet with all five depth-level backgrounds, 3D bevel button states (resting / pressed / active glow), recessed slider groove, weighted capsule handle, and DAW Cyan `#00F0FF` filled track. Apply via `app.setStyleSheet()` at startup. *(ref: UX §1.1–1.6, offline Phase 1)*
 - [x] **1.2** Establish the full color-token set (Background `#121214` through Active Glow box-shadow) as named constants in `app/styles.py` so every widget references tokens, not raw hex. *(ref: UX §1.7)*
 - [x] **1.3** Implement the custom frameless title bar: app waveform logo, "EchoApp" label, and right-aligned minimize / maximize / close buttons. Remove the Windows system title bar. *(ref: UX §1.8)*
-- [ ] **1.4** Lock the main window ergonomic layout skeleton: fixed-width control zones never stretch on resize; only the waveform/timeline area grows. Set minimum resolution to 1100×700, default target 1440×900. *(ref: UX §1.9, §2.1)*
+- [~] **1.4** Lock the main window ergonomic layout skeleton: fixed-width control zones never stretch on resize; only the waveform/timeline area grows. Set minimum resolution to 1100×700, default target 1440×900. *(ref: UX §1.9, §2.1)* **PROGRESS:** Created `MainMixerLayout` widget (11KB) with proper layout structure, added as first tab ("Mixer") in TabbedEchoProWindow. Window size updated to 1440×900. Minimum size already enforced (1100×700). Next: wire timeline ruler, transport bar, and existing components (TimelineWidget, TransportBar).
 
 <!-- REVISIT: Confirm whether typography tokens (Segoe UI / Consolas sizes) belong in styles.py or a separate theme file before 1.2 lands. -->
 
@@ -66,10 +66,21 @@ These must land before any screen work; every subsequent surface inherits from t
 Backend wiring that all UI components will depend on.
 
 - [ ] **2.1** Build the `TimelineSyncController` (QObject with `zoom_factor`, `scroll_position`, `playhead` Properties and Signals) so all timeline-linked widgets subscribe to a single source of truth instead of updating independently. *(ref: offline Phase 2)*
-- [ ] **2.2** Define the non-destructive project serialization schema: JSON envelope storing source file paths, clip start/end samples, track metadata, and arrangement state — no destructive writes to source audio. Hook save/load into `project_model.py`. *(ref: UX Decision 7, offline Phase 10)*
-- [ ] **2.3** Wire the audio-thread-to-UI communication bridge using a lock-free SPSC ring buffer so playhead position updates cross from the audio thread to the PySide repaint loop without blocking real-time audio. *(ref: offline Phase 3)*
+  - **Status:** Not started
+  - **Blockers:** None
+  - **Notes:** Foundational for Group 3 (all timeline-linked widgets depend on this)
 
-<!-- REVISIT: The blueprint references a compiled C++ DLL (audio_bridge.dll). Decide before 2.3 whether to use ctypes + compiled extension, a pure-Python deque with threading.Event, or sounddevice callbacks — this choice affects Phase 7 (summing matrix) as well. -->
+- [ ] **2.2** Define the non-destructive project serialization schema: JSON envelope storing source file paths, clip start/end samples, track metadata, and arrangement state — no destructive writes to source audio. Hook save/load into `project_model.py`. *(ref: UX Decision 7, offline Phase 10)*
+  - **Status:** Not started
+  - **Blockers:** CLARIFY schema design (see todo: g2-clarify-persist-schema)
+  - **Questions:** (1) Backward compat with older project files? (2) Demucs/ACE transfer creates new tracks or appends? (3) Non-destructive means lock source file or just reference by path?
+
+- [ ] **2.3** Wire the audio-thread-to-UI communication bridge using a lock-free SPSC ring buffer so playhead position updates cross from the audio thread to the PySide repaint loop without blocking real-time audio. *(ref: offline Phase 3)*
+  - **Status:** Not started
+  - **Blockers:** CLARIFY technology choice (see todo: g2-clarify-audio-bridge)
+  - **Questions:** Use ctypes + compiled C++ DLL, pure-Python deque + threading.Event, or sounddevice callbacks? This choice affects Group 5 (mixing engine).
+
+<!-- DECISION NEEDED: Audio bridge technology (ctypes, pure-Python, or sounddevice) before implementing 2.3. -->
 
 ---
 
@@ -78,14 +89,56 @@ Backend wiring that all UI components will depend on.
 Build the primary DAW surface in sub-section order so each new layer has a stable parent to attach to.
 
 - [ ] **3.1** Implement the top toolbar: File / Edit / View / Project / AI Tools / Settings menus; New / Open / Save / Export / Undo / Redo icon buttons; editable BPM display with scroll-wheel nudge; master volume circular knob; time signature dropdown; sample rate + bit depth readout. *(ref: UX §2.2)*
+  - **Status:** Not started
+  - **Depends on:** Item 1.4 (MainMixerLayout scaffolding) ✓ 
+  - **Blockers:** CLARIFY menu structure (see todo: g3-toolbar-menu-spec)
+  - **Questions:** Complete menu item list, keyboard shortcuts, icon set, nested menus?
+
 - [ ] **3.2** Build the Left Master Section (200px fixed): vertical master fader (≥200px stroke), dual-channel L+R VU meter, LUFS integrated readout (cyan monospace), master EQ toggle, master limiter threshold knob, master effects chain button, "MASTER" label. *(ref: UX §2.3)*
+  - **Status:** Not started
+  - **Depends on:** Item 1.4 (MainMixerLayout scaffolding) ✓ 
+  - **Blockers:** CLARIFY control layout and panel opening behavior (see todo: g3-master-section-detail)
+  - **Questions:** Fader height spec, VU meter layout (L/R bars or combined), font specs for LUFS readout, how do EQ/limiter/effects panels open?
+
 - [ ] **3.3** Implement the Timeline Ruler (28px): bars:beats / seconds toggle, cyan full-height playhead, click-to-reposition, synchronized horizontal scroll. *(ref: UX §2.4)*
+  - **Status:** Scaffolded in MainMixerLayout._build_timeline_ruler()
+  - **Depends on:** Item 1.4 (MainMixerLayout scaffolding) ✓, Item 2.1 (TimelineSyncController)
+  - **Blockers:** 2.1 not yet implemented
+  - **Next step:** Wire TimelineSyncController once 2.1 is complete
+
 - [ ] **3.4** Build the Channel Strip widget (220px fixed, left of waveform): track name inline edit, color swatch picker, Mute / Solo / Record Arm buttons with correct glow states, input source dropdown, gain + pan knobs, vertical 3D fader, Bus 1 / Bus 2 FX send knobs, EQ mini-graph click-to-open. *(ref: UX §2.5)*
+  - **Status:** TrackMixerRow component exists but needs review for 3D styling and glow states
+  - **Depends on:** Item 1.4 (MainMixerLayout scaffolding) ✓, Group 1 styling complete ✓
+  - **Next step:** Review/update TrackMixerRow to match spec, wire into MainMixerLayout
+
 - [ ] **3.5** Implement Waveform Lane rendering: per-track color fill, center divider, magenta slice markers, rounded-corner clip rectangles with filename label, hover tooltip (duration + sample rate), right-click context menu (Rename / Duplicate / Delete / Export Clip / Send to Demucs / Send to ACE-Step / Properties). *(ref: UX §2.6, offline Phase 5)*
+  - **Status:** TimelineWidget component exists; needs review for all visual details
+  - **Depends on:** Item 1.4 (MainMixerLayout scaffolding) ✓, Item 2.1 (TimelineSyncController)
+  - **Blockers:** 2.1 not yet implemented, possibly Item 4.5 (single-track editor UX pattern)
+  - **Next step:** Review TimelineWidget rendering and context menu
+
 - [ ] **3.6** Add the "+ Add Track" button at the bottom of the channel strip column; wire the track-type dialog (Audio / AI Stem / MIDI / Bus). *(ref: UX §2.7)*
+  - **Status:** Not started
+  - **Depends on:** Item 3.4 (Channel Strip widget complete)
+  - **Blockers:** None
+  - **Next step:** Create track-type dialog and wire to MainMixerLayout
+
 - [ ] **3.7** Build the Right Sidebar (260px, collapsible): Browser tab with drag-and-drop file tree (hover shows name, duration, sample rate); Sessions tab with fixed-height rows, right-click context menu, and 500ms-hover truncation tooltip for long names. *(ref: UX §2.8, Decision 3)*
+  - **Status:** Scaffolded in MainMixerLayout._build_sidebar()
+  - **Depends on:** Item 1.4 (MainMixerLayout scaffolding) ✓
+  - **Blockers:** CLARIFY Browser tree schema (see todo: g3-sidebar-browser-schema)
+  - **Questions:** What file types to show, drag-drop auto-import or dialog, folder context menu, Sessions definition?
+
 - [ ] **3.8** Implement the Transport Bar (72px full-width, never resizes): left cluster (input device dropdown, monitoring toggle, gain slider); center cluster (seven 36×36px 3D bevel transport buttons, seek bar scoped to cluster width, dual time display — BARS:BEATS:TICKS + HH:MM:SS:MS — on recessed LCD panel); right cluster (loop toggle with amber glow, loop start/end inputs, metronome toggle with BPM mirror, punch-in/punch-out toggles). *(ref: UX §2.9)*
+  - **Status:** TransportBar component exists; needs review and integration into MainMixerLayout
+  - **Depends on:** Item 1.4 (MainMixerLayout scaffolding) ✓, Group 1 styling (3D bevels, amber glow) ✓, Item 2.1 (TimelineSyncController)
+  - **Blockers:** CLARIFY time display format and LCD styling (see todo: g3-transport-time-display)
+  - **Next step:** Review TransportBar styling against spec, wire into MainMixerLayout
+
 - [ ] **3.9** Implement the Status Bar (24px): CPU bar + %, RAM, driver name, sample rate, buffer size, latency in cyan, project name, save-status dot (green = saved, amber = unsaved). *(ref: UX §2.10)*
+  - **Status:** QStatusBar exists in EchoProWindow; needs styling and wiring
+  - **Depends on:** Group 1 styling complete ✓
+  - **Next step:** Wire CPU/RAM/driver/latency telemetry, add save-status dot indicator
 
 ---
 
@@ -94,20 +147,52 @@ Build the primary DAW surface in sub-section order so each new layer has a stabl
 Fix and complete the in-lane editing behaviors that the arrangement view depends on.
 
 - [ ] **4.1** Fix waveform zoom so users can reach close enough for clip-level inspection and editing; expose clear zoom-in / zoom-out controls and keyboard shortcuts (Ctrl+Scroll). *(ref: UX §10, existing P1 brief)*
-- [ ] **4.2** Fix skip-forward / skip-reverse so they fall back to a stable position when no region is selected; add click-based selection start/end editing directly on the waveform surface. *(ref: existing P1 brief)*
-- [ ] **4.3** Implement inline automation curve overlays directly in the waveform lane: parameter selector dropdown on channel strip, cyan dot handles, double-click to add nodes, drag to move, no separate dock panel (locked for v1.0). *(ref: UX §2.6, Decision 1, offline Phase 6)*
-- [ ] **4.4** Implement clip fade settings: 6px drag handles on clip edges plus a right-click "Fade Settings…" non-modal popover (Fade In / Fade Out ms inputs, Linear / Exp / Log / S-curve dropdown per fade). Drag handle and popover must stay in real-time sync. *(ref: UX Decision 6)*
-- [ ] **4.5** Add double-click on a waveform/track to open a focused single-track editor surface, passing the correct track context without disturbing the rest of the project. *(ref: existing P2 brief)*
+  - **Status:** Not started
+  - **Blockers:** CLARIFY zoom depth limits (see todo: g4-zoom-limits)
+  - **Questions:** Closest/farthest zoom levels, zoom UI (slider/buttons/scroll), can user see individual samples?
+  - **Notes:** Currently listed as a known problem (waveform zoom insufficient)
 
-<!-- REVISIT: Decide before 4.5 whether the single-track editor is an inline panel expansion, a floating dock, or a modal — the choice affects layout code in Group 3. -->
+- [ ] **4.2** Fix skip-forward / skip-reverse so they fall back to a stable position when no region is selected; add click-based selection start/end editing directly on the waveform surface. *(ref: existing P1 brief)*
+  - **Status:** Not started
+  - **Known issue:** Skip forward/reverse behavior is currently broken (see Problems section)
+  - **Next step:** Review existing skip logic, implement fallback behavior, add click-based selection
+
+- [ ] **4.3** Implement inline automation curve overlays directly in the waveform lane: parameter selector dropdown on channel strip, cyan dot handles, double-click to add nodes, drag to move, no separate dock panel (locked for v1.0). *(ref: UX §2.6, Decision 1, offline Phase 6)*
+  - **Status:** Not started
+  - **Blockers:** Item 3.5 (waveform lane rendering complete)
+  - **Notes:** No separate dock/panel allowed — must be inline with waveform
+
+- [ ] **4.4** Implement clip fade settings: 6px drag handles on clip edges plus a right-click "Fade Settings…" non-modal popover (Fade In / Fade Out ms inputs, Linear / Exp / Log / S-curve dropdown per fade). Drag handle and popover must stay in real-time sync. *(ref: UX Decision 6)*
+  - **Status:** Not started
+  - **Blockers:** Item 3.5 (waveform lane rendering complete)
+  - **Notes:** Popover must sync with drag handle in real-time (no stale state)
+
+- [ ] **4.5** Add double-click on a waveform/track to open a focused single-track editor surface, passing the correct track context without disturbing the rest of the project. *(ref: existing P2 brief)*
+  - **Status:** Not started
+  - **Blockers:** CLARIFY single-track editor UI pattern (see todo: g3-clarify-single-track-editor)
+  - **Questions:** Inline panel, floating dock, modal, or new tab? This affects Group 3 layout code.
+
+<!-- DECISION NEEDED: Single-track editor UI pattern (inline/floating/modal) — affects Group 3 layout code. -->
 
 ---
 
 ### Group 5 — Audio Mixing Engine
 
 - [ ] **5.1** Implement multi-channel audio summing: mix per-track float buffers with individual gain values into the master output buffer in a vectorizable form; wire into the playback path. *(ref: offline Phase 7)*
+  - **Status:** Not started
+  - **Blockers:** CLARIFY summing vectorization approach (see todo: g5-mixing-vectorization), Item 2.3 (audio bridge wiring)
+  - **Questions:** Use numpy, numpy + SIMD compiled extension, or pure Python? This affects latency and real-time responsiveness.
+  - **Known issue:** Track FX do not apply reliably (see Problems section)
+
 - [ ] **5.2** Make track FX and playback parameter changes apply reliably and audibly during active playback; clearly communicate any deliberate defer-to-next-buffer behavior. *(ref: existing P1 brief)*
+  - **Status:** Not started
+  - **Blockers:** Item 5.1 (summing engine complete)
+  - **Known issue:** Track FX currently unreliable (see Problems section)
+
 - [ ] **5.3** Make the Master Section live during playback: waveform updates, dual VU meter bars respond, LUFS integrated reading updates, peak indicators react. *(ref: UX §2.3, existing P2 brief)*
+  - **Status:** Not started
+  - **Blockers:** Item 3.2 (master section complete), Item 2.3 (audio-thread-to-UI bridge complete)
+  - **Known issue:** Master section appears nonfunctional; needs dedicated waveform bars and meter panel (see Problems section)
 
 ---
 

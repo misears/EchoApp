@@ -82,6 +82,7 @@ from app.ui.dialogs.voice_manager_dialog import VoiceManagerDialog
 from app.ui.widgets.collapsible_panel import CollapsiblePanel
 from app.ui.widgets.title_bar import CustomTitleBar
 from app.ui.widgets.track_mixer_row import TrackMixerRow
+from app.ui.widgets.main_mixer_layout import MainMixerLayout
 
 # Symbolic stereo waveform placeholder shown in the Master Output section.
 _MASTER_WAVEFORM_PLACEHOLDER = (
@@ -3253,6 +3254,9 @@ class TabbedEchoProWindow(EchoProWindow):
         _content_layout.addLayout(header)
 
         self.tabs = QTabWidget()
+        # Add Mixer tab as the first/primary tab (item 1.4 - main DAW layout)
+        self.mixer_layout = MainMixerLayout()
+        self.tabs.addTab(self.mixer_layout, "Mixer")
         self.tabs.addTab(self._wrap_scroll(self._build_overview_tab()), "Home")
         self.tabs.addTab(self._wrap_scroll(self._build_recording_tab()), "Recording")
         self.tabs.addTab(self._wrap_scroll(self._build_voice_tab()), "Voice FX")
@@ -4271,6 +4275,6 @@ if __name__ == "__main__":
         mark_first_run_done()
 
     win = TabbedEchoProWindow()
-    win.resize(1200, 700)
+    win.resize(1440, 900)
     win.show()
     sys.exit(app.exec())
