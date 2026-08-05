@@ -11,6 +11,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QCheckBox,
     QComboBox,
@@ -21,24 +22,29 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QListWidget,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QProgressBar,
     QScrollArea,
     QSlider,
     QSpinBox,
+    QStackedWidget,
     QSplitter,
     QTabWidget,
+    QTableWidget,
+    QTableWidgetItem,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from music_generator import get_music_backend_capability
-from app_paths import ACE_MODELS_DIR
+from app_paths import ACE_MODELS_DIR, MODELS_DIR
 from audio_info import get_audio_length_ms
 from project_model import Clip
 from recording_ui_components import (
@@ -271,6 +277,8 @@ def build_ui(window) -> None:
     window.tabs.addTab(wrap_scroll(window, build_voice_tab(window)), "Voice FX")
     window.tabs.addTab(wrap_scroll(window, window._build_ace_step_tab()), "AI Generation (ACE-Step)")
     window.tabs.addTab(wrap_scroll(window, window._build_mastering_chain_tab()), "Mastering")
+    window.tabs.addTab(window._build_midi_mapping_tab(), "MIDI Mapping")
+    window.tabs.addTab(window._build_settings_tab(), "Settings")
     window.tabs.addTab(wrap_scroll(window, window._build_tools_tab()), "Tools")
     window.tabs.addTab(window._build_help_tab(), "Help")
     content_layout.addWidget(window.tabs, stretch=1)
@@ -2141,3 +2149,448 @@ def filter_help_text(self, query: str) -> None:
             f'<p style="color:#e94560;">No sections found matching "<b>{query}</b>". '
             f'Try a different keyword.</p>'
         )
+
+
+def build_midi_mapping_tab(self) -> QWidget:
+    """Build Group 10 MIDI mapping page with device panel, mappings grid, and learn console."""
+    tab = QWidget()
+    root = QHBoxLayout(tab)
+    root.setContentsMargins(8, 8, 8, 8)
+    root.setSpacing(10)
+
+    left_panel = QFrame()
+    left_panel.setFrameShape(QFrame.Shape.StyledPanel)
+    left_panel.setFixedWidth(250)
+    left_layout = QVBoxLayout(left_panel)
+    left_layout.setContentsMargins(10, 10, 10, 10)
+    left_layout.setSpacing(8)
+    left_layout.addWidget(QLabel("MIDI Inputs"))
+    self.midi_device_list = QListWidget()
+    self.midi_device_list.setToolTip("Available MIDI input devices")
+    self.midi_device_list.currentRowChanged.connect(self._on_midi_device_selection_changed)
+    left_layout.addWidget(self.midi_device_list, stretch=1)
+
+    channel_row = QHBoxLayout()
+    channel_row.addWidget(QLabel("Channel"))
+    self.midi_channel_combo = QComboBox()
+    self.midi_channel_combo.addItem("All", -1)
+    for channel in range(1, 17):
+        self.midi_channel_combo.addItem(f"{channel}", channel - 1)
+    self.midi_channel_combo.currentIndexChanged.connect(self._on_midi_channel_filter_changed)
+    channel_row.addWidget(self.midi_channel_combo, stretch=1)
+    left_layout.addLayout(channel_row)
+
+    self.midi_device_status_dot = QLabel("●")
+    self.midi_device_status_dot.setStyleSheet("color:#f0b55a; font-size:18px;")
+    self.midi_device_status_label = QLabel("No MIDI device selected")
+    self.midi_device_status_label.setStyleSheet("color:#8aa0b3;")
+    status_row = QHBoxLayout()
+    status_row.addWidget(self.midi_device_status_dot)
+    status_row.addWidget(self.midi_device_status_label, stretch=1)
+    left_layout.addLayout(status_row)
+
+    refresh_btn = QPushButton("Refresh MIDI Devices")
+    refresh_btn.clicked.connect(self._refresh_midi_devices)
+    left_layout.addWidget(refresh_btn)
+
+    center_panel = QFrame()
+    center_panel.setFrameShape(QFrame.Shape.StyledPanel)
+    center_layout = QVBoxLayout(center_panel)
+    center_layout.setContentsMargins(10, 10, 10, 10)
+    center_layout.setSpacing(8)
+    center_layout.addWidget(QLabel("Mappings"))
+    self.midi_mapping_table = QTableWidget(0, 8)
+    self.midi_mapping_table.setHorizontalHeaderLabels([
+        "Parameter",
+        "Current Value",
+        "CC",
+        "Channel",
+        "Min",
+        "Max",
+        "Curve",
+        "Learn",
+    ])
+    self.midi_mapping_table.verticalHeader().setVisible(False)
+    self.midi_mapping_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+    self.midi_mapping_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+    self.midi_mapping_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+    self.midi_mapping_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+    self.midi_mapping_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+    self.midi_mapping_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+    self.midi_mapping_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
+    self.midi_mapping_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
+    self.midi_mapping_table.itemChanged.connect(self._on_midi_mapping_item_changed)
+    center_layout.addWidget(self.midi_mapping_table, stretch=1)
+
+    right_panel = QFrame()
+    right_panel.setFrameShape(QFrame.Shape.StyledPanel)
+    right_panel.setFixedWidth(320)
+    right_layout = QVBoxLayout(right_panel)
+    right_layout.setContentsMargins(10, 10, 10, 10)
+    right_layout.setSpacing(8)
+    right_layout.addWidget(QLabel("MIDI Learn Console"))
+    self.midi_learn_banner = QLabel("MIDI Learn Inactive")
+    self.midi_learn_banner.setStyleSheet("background:#3a4553; color:#c9d5e2; padding:6px; border-radius:6px; font-weight:600;")
+    right_layout.addWidget(self.midi_learn_banner)
+    self.midi_learn_toggle_btn = QPushButton("Enable MIDI Learn")
+    self.midi_learn_toggle_btn.setCheckable(True)
+    self.midi_learn_toggle_btn.toggled.connect(self._toggle_midi_learn_mode)
+    right_layout.addWidget(self.midi_learn_toggle_btn)
+    self.midi_learn_confirmation_label = QLabel("No mapping captured yet.")
+    self.midi_learn_confirmation_label.setWordWrap(True)
+    self.midi_learn_confirmation_label.setStyleSheet("color:#8aa0b3;")
+    right_layout.addWidget(self.midi_learn_confirmation_label)
+    self.midi_console_view = QPlainTextEdit()
+    self.midi_console_view.setReadOnly(True)
+    self.midi_console_view.setStyleSheet("font-family:Consolas, monospace; font-size:11px;")
+    right_layout.addWidget(self.midi_console_view, stretch=1)
+
+    root.addWidget(left_panel)
+    root.addWidget(center_panel, stretch=1)
+    root.addWidget(right_panel)
+
+    self._initialize_midi_mapping_state()
+    self._refresh_midi_mapping_table()
+    self._refresh_midi_devices()
+    self._start_midi_input_worker()
+
+    return tab
+
+
+class _ModelDropZone(QFrame):
+    """Drag-and-drop zone used by the Settings model-manager tabs."""
+
+    def __init__(self, title: str, on_drop_paths, parent=None):
+        super().__init__(parent)
+        self._on_drop_paths = on_drop_paths
+        self.setAcceptDrops(True)
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        self.setStyleSheet(
+            "QFrame { border:2px dashed #2b4d68; border-radius:8px; background:#111d2a; }"
+            "QFrame[dragActive='true'] { border-color:#00f0ff; background:#122838; }"
+        )
+        self.setProperty("dragActive", False)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(4)
+        heading = QLabel(title)
+        heading.setStyleSheet("color:#dce7ef; font-weight:700;")
+        root.addWidget(heading)
+        hint = QLabel("Drop model files or folders here to install")
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color:#8aa0b3;")
+        root.addWidget(hint)
+
+    def dragEnterEvent(self, event) -> None:  # type: ignore[override]
+        if event.mimeData().hasUrls():
+            self.setProperty("dragActive", True)
+            self.style().unpolish(self)
+            self.style().polish(self)
+            event.acceptProposedAction()
+            return
+        event.ignore()
+
+    def dragLeaveEvent(self, event) -> None:  # type: ignore[override]
+        self.setProperty("dragActive", False)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        event.accept()
+
+    def dropEvent(self, event) -> None:  # type: ignore[override]
+        self.setProperty("dragActive", False)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        urls = event.mimeData().urls()
+        paths = [Path(url.toLocalFile()) for url in urls if url.isLocalFile()]
+        if paths and callable(self._on_drop_paths):
+            self._on_drop_paths(paths)
+            event.acceptProposedAction()
+            return
+        event.ignore()
+
+
+def _build_model_manager_subtab(window, kind: str, title: str) -> QWidget:
+    tab = QWidget()
+    layout = QVBoxLayout(tab)
+    layout.setContentsMargins(6, 6, 6, 6)
+    layout.setSpacing(8)
+
+    actions_row = QHBoxLayout()
+    add_folder_btn = QPushButton("Add from Folder...")
+    add_folder_btn.clicked.connect(lambda: window._settings_add_model_from_folder(kind))
+    actions_row.addWidget(add_folder_btn)
+
+    url_input = QLineEdit()
+    url_input.setPlaceholderText("https://.../model-file")
+    actions_row.addWidget(url_input, stretch=1)
+    download_btn = QPushButton("Download")
+    download_btn.clicked.connect(lambda: window._settings_download_model_from_url(kind))
+    actions_row.addWidget(download_btn)
+    layout.addLayout(actions_row)
+
+    progress = QProgressBar()
+    progress.setRange(0, 100)
+    progress.setValue(0)
+    progress.setFormat("Download progress: %p%")
+    layout.addWidget(progress)
+
+    table = QTableWidget(0, 7)
+    table.setHorizontalHeaderLabels(["Name", "Type/Stems", "File Size", "Date Added", "Set Default", "Remove", "Source"])
+    table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+    table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+    table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+    table.verticalHeader().setVisible(False)
+    header = table.horizontalHeader()
+    header.setStretchLastSection(False)
+    header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+    header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+    header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+    header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+    header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+    header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+    header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
+    table.itemSelectionChanged.connect(lambda: window._settings_on_model_selection_changed(kind))
+    layout.addWidget(table, stretch=1)
+
+    drop_zone = _ModelDropZone(
+        f"{title} Drop Zone",
+        on_drop_paths=lambda dropped: window._settings_install_model_from_paths(kind, dropped),
+    )
+    drop_zone.setMinimumHeight(76)
+    layout.addWidget(drop_zone)
+
+    details = QPlainTextEdit()
+    details.setReadOnly(True)
+    details.setPlaceholderText("Select a model row to view metadata and usage notes.")
+    details.setMaximumHeight(130)
+    layout.addWidget(details)
+
+    if not hasattr(window, "_settings_model_tables"):
+        window._settings_model_tables = {}
+    if not hasattr(window, "_settings_model_url_inputs"):
+        window._settings_model_url_inputs = {}
+    if not hasattr(window, "_settings_model_progress_bars"):
+        window._settings_model_progress_bars = {}
+    if not hasattr(window, "_settings_model_details"):
+        window._settings_model_details = {}
+
+    window._settings_model_tables[kind] = table
+    window._settings_model_url_inputs[kind] = url_input
+    window._settings_model_progress_bars[kind] = progress
+    window._settings_model_details[kind] = details
+
+    return tab
+
+
+def build_settings_tab(window) -> QWidget:
+    """Build Group 11 Settings page with left-nav sections and functional controls."""
+    tab = QWidget()
+    root = QHBoxLayout(tab)
+    root.setContentsMargins(8, 8, 8, 8)
+    root.setSpacing(10)
+
+    nav = QListWidget()
+    nav.setFixedWidth(200)
+    nav.addItems([
+        "Audio Engine",
+        "Model Manager",
+        "Appearance",
+        "Keyboard Shortcuts",
+        "Project Defaults",
+        "About",
+    ])
+    root.addWidget(nav)
+
+    stack = QStackedWidget()
+
+    # Audio Engine
+    audio_page = QWidget()
+    audio_layout = QVBoxLayout(audio_page)
+    audio_group = QGroupBox("Audio Engine")
+    audio_form = QGridLayout(audio_group)
+    window.settings_audio_backend_combo = QComboBox()
+    window.settings_audio_backend_combo.addItems(["WASAPI Exclusive", "WASAPI Shared", "ASIO", "JACK/PipeWire"])
+    window.settings_audio_input_combo = QComboBox()
+    window.settings_audio_output_combo = QComboBox()
+    window.settings_audio_sample_rate_combo = QComboBox()
+    for rate in [44100, 48000, 96000, 192000]:
+        window.settings_audio_sample_rate_combo.addItem(f"{rate} Hz", int(rate))
+    window.settings_audio_buffer_combo = QComboBox()
+    for buffer_size in [64, 128, 256, 512, 1024]:
+        window.settings_audio_buffer_combo.addItem(str(buffer_size), int(buffer_size))
+    window.settings_audio_bit_depth_combo = QComboBox()
+    for depth in [16, 24, 32]:
+        window.settings_audio_bit_depth_combo.addItem(f"{depth}-bit", int(depth))
+    window.settings_audio_latency_label = QLabel("Latency: --")
+    window.settings_audio_driver_status_label = QLabel("Driver status: Unknown")
+    window.settings_audio_driver_status_label.setStyleSheet("color:#8aa0b3;")
+
+    audio_form.addWidget(QLabel("Backend"), 0, 0)
+    audio_form.addWidget(window.settings_audio_backend_combo, 0, 1)
+    audio_form.addWidget(QLabel("Input Device"), 1, 0)
+    audio_form.addWidget(window.settings_audio_input_combo, 1, 1)
+    audio_form.addWidget(QLabel("Output Device"), 2, 0)
+    audio_form.addWidget(window.settings_audio_output_combo, 2, 1)
+    audio_form.addWidget(QLabel("Sample Rate"), 3, 0)
+    audio_form.addWidget(window.settings_audio_sample_rate_combo, 3, 1)
+    audio_form.addWidget(QLabel("Buffer Size"), 4, 0)
+    audio_form.addWidget(window.settings_audio_buffer_combo, 4, 1)
+    audio_form.addWidget(QLabel("Bit Depth"), 5, 0)
+    audio_form.addWidget(window.settings_audio_bit_depth_combo, 5, 1)
+    audio_form.addWidget(window.settings_audio_latency_label, 6, 0, 1, 2)
+    audio_form.addWidget(window.settings_audio_driver_status_label, 7, 0, 1, 2)
+
+    controls = QHBoxLayout()
+    refresh_btn = QPushButton("Refresh Devices")
+    refresh_btn.clicked.connect(window._settings_refresh_audio_devices)
+    controls.addWidget(refresh_btn)
+    test_btn = QPushButton("Test Tone")
+    test_btn.clicked.connect(window._settings_play_test_tone)
+    controls.addWidget(test_btn)
+    apply_btn = QPushButton("Apply Audio Settings")
+    apply_btn.clicked.connect(window._settings_apply_audio_engine)
+    controls.addWidget(apply_btn)
+    controls.addStretch()
+    audio_form.addLayout(controls, 8, 0, 1, 2)
+
+    for combo in [
+        window.settings_audio_input_combo,
+        window.settings_audio_output_combo,
+        window.settings_audio_sample_rate_combo,
+        window.settings_audio_buffer_combo,
+    ]:
+        combo.currentIndexChanged.connect(window._settings_refresh_audio_engine_status)
+
+    audio_layout.addWidget(audio_group)
+    audio_layout.addStretch()
+    stack.addWidget(audio_page)
+
+    # Model Manager
+    model_page = QWidget()
+    model_layout = QVBoxLayout(model_page)
+    model_tabs = QTabWidget()
+    model_tabs.addTab(_build_model_manager_subtab(window, "demucs", "Demucs Models"), "Demucs Models")
+    model_tabs.addTab(_build_model_manager_subtab(window, "ace", "ACE-Step Models"), "ACE-Step Models")
+    model_layout.addWidget(model_tabs)
+    stack.addWidget(model_page)
+
+    # Appearance
+    appearance_page = QWidget()
+    appearance_layout = QVBoxLayout(appearance_page)
+    appearance_group = QGroupBox("Appearance")
+    appearance_form = QGridLayout(appearance_group)
+    window.settings_theme_combo = QComboBox()
+    window.settings_theme_combo.addItems(["Dark Studio", "High Contrast", "Light Prototype"])
+    window.settings_accent_input = QLineEdit("#00F0FF")
+    window.settings_font_size_combo = QComboBox()
+    window.settings_font_size_combo.addItems(["Small", "Medium", "Large"])
+    window.settings_waveform_color_mode_combo = QComboBox()
+    window.settings_waveform_color_mode_combo.addItems(["Per-track", "Single color"])
+    window.settings_animation_speed_combo = QComboBox()
+    window.settings_animation_speed_combo.addItems(["Full", "Reduced", "None"])
+    appearance_form.addWidget(QLabel("Theme"), 0, 0)
+    appearance_form.addWidget(window.settings_theme_combo, 0, 1)
+    appearance_form.addWidget(QLabel("Accent Color"), 1, 0)
+    appearance_form.addWidget(window.settings_accent_input, 1, 1)
+    appearance_form.addWidget(QLabel("Font Size"), 2, 0)
+    appearance_form.addWidget(window.settings_font_size_combo, 2, 1)
+    appearance_form.addWidget(QLabel("Waveform Color Mode"), 3, 0)
+    appearance_form.addWidget(window.settings_waveform_color_mode_combo, 3, 1)
+    appearance_form.addWidget(QLabel("Animation Speed"), 4, 0)
+    appearance_form.addWidget(window.settings_animation_speed_combo, 4, 1)
+    appearance_apply_btn = QPushButton("Apply Appearance")
+    appearance_apply_btn.clicked.connect(window._settings_apply_appearance)
+    appearance_form.addWidget(appearance_apply_btn, 5, 0, 1, 2)
+    appearance_layout.addWidget(appearance_group)
+    appearance_layout.addStretch()
+    stack.addWidget(appearance_page)
+
+    # Keyboard Shortcuts
+    shortcut_page = QWidget()
+    shortcut_layout = QVBoxLayout(shortcut_page)
+    search_row = QHBoxLayout()
+    search_row.addWidget(QLabel("Search"))
+    window.settings_shortcut_search_input = QLineEdit()
+    window.settings_shortcut_search_input.setPlaceholderText("Filter actions...")
+    window.settings_shortcut_search_input.textChanged.connect(window._settings_refresh_shortcuts_table)
+    search_row.addWidget(window.settings_shortcut_search_input, stretch=1)
+    reset_shortcuts_btn = QPushButton("Reset All to Defaults")
+    reset_shortcuts_btn.clicked.connect(window._settings_reset_shortcuts_to_defaults)
+    search_row.addWidget(reset_shortcuts_btn)
+    shortcut_layout.addLayout(search_row)
+    window.settings_shortcuts_table = QTableWidget(0, 2)
+    window.settings_shortcuts_table.setHorizontalHeaderLabels(["Action", "Shortcut"])
+    window.settings_shortcuts_table.verticalHeader().setVisible(False)
+    window.settings_shortcuts_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+    window.settings_shortcuts_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+    window.settings_shortcuts_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+    window.settings_shortcuts_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+    window.settings_shortcuts_table.itemChanged.connect(window._settings_on_shortcut_item_changed)
+    shortcut_layout.addWidget(window.settings_shortcuts_table, stretch=1)
+    shortcut_layout.addWidget(QLabel("Edit shortcut cells directly. Changes update settings mapping and can be wired globally in Group 12."))
+    stack.addWidget(shortcut_page)
+
+    # Project Defaults
+    defaults_page = QWidget()
+    defaults_layout = QVBoxLayout(defaults_page)
+    defaults_group = QGroupBox("Project Defaults")
+    defaults_form = QGridLayout(defaults_group)
+    window.settings_default_project_folder_input = QLineEdit()
+    browse_default_folder_btn = QPushButton("Browse...")
+    browse_default_folder_btn.clicked.connect(window._settings_browse_default_project_folder)
+    folder_row = QHBoxLayout()
+    folder_row.addWidget(window.settings_default_project_folder_input, stretch=1)
+    folder_row.addWidget(browse_default_folder_btn)
+    window.settings_default_sample_rate_combo = QComboBox()
+    for rate in [44100, 48000, 96000, 192000]:
+        window.settings_default_sample_rate_combo.addItem(f"{rate} Hz", int(rate))
+    window.settings_default_bpm_spin = QSpinBox()
+    window.settings_default_bpm_spin.setRange(30, 300)
+    window.settings_default_autosave_interval_spin = QSpinBox()
+    window.settings_default_autosave_interval_spin.setRange(0, 120)
+    window.settings_default_autosave_interval_spin.setSuffix(" min")
+    window.settings_default_autosave_location_input = QLineEdit()
+    defaults_form.addWidget(QLabel("Default Project Folder"), 0, 0)
+    defaults_form.addLayout(folder_row, 0, 1)
+    defaults_form.addWidget(QLabel("Default Sample Rate"), 1, 0)
+    defaults_form.addWidget(window.settings_default_sample_rate_combo, 1, 1)
+    defaults_form.addWidget(QLabel("Default BPM"), 2, 0)
+    defaults_form.addWidget(window.settings_default_bpm_spin, 2, 1)
+    defaults_form.addWidget(QLabel("Auto-save Interval"), 3, 0)
+    defaults_form.addWidget(window.settings_default_autosave_interval_spin, 3, 1)
+    defaults_form.addWidget(QLabel("Auto-save Location"), 4, 0)
+    defaults_form.addWidget(window.settings_default_autosave_location_input, 4, 1)
+    save_defaults_btn = QPushButton("Save Project Defaults")
+    save_defaults_btn.clicked.connect(window._settings_save_project_defaults)
+    defaults_form.addWidget(save_defaults_btn, 5, 0, 1, 2)
+    defaults_layout.addWidget(defaults_group)
+    defaults_layout.addStretch()
+    stack.addWidget(defaults_page)
+
+    # About
+    about_page = QWidget()
+    about_layout = QVBoxLayout(about_page)
+    about_text = QTextEdit()
+    about_text.setReadOnly(True)
+    about_text.setHtml(
+        "<h2>EchoApp / Echo Pro</h2>"
+        "<p><b>Version:</b> 1.0.1</p>"
+        "<p><b>Build Date:</b> 03 August 2026</p>"
+        "<p><b>Repository:</b> github.com/misears/EchoApp</p>"
+        "<p><b>License:</b> See repository license information.</p>"
+    )
+    about_layout.addWidget(about_text)
+    stack.addWidget(about_page)
+
+    root.addWidget(stack, stretch=1)
+
+    window.settings_nav_list = nav
+    window.settings_stack = stack
+    nav.currentRowChanged.connect(stack.setCurrentIndex)
+    nav.setCurrentRow(0)
+
+    window._initialize_settings_state()
+    window._refresh_settings_page()
+
+    return tab

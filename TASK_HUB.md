@@ -256,25 +256,35 @@ Fix and complete the in-lane editing behaviors that the arrangement view depends
 
 ### Group 10 — MIDI Hardware Mapping Page
 
-- [ ] **10.1** Build the MIDI mapping page three-panel layout: left device list (status dot, channel dropdown, Refresh button); center mappings table (Parameter / Current Value / CC / Channel / Min / Max / Curve / Learn columns, grouped by category); right MIDI Learn console (scrolling monospace monitor, Learn toggle, confirmation card for new mappings, amber "MIDI Learn Active" banner). *(ref: UX §6.1–6.3, offline Phase 11)*
-- [ ] **10.2** Wire the background MIDI input worker thread: poll active input port at ~500Hz, translate CC 0–127 to normalized 0.0–1.0, emit to parameter bindings; implement MIDI Learn assignment flow. *(ref: offline Phase 11)*
+- [x] **10.1** Build the MIDI mapping page three-panel layout: left device list (status dot, channel dropdown, Refresh button); center mappings table (Parameter / Current Value / CC / Channel / Min / Max / Curve / Learn columns, grouped by category); right MIDI Learn console (scrolling monospace monitor, Learn toggle, confirmation card for new mappings, amber "MIDI Learn Active" banner). *(ref: UX §6.1–6.3, offline Phase 11)*
+- [x] **10.2** Wire the background MIDI input worker thread: poll active input port at ~500Hz, translate CC 0–127 to normalized 0.0–1.0, emit to parameter bindings; implement MIDI Learn assignment flow. *(ref: offline Phase 11)*
+
+  - **Status:** Complete
+  - **What landed (2026-08-05):** Added a dedicated `MIDI Mapping` tab in the live `TabbedEchoProWindow` path with the required three-panel structure. Left panel now includes MIDI input list, channel filter, refresh action, and device status indicator. Center panel now provides grouped mapping rows with editable CC/channel/min/max fields, curve selector (Linear/Log/Exp), live current-value column, and per-row Learn action. Right panel now includes a monospace MIDI console log, Learn toggle, confirmation card, and amber active banner.
+  - **Worker/runtime behavior:** Added a background `MidiInputWorker` on `QThread` that polls active MIDI input with ~2 ms cycle timing (targeting ~500 Hz), emits normalized CC events (`0..127 -> 0.0..1.0`), supports channel filtering, and updates mappings in learn mode. Mapping state persists in project metadata (`midi_mapping_state`) and worker lifecycle is integrated with app shutdown.
 
 ---
 
 ### Group 11 — Settings Page
 
-- [ ] **11.1** Build the Settings full-page tab with left sidebar navigation (200px): Audio Engine section (backend dropdown, input/output device dropdowns, sample rate / buffer size / bit depth selectors, latency readout, test-tone button, driver status indicator). *(ref: UX §7.1)*
-- [ ] **11.2** Implement the Model Manager section with Demucs and ACE-Step sub-tabs: installed models table with per-row Set Default and Remove (confirm dialog); "Add from Folder…" with format validation; "Add from URL…" with inline download progress; drag-and-drop install zone; model details pane on row selection. *(ref: UX §7.2)*
-- [ ] **11.3** Add Appearance, Keyboard Shortcuts (searchable / reassignable table with Reset All), Project Defaults, and About sections. *(ref: UX §7.3–7.6)*
+- [x] **11.1** Build the Settings full-page tab with left sidebar navigation (200px): Audio Engine section (backend dropdown, input/output device dropdowns, sample rate / buffer size / bit depth selectors, latency readout, test-tone button, driver status indicator). *(ref: UX §7.1)*
+- [x] **11.2** Implement the Model Manager section with Demucs and ACE-Step sub-tabs: installed models table with per-row Set Default and Remove (confirm dialog); "Add from Folder…" with format validation; "Add from URL…" with inline download progress; drag-and-drop install zone; model details pane on row selection. *(ref: UX §7.2)*
+- [x] **11.3** Add Appearance, Keyboard Shortcuts (searchable / reassignable table with Reset All), Project Defaults, and About sections. *(ref: UX §7.3–7.6)*
 
-<!-- REVISIT: Keyboard shortcuts in §11.3 must be reconciled with the shortcut bindings task (Group 12). Decide whether shortcuts are stored per-user in a config file or hardcoded with an override layer before implementing the reassignment table. -->
+  - **Status:** Complete
+  - **What landed (2026-08-05):** Added a full `Settings` tab to the live tabbed window path with left-side section navigation and functional pages for Audio Engine, Model Manager (Demucs + ACE sub-tabs), Appearance, Keyboard Shortcuts, Project Defaults, and About. Audio controls now refresh/apply through `audio_device.device_manager` with latency and driver-status feedback plus test-tone action. Model Manager now supports inventory display, default selection, removable local assets with confirmation, Add-from-Folder validation/copy, URL download with inline progress, drag-and-drop install zone, and details pane updates on selection. Shortcut mapping is now searchable/reassignable with reset-to-defaults, and project defaults + appearance values persist through project metadata settings state.
 
 ---
 
 ### Group 12 — Keyboard Shortcuts & UI State Machine
 
-- [ ] **12.1** Wire all documented keyboard shortcut bindings: Space (play/stop), R (record), Home / End (skip to start/end), Ctrl+Z / Ctrl+Y (undo/redo), Ctrl+S (save), Delete (delete clip), S (split at playhead), Ctrl+T (new track), M (mute), Alt+S (solo), Ctrl+Scroll (zoom), Tab (switch panels), Ctrl+D (Demucs), Ctrl+E (ACE-Step), Ctrl+M (Mastering), Ctrl+L (MIDI Learn), Ctrl+N (new project), Ctrl+O (open), Ctrl+Shift+E (export). *(ref: UX §10)*
-- [ ] **12.2** Implement the full UI state machine: Idle/No Project (grayed controls, welcome panel), Project Open/Stopped (controls active), Playing (Play glows green, seek animates, playhead moves), Recording (Record pulses red, armed track red borders, live waveform draw, dim non-armed tracks, REC badge in status bar), AI Processing (amber progress indicator in status bar, click to jump to active AI tab), MIDI Learn Mode (amber banner, assignable parameters amber glow), Unsaved Changes (amber dot + title bar asterisk). *(ref: UX §9)*
+- [x] **12.1** Wire all documented keyboard shortcut bindings: Space (play/stop), R (record), Home / End (skip to start/end), Ctrl+Z / Ctrl+Y (undo/redo), Ctrl+S (save), Delete (delete clip), S (split at playhead), Ctrl+T (new track), M (mute), Alt+S (solo), Ctrl+Scroll (zoom), Tab (switch panels), Ctrl+D (Demucs), Ctrl+E (ACE-Step), Ctrl+M (Mastering), Ctrl+L (MIDI Learn), Ctrl+N (new project), Ctrl+O (open), Ctrl+Shift+E (export). *(ref: UX §10)*
+- [x] **12.2** Implement the full UI state machine: Idle/No Project (grayed controls, welcome panel), Project Open/Stopped (controls active), Playing (Play glows green, seek animates, playhead moves), Recording (Record pulses red, armed track red borders, live waveform draw, dim non-armed tracks, REC badge in status bar), AI Processing (amber progress indicator in status bar, click to jump to active AI tab), MIDI Learn Mode (amber banner, assignable parameters amber glow), Unsaved Changes (amber dot + title bar asterisk). *(ref: UX §9)*
+
+  - **Status:** Complete
+  - **What landed (2026-08-05):** Added centralized global shortcut registration in the live `TabbedEchoProWindow` startup path with settings-backed key rebinding support (including runtime rebind when shortcut values are edited/reset in Settings). Bound transport/edit/project/tab actions to existing live handlers, added Ctrl+Tab / Ctrl+Shift+Tab tab cycling, and kept single-key bindings from triggering while typing in editable text fields.
+  - **State machine behavior:** Added a centralized application-state refresh model that drives status/title indicators for Idle, Project Open, Playing, Recording, AI Processing, MIDI Learn, and Unsaved states. Status bar now includes a dedicated state label, and window title now reflects dirty-state asterisk plus active mode badges.
+  - **Editing workflow:** Added keyboard-invoked timeline clip delete and split-at-playhead actions. Split writes the right-hand segment to a generated clip file under the project split-clips folder and appends the new clip to the timeline.
 
 ---
 
@@ -310,6 +320,24 @@ Fix and complete the in-lane editing behaviors that the arrangement view depends
 ## Todos
 
 - Active backlog work is tracked in the Ordered Build Task List above. This section is kept only for ad hoc notes that do not belong in the phased build list.
+- RUNNING TASK (2026-08-05): `echo_pro_app.py` modularization + GUI checklist closure sweep.
+  - Scope:
+    - Extract next low-risk controller slice from `echo_pro_app.py` (start with status-bar telemetry wiring).
+    - Keep live `TabbedEchoProWindow` behavior unchanged while reducing file coupling.
+    - Re-audit GUI checklist completion status and ensure completed items are marked accurately in this file.
+  - Current status:
+    - Milestone landed: status-bar telemetry extraction moved into `app/controllers/status_telemetry_controller.py` with `echo_pro_app.py` converted to thin delegates for setup/refresh/read methods.
+    - Milestone landed: stem workflow utility slice (activity log, progress parsing/state labels, file-size/waveform helpers, and stem preview playback rows/actions) moved into `app/controllers/stem_workflow_controller.py` with `echo_pro_app.py` delegate wrappers preserving existing call sites.
+    - Milestone landed: stem transfer + backend/device indicator + processing-state UI + worker callback handling (`_clear_stem_worker`, `_on_stem_worker_*`) now delegate through `app/controllers/stem_workflow_controller.py`; worker bootstrapping remains in `echo_pro_app.py` to keep the local `StemSeparationWorker` threading path unchanged.
+    - Milestone landed: Group 11 Settings page implemented and wired in the active `TabbedEchoProWindow` path (audio engine controls, model manager, appearance, shortcut mapping, project defaults, and about section), with project-metadata backed settings state.
+    - Milestone landed: Group 10 MIDI Mapping page + worker flow implemented (three-panel UI, learn mode, normalized CC mapping, and QThread lifecycle wiring) in the live tab path.
+    - Validation: `Run UI Smoke Checks` passed after extraction (open_app, record_arm_flow, take_review_toggles, stems_dialog_flow, ace_generation_flow).
+    - GUI checklist audit complete: Groups 1-12 are marked complete; Group 13 remains legitimately pending and should stay unchecked.
+    - GUI extraction phases for tab layout are complete and recorded in Recently Completed.
+    - Remaining unchecked GUI group is Group 13 (control polish).
+  - Done when:
+    - One additional controller extraction lands with passing smoke checks. ✅
+    - GUI checklist items in this file reflect true current state (no stale unchecked/checked drift).
 
 ## Problems
 
@@ -360,6 +388,9 @@ Fix and complete the in-lane editing behaviors that the arrangement view depends
 
 ## Recently Completed
 
+- Implemented Group 12 keyboard and state-machine pass in the live tabbed app path: added settings-backed global shortcut binding registration, tab-cycle shortcuts, timeline delete/split keyboard actions, and centralized title/status state indicators (Idle/Open/Playing/Recording/AI/MIDI Learn/Unsaved).
+- Implemented Group 10 MIDI Mapping page in the live tabbed GUI path, including three-panel mapping UI, MIDI Learn console/banners, and a background `MidiInputWorker` thread that polls input, normalizes CC values, and applies learned mappings.
+- Implemented Group 11 Settings page in the live tabbed GUI path: added `Settings` tab with left-nav sections (Audio Engine, Model Manager, Appearance, Keyboard Shortcuts, Project Defaults, About), wired audio apply/latency status actions, and functional model inventory/install/default/remove workflows.
 - Extracted major `TabbedEchoProWindow` GUI construction (`_build_ui`, Home/Recording/Voice tab builders, scroll wrapper, and timeline add-clip handler) into [app/ui/tabbed_window_layout.py](app/ui/tabbed_window_layout.py), leaving `echo_pro_app.py` with thin delegating methods for cleaner structure and easier maintenance.
 - Completed phase-2 GUI extraction by moving remaining tab builders (ACE-Step, Mastering Chain, Demucs, Tools, and Help filtering helpers) into [app/ui/tabbed_window_layout.py](app/ui/tabbed_window_layout.py), with `TabbedEchoProWindow` methods in [echo_pro_app.py](echo_pro_app.py) now delegating to module helpers.
 - Removed the now-unused `TabbedEchoProWindow._filter_help_text` wrapper from [echo_pro_app.py](echo_pro_app.py) and wired Help search directly to `filter_help_text` in [app/ui/tabbed_window_layout.py](app/ui/tabbed_window_layout.py) to keep layout logic centralized.
