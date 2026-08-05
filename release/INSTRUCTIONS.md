@@ -38,3 +38,13 @@ This folder contains end-user distribution artifacts only.
   - **Home**: waveform timeline + studio mixer
   - **Recording**: devices, transport, take review
   - **Voice FX** and **Music**: model-driven creative tools
+
+## Contributor validation workflow (no root EchoPro.exe required)
+
+When validating packaged launch from a source checkout, do not rely on repo-root `EchoPro.exe`.
+
+1. Validate bundle completeness from repo root with `tools\\dev\\validate_packaged_launcher.bat`.
+1. If complete, run `release\\Portable\\EchoPro_Portable.bat`.
+1. Verify the tabbed UI opens and key tabs are visible.
+
+If validation fails due to missing packaged artifacts, produce a fresh bundle with `tools\dev\build_exe.bat` or copy a known-good `release\Portable` artifact set before launch testing.

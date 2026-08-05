@@ -2,10 +2,115 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Launch Echo Pro (Source Non-Debug)",
+      "type": "shell",
+      "command": "call \"${workspaceFolder}\\Start_Echo.bat\" check && call \"${workspaceFolder}\\Start_Echo.bat\"",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "cmd.exe",
+          "args": [
+            "/d",
+            "/c"
+          ]
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "Run UI Smoke Checks",
       "type": "shell",
       "command": "${workspaceFolder}/tools/dev/run_ui_smoke_checks.bat",
       "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Echo Pro Runtime Health Check",
+      "type": "shell",
+      "command": "call \"${workspaceFolder}\\tools\\dev\\echo_runtime_health.bat\" check",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "cmd.exe",
+          "args": [
+            "/d",
+            "/c"
+          ]
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Echo Pro Runtime Repair",
+      "type": "shell",
+      "command": "call \"${workspaceFolder}\\tools\\dev\\echo_runtime_health.bat\" repair",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "cmd.exe",
+          "args": [
+            "/d",
+            "/c"
+          ]
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Echo Pro Runtime Reset + Repair",
+      "type": "shell",
+      "command": "call \"${workspaceFolder}\\tools\\dev\\echo_runtime_health.bat\" reset",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "cmd.exe",
+          "args": [
+            "/d",
+            "/c"
+          ]
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Validate Packaged Launcher Bundle",
+      "type": "shell",
+      "command": "call \"${workspaceFolder}\\tools\\dev\\validate_packaged_launcher.bat\"",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "cmd.exe",
+          "args": [
+            "/d",
+            "/c"
+          ]
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
       "problemMatcher": []
     },
     {

@@ -224,7 +224,7 @@ class TransportBar(QWidget):
         super().__init__(parent)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        layout.setSpacing(8)
 
         self.record_button = QPushButton("\u25cf")
         self.stop_button = QPushButton("\u25a0")
@@ -233,7 +233,7 @@ class TransportBar(QWidget):
         self.click_button = QPushButton("\u266a")
 
         for button in [self.record_button, self.stop_button, self.undo_button, self.redo_button, self.click_button]:
-            button.setFixedSize(36, 28)
+            button.setFixedSize(36, 36)
             layout.addWidget(button)
 
         self.record_button.setToolTip("Record")

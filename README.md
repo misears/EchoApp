@@ -5,6 +5,7 @@ Echo Pro is a local desktop audio production app with waveform editing, recordin
 ## 1) Quick install
 
 ### Option A: Installer build (recommended for most users)
+
 1. Run `EchoProInstaller.exe`.
 2. Choose the app install folder, then choose the separate Echo Pro data folder when prompted.
 3. Select which launcher style to install: desktop, portable, or both.
@@ -12,9 +13,20 @@ Echo Pro is a local desktop audio production app with waveform editing, recordin
 5. Launch Echo Pro from the Start Menu or desktop shortcut.
 
 ### Option B: Portable / source folder run
+
 1. Run `install_echo_pro.bat`.
 2. Wait for setup to finish (FFmpeg, Demucs, RVC, ACE Step dependencies).
 3. Start the app with `Start_Echo.bat` for a one-click source launch, `echo_pro_app.py` for direct dev runs, or `EchoPro_Portable.bat` for portable mode.
+
+## 1.1) Preferred contributor launch path (non-debug source)
+
+Use the VS Code task `Launch Echo Pro (Source Non-Debug)`.
+
+- This task calls `Start_Echo.bat check` first, then launches via `Start_Echo.bat`.
+- It uses the same runtime/data-root environment the app expects (`%LOCALAPPDATA%\EchoProData` by default, or `echo_home.txt` override).
+- If launch fails, run `Echo Pro Runtime Health Check` then `Echo Pro Runtime Repair` from the task list.
+
+Debug fallback remains available through launch config `Echo Pro (Source Runtime)`.
 
 ## 2) Data location and first run notes
 
@@ -61,6 +73,33 @@ Echo Pro uses tabbed navigation:
 - If you want a one-click source launch that bootstraps the runtime venv first, use `Start_Echo.bat` from the repo root.
 - If recording fails, verify selected audio input/output devices in **Recording**.
 - If a model-dependent feature is unavailable, rerun `install_echo_pro.bat update` to refresh local assets.
+
+### Runtime health check and recovery
+
+Use `tools/dev/echo_runtime_health.bat`:
+
+- `check`: verifies runtime Python, ffmpeg, demucs executable, demucs model assets, RVC path, ACE-Step path, and core Python imports.
+- `repair`: runs `install_echo_pro.bat update`, then re-runs checks.
+- `reset`: backs up `%ECHO_PRO_HOME%\runtime\venv` to `venv_backup_YYYYMMDD_HHMMSS`, then performs repair.
+
+Equivalent VS Code tasks:
+
+- `Echo Pro Runtime Health Check`
+- `Echo Pro Runtime Repair`
+- `Echo Pro Runtime Reset + Repair`
+
+Use `reset` only when normal `repair` does not recover startup/runtime behavior.
+
+### Packaged launcher validation (contributors without repo-root EchoPro.exe)
+
+Source checkouts are not guaranteed to contain a runnable packaged exe at repo root. Use the packaged bundle path instead:
+
+1. Ensure a full portable bundle exists under `release/Portable/` (must include `EchoPro.exe`, `_internal`, `EchoPro_Portable.bat`, `install_echo_pro.bat`).
+2. Run `tools/dev/validate_packaged_launcher.bat` (or the VS Code task `Validate Packaged Launcher Bundle`).
+3. Launch `release/Portable/EchoPro_Portable.bat`.
+4. Confirm the tabbed window opens and key tabs render: Mixer, Home, Recording, Stem Separation, Voice FX, AI Generation (ACE-Step), Mastering, MIDI Mapping, Settings, Tools, Help.
+
+If the validation script reports missing files, regenerate/copy a portable bundle before testing packaged launch behavior.
 
 ## 6) Developer utilities location
 

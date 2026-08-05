@@ -1324,11 +1324,12 @@ class EchoProWindow(QMainWindow):
 
         self.update_status("Ready")
 
-    def _configure_symbol_button(self, button: QPushButton, symbol: str, tooltip: str, *, width: int = 36, height: int = 28) -> None:
+    def _configure_symbol_button(self, button: QPushButton, symbol: str, tooltip: str, *, width: int = 36, height: int = 36) -> None:
         button.setText(symbol)
         button.setToolTip(tooltip)
         button.setAccessibleName(tooltip)
         button.setFixedSize(width, height)
+        button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
     def _sync_metronome_button_state(self, running: bool) -> None:
         for bar in self._recording_transport_bars():

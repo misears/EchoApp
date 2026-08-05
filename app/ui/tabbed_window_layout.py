@@ -240,6 +240,7 @@ def build_ui(window) -> None:
     content_layout.setSpacing(8)
 
     header = QHBoxLayout()
+    header.setSpacing(8)
     window.project_name_label = QLabel("Project: Untitled")
     window.project_name_label.setStyleSheet("font-size:13px; font-weight:bold; color:#E2E2E5;")
     header.addWidget(window.project_name_label)
@@ -252,7 +253,7 @@ def build_ui(window) -> None:
         ("\U0001f50d", window.browse_projects, "Browse projects"),
     ]:
         button = QPushButton(symbol)
-        window._configure_symbol_button(button, symbol, tip, width=34)
+        window._configure_symbol_button(button, symbol, tip, width=36)
         button.clicked.connect(slot)
         header.addWidget(button)
 
@@ -303,7 +304,7 @@ def build_overview_tab(window) -> QWidget:
     tab = QWidget()
     layout = QVBoxLayout(tab)
     layout.setContentsMargins(8, 8, 8, 8)
-    layout.setSpacing(6)
+    layout.setSpacing(8)
 
     # Master stereo waveform display
     master_content = QWidget()
@@ -328,7 +329,7 @@ def build_overview_tab(window) -> QWidget:
 
     project_content = QWidget()
     project_layout = QHBoxLayout(project_content)
-    project_layout.setSpacing(6)
+    project_layout.setSpacing(8)
     project_layout.setContentsMargins(4, 4, 4, 4)
     window.track_name_input = QLineEdit()
     window.track_name_input.setPlaceholderText("Track name")
@@ -346,7 +347,7 @@ def build_overview_tab(window) -> QWidget:
         ("\u23fa", window.toggle_arm_selected_track, "Arm or disarm selected track for recording"),
     ]:
         button = QPushButton(symbol)
-        window._configure_symbol_button(button, symbol, tip, width=34)
+        window._configure_symbol_button(button, symbol, tip, width=36)
         button.clicked.connect(slot)
         project_layout.addWidget(button)
     project_layout.addStretch()
@@ -626,6 +627,7 @@ def build_recording_tab(window) -> QWidget:
 
     device_group = QGroupBox("Audio Devices and Checks")
     device_layout = QHBoxLayout(device_group)
+    device_layout.setSpacing(8)
     window.input_device_combo = QComboBox()
     window.input_device_combo.setToolTip("Select the audio input device for recording")
     window.output_device_combo = QComboBox()
@@ -656,6 +658,7 @@ def build_recording_tab(window) -> QWidget:
 
     transport_group = QGroupBox("Transport")
     transport_layout = QHBoxLayout(transport_group)
+    transport_layout.setSpacing(8)
     window.transport_bar = TransportBar()
     window.transport_bar.record_button.clicked.connect(window.start_recording_session)
     window.transport_bar.stop_button.clicked.connect(window.stop_recording_session)
@@ -734,6 +737,7 @@ def build_recording_tab(window) -> QWidget:
     takes_group = QGroupBox("Take Review")
     takes_layout = QVBoxLayout(takes_group)
     header = QHBoxLayout()
+    header.setSpacing(8)
     window.take_track_combo = QComboBox()
     window.take_track_combo.currentIndexChanged.connect(window.refresh_take_review_list)
     window.take_sort_combo = QComboBox()
@@ -772,8 +776,8 @@ def build_recording_tab(window) -> QWidget:
     takes_layout.addWidget(window.take_list_widget)
 
     take_actions = QGridLayout()
-    take_actions.setHorizontalSpacing(4)
-    take_actions.setVerticalSpacing(4)
+    take_actions.setHorizontalSpacing(8)
+    take_actions.setVerticalSpacing(8)
     for index, (symbol, slot, tip) in enumerate([
         ("\u2713", window.set_selected_take_active, "Set selected take as active"),
         ("\u25b6", window.audition_selected_take, "Audition selected take"),
@@ -803,7 +807,7 @@ def build_recording_tab(window) -> QWidget:
     comp_layout.addWidget(QLabel("Comp End"), 0, 2)
     comp_layout.addWidget(window.comp_end_sec_input, 0, 3)
     button_row = QHBoxLayout()
-    button_row.setSpacing(4)
+    button_row.setSpacing(8)
     for symbol, slot, tip in [
         ("\u239a", window.create_comp_region_from_selection, "Create comp region from selection"),
         ("\u21a6", window.assign_selected_take_to_comp_region, "Assign selected take to comp region"),

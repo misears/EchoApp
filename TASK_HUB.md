@@ -290,16 +290,24 @@ Fix and complete the in-lane editing behaviors that the arrangement view depends
 
 ### Group 13 — Control Polish & Icon Consistency
 
-- [ ] **13.1** Standardize all icon button sizing and spacing: 36×36px for transport, consistent size across Home and Recording flows, hover-tooltip labels for all icon-only controls, larger hit targets where noted. *(ref: existing P2 brief)*
-- [ ] **13.2** Control sizing and layout cleanup pass: ensure control clusters use fixed bounding boxes, buttons are 8px apart within clusters, no control stretches to fill space. *(ref: UX §1.9)*
+- [x] **13.1** Standardize all icon button sizing and spacing: 36×36px for transport, consistent size across Home and Recording flows, hover-tooltip labels for all icon-only controls, larger hit targets where noted. *(ref: existing P2 brief)*
+- [x] **13.2** Control sizing and layout cleanup pass: ensure control clusters use fixed bounding boxes, buttons are 8px apart within clusters, no control stretches to fill space. *(ref: UX §1.9)*
+
+  - **Status:** Complete
+  - **What landed (2026-08-05):** Standardized icon-button helper sizing policy to fixed-size controls and moved default icon targets to 36×36 in the live path. Updated shared recording transport controls to 36×36 hit targets with 8px spacing, and normalized Home/Recording control cluster spacing in the active tabbed layout (including header icon rows, take-action rows, and comp/recovery action rows).
+  - **Validation:** `Run UI Smoke Checks` passed after the control-polish pass (open_app, record_arm_flow, take_review_toggles, stems_dialog_flow, ace_generation_flow).
 
 ---
 
 ### Group 14 — Developer Infrastructure & Launch Reliability
 
-- [ ] **14.1** Fix the non-debug source launch path so `Start_Echo.bat` and the VS Code shell task reliably surface the PySide window; document the preferred developer launch path. *(ref: existing P2 brief)*
-- [ ] **14.2** Add a runtime environment health check and recovery path for `%LOCALAPPDATA%\EchoProData\runtime\venv`; document the reset/resync procedure for contributors. *(ref: existing P3 brief)*
-- [ ] **14.3** Define and document the repeatable packaged-launcher validation path for contributors who do not have `EchoPro.exe` in their source checkout. *(ref: existing P3 brief)*
+- [x] **14.1** Fix the non-debug source launch path so `Start_Echo.bat` and the VS Code shell task reliably surface the PySide window; document the preferred developer launch path. *(ref: existing P2 brief)*
+- [x] **14.2** Add a runtime environment health check and recovery path for `%LOCALAPPDATA%\EchoProData\runtime\venv`; document the reset/resync procedure for contributors. *(ref: existing P3 brief)*
+- [x] **14.3** Define and document the repeatable packaged-launcher validation path for contributors who do not have `EchoPro.exe` in their source checkout. *(ref: existing P3 brief)*
+
+  - **Status:** Complete
+  - **What landed (2026-08-05):** Added dedicated VS Code tasks for non-debug source launch (`Launch Echo Pro (Source Non-Debug)`), runtime health/repair/reset (`Echo Pro Runtime Health Check`, `Echo Pro Runtime Repair`, `Echo Pro Runtime Reset + Repair`), and packaged bundle checks (`Validate Packaged Launcher Bundle`). Added `tools/dev/echo_runtime_health.bat` with `check`/`repair`/`reset` modes and `tools/dev/validate_packaged_launcher.bat` for repeatable portable-bundle validation. Updated contributor-facing docs in `README.md` and `release/INSTRUCTIONS.md` to define the preferred launch path, recovery sequence, and packaged-launch validation workflow.
+  - **Validation:** Runtime health script executed in both failure detection and repair flows; packaged validator passes against `release/Portable`; UI smoke checks pass after infra/doc updates.
 
 ---
 
@@ -332,9 +340,9 @@ Fix and complete the in-lane editing behaviors that the arrangement view depends
     - Milestone landed: Group 11 Settings page implemented and wired in the active `TabbedEchoProWindow` path (audio engine controls, model manager, appearance, shortcut mapping, project defaults, and about section), with project-metadata backed settings state.
     - Milestone landed: Group 10 MIDI Mapping page + worker flow implemented (three-panel UI, learn mode, normalized CC mapping, and QThread lifecycle wiring) in the live tab path.
     - Validation: `Run UI Smoke Checks` passed after extraction (open_app, record_arm_flow, take_review_toggles, stems_dialog_flow, ace_generation_flow).
-    - GUI checklist audit complete: Groups 1-12 are marked complete; Group 13 remains legitimately pending and should stay unchecked.
+    - GUI checklist audit complete: Groups 1-14 are marked complete.
     - GUI extraction phases for tab layout are complete and recorded in Recently Completed.
-    - Remaining unchecked GUI group is Group 13 (control polish).
+    - Remaining unchecked GUI groups have moved to Group 14+ infrastructure/documentation work.
   - Done when:
     - One additional controller extraction lands with passing smoke checks. ✅
     - GUI checklist items in this file reflect true current state (no stale unchecked/checked drift).
@@ -388,6 +396,8 @@ Fix and complete the in-lane editing behaviors that the arrangement view depends
 
 ## Recently Completed
 
+- Implemented Group 14 developer infrastructure and launch reliability updates: added non-debug source launch task, runtime health/repair/reset script + tasks, packaged launcher validation script + task, and contributor docs for launch/recovery/packaged validation workflows.
+- Implemented Group 13 control polish in the live tabbed app path: normalized icon button helper sizing to fixed 36×36 defaults, updated shared recording transport buttons to 36×36 with 8px spacing, and aligned Home/Recording control-cluster spacing to 8px in core action rows.
 - Implemented Group 12 keyboard and state-machine pass in the live tabbed app path: added settings-backed global shortcut binding registration, tab-cycle shortcuts, timeline delete/split keyboard actions, and centralized title/status state indicators (Idle/Open/Playing/Recording/AI/MIDI Learn/Unsaved).
 - Implemented Group 10 MIDI Mapping page in the live tabbed GUI path, including three-panel mapping UI, MIDI Learn console/banners, and a background `MidiInputWorker` thread that polls input, normalizes CC values, and applies learned mappings.
 - Implemented Group 11 Settings page in the live tabbed GUI path: added `Settings` tab with left-nav sections (Audio Engine, Model Manager, Appearance, Keyboard Shortcuts, Project Defaults, About), wired audio apply/latency status actions, and functional model inventory/install/default/remove workflows.
