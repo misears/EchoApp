@@ -4,7 +4,7 @@ Handles input/output device selection, capabilities, and fallback handling.
 """
 
 import sounddevice as sd
-from typing import List, Optional, Dict, Tuple
+from typing import Any, List, Optional, Dict, Tuple
 from dataclasses import dataclass
 import shutil
 
@@ -128,8 +128,10 @@ class AudioDeviceManager:
         """Get all available output devices."""
         return [d for d in self.devices if d.is_output_capable()]
     
-    def get_device(self, device_id: int) -> Optional[AudioDevice]:
+    def get_device(self, device_id: Optional[int]) -> Optional[AudioDevice]:
         """Get device by ID."""
+        if device_id is None:
+            return None
         for device in self.devices:
             if device.device_id == device_id:
                 return device
@@ -291,7 +293,7 @@ class AudioDeviceManager:
             "warnings": warnings,
         }
 
-    def format_preflight_summary(self, summary: Dict[str, object]) -> str:
+    def format_preflight_summary(self, summary: Dict[str, Any]) -> str:
         lines = [
             f"Input: {summary.get('input_device', 'None')}",
             f"Output: {summary.get('output_device', 'None')}",

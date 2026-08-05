@@ -88,12 +88,12 @@ Build the primary DAW surface in sub-section order so each new layer has a stabl
 
 - [x] **3.1** Implement the top toolbar: File / Edit / View / Project / AI Tools / Settings menus; New / Open / Save / Export / Undo / Redo icon buttons; editable BPM display with scroll-wheel nudge; master volume circular knob; time signature dropdown; sample rate + bit depth readout. *(ref: UX §2.2)*
   - **Status:** Complete
-  - **Depends on:** Item 1.4 (MainMixerLayout scaffolding) ✓ 
+  - **Depends on:** Item 1.4 (MainMixerLayout scaffolding) ✓
   - **What landed:** `app/ui/widgets/main_mixer_layout.py` now builds the toolbar shell with menu buttons, quick-action buttons, controller-backed BPM/time-signature/master-volume controls, and sample format readout. File Export and Settings are now wired to real callbacks in `echo_pro_app.py`, View now includes sidebar toggling, and DAW-standard key bindings are applied (`Ctrl+N`, `Ctrl+O`, `Ctrl+S`, `Ctrl+Shift+E`, `Ctrl+Z`, `Ctrl+Y`, `Ctrl+B`, `Ctrl+,`).
 
 - [x] **3.2** Build the Left Master Section (200px fixed): vertical master fader (≥200px stroke), dual-channel L+R VU meter, LUFS integrated readout (cyan monospace), master EQ toggle, master limiter threshold knob, master effects chain button, "MASTER" label. *(ref: UX §2.3)*
   - **Status:** Complete
-  - **Depends on:** Item 1.4 (MainMixerLayout scaffolding) ✓ 
+  - **Depends on:** Item 1.4 (MainMixerLayout scaffolding) ✓
   - **What landed:** `app/ui/widgets/main_mixer_layout.py` now renders the fixed 200px master panel shell with a 220px vertical fader, dual L/R VU meters, cyan LUFS readout, master EQ toggle, limiter threshold dial, and effects-chain button. Live meter/LUFS updates are now driven from recording meter updates in `echo_pro_app.py::refresh_recording_meters()` using a DAW-style integrated loudness proxy. Master EQ toggle and effects-chain button are now routed to real app callbacks, and limiter threshold now feeds render behavior via `playback_mixer.py` during mix/export.
 
 - [x] **3.3** Implement the Timeline Ruler (28px): bars:beats / seconds toggle, cyan full-height playhead, click-to-reposition, synchronized horizontal scroll. *(ref: UX §2.4)*
@@ -319,6 +319,7 @@ Fix and complete the in-lane editing behaviors that the arrangement view depends
 - Older internal status docs can drift from the repo's current runtime and launch reality, so this file should be treated as the actively maintained task snapshot.
 
 ## Implementation Briefs
+
 ### Reliable non-debug launch from source
 
 - **Priority:** P2
@@ -359,6 +360,10 @@ Fix and complete the in-lane editing behaviors that the arrangement view depends
 
 ## Recently Completed
 
+- Extracted major `TabbedEchoProWindow` GUI construction (`_build_ui`, Home/Recording/Voice tab builders, scroll wrapper, and timeline add-clip handler) into [app/ui/tabbed_window_layout.py](app/ui/tabbed_window_layout.py), leaving `echo_pro_app.py` with thin delegating methods for cleaner structure and easier maintenance.
+- Completed phase-2 GUI extraction by moving remaining tab builders (ACE-Step, Mastering Chain, Demucs, Tools, and Help filtering helpers) into [app/ui/tabbed_window_layout.py](app/ui/tabbed_window_layout.py), with `TabbedEchoProWindow` methods in [echo_pro_app.py](echo_pro_app.py) now delegating to module helpers.
+- Removed the now-unused `TabbedEchoProWindow._filter_help_text` wrapper from [echo_pro_app.py](echo_pro_app.py) and wired Help search directly to `filter_help_text` in [app/ui/tabbed_window_layout.py](app/ui/tabbed_window_layout.py) to keep layout logic centralized.
+- Moved Help guide HTML content ownership from [echo_pro_app.py](echo_pro_app.py) into `HELP_GUIDE_HTML` inside [app/ui/tabbed_window_layout.py](app/ui/tabbed_window_layout.py), then removed the obsolete `_help_guide_html` class method.
 - Confirmed that the project-playback freeze issue is no longer reproducing in manual playback checks.
 - Added a [cleanup prompt](C:/Users/misea/OneDrive/Documents/AI%20Project%20Folders/EchoApp/.github/prompts/cleanup.prompt.md) for archiving obsolete files and reducing project-folder clutter safely.
 - Converted the main Home controls plus the Recording tab's transport, setup, take-review, and comp/recovery actions to compact icon-style buttons with hover labels as a first pass on the broader control declutter work.
