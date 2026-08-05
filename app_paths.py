@@ -1,3 +1,13 @@
+"""Runtime path resolution for Echo Pro.
+
+Resolves the data root (ECHO_ROOT) in three priority tiers:
+  1. ECHO_PRO_HOME environment variable (explicit override)
+  2. echo_home.txt file next to the executable (portable override)
+  3. A .echo_portable marker file (portable mode) or %LOCALAPPDATA%/EchoProData (installed mode)
+
+All other path constants derive from ECHO_ROOT.
+"""
+
 import os
 import sys
 from pathlib import Path
@@ -41,6 +51,8 @@ def resolve_echo_root() -> Path:
     return Path(local_app_data) / "EchoProData"
 
 
+# ── MODULE-LEVEL CONSTANTS ────────────────────────────────────────────────────
+# Resolved once at import time; all other modules import from here.
 ECHO_ROOT = resolve_echo_root()
 PROJECTS_DIR = ECHO_ROOT / "projects"
 VOICES_DIR = ECHO_ROOT / "voices"
@@ -48,9 +60,10 @@ GENERATED_DIR = ECHO_ROOT / "generated"
 TOOLS_DIR = ECHO_ROOT / "tools"
 RUNTIME_DIR = ECHO_ROOT / "runtime"
 MODELS_DIR = ECHO_ROOT / "models"
-RVC_MODELS_DIR = MODELS_DIR / "rvc"
-ACE_MODELS_DIR = MODELS_DIR / "ace_step_1_5"
+RVC_MODELS_DIR = MODELS_DIR / "rvc"          # RVC voice-conversion model assets
+ACE_MODELS_DIR = MODELS_DIR / "ace_step_1_5" # ACE-Step 1.5 music-generation assets
 
+# ── DIRECTORY BOOTSTRAP ───────────────────────────────────────────────────────
 def ensure_dirs():
     PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
     VOICES_DIR.mkdir(parents=True, exist_ok=True)

@@ -1,3 +1,9 @@
+"""First-run detection for Echo Pro.
+
+Writes a sentinel file to ECHO_ROOT on first launch so the app can show
+the welcome/setup dialog exactly once.
+"""
+
 from pathlib import Path
 from app_paths import ECHO_ROOT, ensure_dirs
 

@@ -1,3 +1,10 @@
+"""Audio file metadata helpers.
+
+Provides get_audio_length_ms() for reading clip duration using soundfile (fast,
+no subprocess) for native formats and ffprobe as a fallback for MP3 and
+other container formats.
+"""
+
 import json
 import subprocess
 from pathlib import Path

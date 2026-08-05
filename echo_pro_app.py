@@ -1,5 +1,26 @@
 
 # pyright: reportAttributeAccessIssue=false, reportArgumentType=false
+"""Echo Pro — main application module.
+
+Contains all UI classes and the application entry point.
+
+Key classes
+-----------
+ClipFadeSettingsPopover   Floating dialog for per-clip fade/curve editing.
+StemSourceDropZone        Drag-and-drop target for stem separation source files.
+StemSeparationWorker      QObject worker that runs Demucs on a background QThread.
+LufsHistoryWidget         Custom painter widget showing integrated LUFS over time.
+EqCurvePreviewWidget      Custom painter widget for a 4-band EQ shape preview.
+EchoProWindow             Base QMainWindow with all business logic (project I/O,
+                          playback, recording, stems, voice, music generation).
+TabbedEchoProWindow       Subclass that arranges the UI into a tab strip and is
+                          the live application window launched at startup.
+
+Launch path
+-----------
+main() at the bottom creates a QApplication, instantiates TabbedEchoProWindow,
+and enters the Qt event loop.
+"""
 
 import os
 import copy
@@ -6109,6 +6130,9 @@ class EchoProWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to alter section:\n{e}")
 
 
+# ── LIVE APPLICATION WINDOW ─────────────────────────────────────────────────────
+# TabbedEchoProWindow is the concrete class created at startup.
+# It extends EchoProWindow with the tabbed-strip layout.
 class TabbedEchoProWindow(EchoProWindow):
     def __init__(self):
         QMainWindow.__init__(self)
@@ -9129,6 +9153,7 @@ together using the <b>Comp Range</b> tool in the timeline. The take review and c
 
 EchoProWindow = TabbedEchoProWindow
 
+# ── ENTRY POINT ──────────────────────────────────────────────────────────
 if __name__ == "__main__":
     run_common_validation_checks()
     app = QApplication(sys.argv)

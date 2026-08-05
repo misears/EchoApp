@@ -1,3 +1,10 @@
+"""Voice conversion interface contract for Echo Pro.
+
+Defines the data classes (VoiceBackendConfig, VoiceProfileConfig,
+VoiceConvertRequest, VoiceConvertResult) and the voice_convert() entry point.
+The baseline implementation writes a zero-length silent copy; replace the
+function body to connect a real RVC or similar model.
+"""
 
 from dataclasses import dataclass, field
 import os

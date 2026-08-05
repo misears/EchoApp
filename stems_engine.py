@@ -1,3 +1,10 @@
+"""Stem separation engine for Echo Pro.
+
+Wraps Demucs to split an audio file into stems (vocals, drums, bass, other).
+Resolves the Demucs executable and FFmpeg from the runtime venv or PATH,
+streams progress to an optional callback, and supports cancellation.
+Results are added directly to the current project as new tracks.
+"""
 
 import os
 import queue

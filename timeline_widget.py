@@ -1,3 +1,10 @@
+"""Timeline widget for Echo Pro.
+
+Custom QWidget that renders the multi-track arrangement view: clip blocks,
+waveform thumbnails, fade handles, automation lanes, comp regions, and the
+playhead.  All interaction (clip drag, fade drag, automation editing, context
+menus, zoom) is handled here and reported back via callback attributes.
+"""
 
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple

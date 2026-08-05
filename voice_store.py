@@ -1,3 +1,9 @@
+"""Voice profile registry for Echo Pro.
+
+Persists named voice profiles (reference WAV path, consent flag, source type)
+to a JSON index file at VOICES_DIR/voice_profiles.json.  Profiles with
+missing or nonexistent audio files are silently dropped on load.
+"""
 
 import json
 from dataclasses import dataclass, asdict

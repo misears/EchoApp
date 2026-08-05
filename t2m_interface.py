@@ -1,3 +1,9 @@
+"""Text-to-music interface contract for Echo Pro.
+
+Defines the data classes (T2MModelConfig, T2MClipRequest, T2MClipResult) and
+the t2m_generate_clip() entry point.  The baseline implementation produces a
+silent placeholder clip; replace the function body to plug in a real model.
+"""
 
 from dataclasses import dataclass, field
 from pathlib import Path

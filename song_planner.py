@@ -1,3 +1,9 @@
+"""Song structure planner for Echo Pro.
+
+Slices lyrics and total song duration evenly across a user-provided section
+list (e.g. ["Intro", "Verse", "Chorus"]) and delegates each section to
+generate_music_clip(), returning a list of rendered audio paths.
+"""
 
 from pathlib import Path
 from typing import List, Dict

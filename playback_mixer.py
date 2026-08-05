@@ -1,3 +1,11 @@
+"""Project playback mixer for Echo Pro.
+
+Mixes all project clips to a stereo buffer and streams it through sounddevice.
+Handles per-track volume, pan (equal-power), mute/solo, loop regions, clip
+fade-in/out envelopes, effects chains (echo, distortion, chorus), and
+automation lane interpolation.  All mixing is done at TARGET_SAMPLE_RATE.
+"""
+
 import math
 
 import numpy as np
@@ -8,7 +16,7 @@ from project_model import Project
 
 TARGET_SAMPLE_RATE = 44100
 
-
+# ── UNIT CONVERSION / AUDIO MATH HELPERS ─────────────────────────────
 def _ms_to_frames(ms: int) -> int:
     return max(0, int(round((float(ms) / 1000.0) * TARGET_SAMPLE_RATE)))
 
@@ -50,6 +58,7 @@ def _load_clip_stereo(path: str, target_sample_rate: int) -> np.ndarray:
     return _resample_stereo(samples, int(sample_rate), int(target_sample_rate))
 
 
+# ── CLIP/PROJECT DURATION HELPERS ────────────────────────────────────
 def _project_duration_ms(project: Project) -> int:
     max_end_ms = 0
     for clip in project.clips:
@@ -68,6 +77,7 @@ def project_duration_ms(project: Project) -> int:
     return max(0, int(_project_duration_ms(project)))
 
 
+# ── FADE ENVELOPE HELPERS ──────────────────────────────────────────────
 def _clip_fade_values_ms(clip) -> tuple[int, int]:
     metadata = getattr(clip, "metadata", {}) or {}
     clip_length_ms = max(1, int(getattr(clip, "length_ms", 1)))

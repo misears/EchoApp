@@ -1,4 +1,10 @@
-## project_model.py
+"""Project data model for Echo Pro.
+
+Defines the core dataclasses (Project, Track, Clip, TrackPlaybackSettings,
+TrackEffectChain) and JSON serialisation helpers (save_project, load_project).
+All coercion and schema-migration logic lives here so callers receive clean,
+fully-typed objects regardless of the on-disk format version.
+"""
 
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List
@@ -6,6 +12,7 @@ import json
 from pathlib import Path
 
 
+# ── DATACLASSES ───────────────────────────────────────────────────────────────
 @dataclass
 class TrackEffectChain:
     echo_enabled: bool = False
@@ -66,6 +73,7 @@ def new_empty_project(name: str) -> Project:
     return Project(name=name, tracks=[], clips=[])
 
 
+# ── COERCION / SCHEMA-MIGRATION HELPERS ─────────────────────────────
 def _coerce_int(value: Any, default: int) -> int:
     try:
         return int(value)

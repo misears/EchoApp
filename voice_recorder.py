@@ -1,3 +1,9 @@
+"""Blocking voice capture helper for Echo Pro.
+
+Records from the default system microphone for a fixed duration and writes
+the result to a WAV file.  Used by the voice profile wizard to capture a
+reference sample for RVC training or conversion.
+"""
 
 import sounddevice as sd
 import soundfile as sf

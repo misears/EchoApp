@@ -1,3 +1,10 @@
+"""Qt stylesheet and design-token constants for Echo Pro.
+
+Exports the DARK_STYLE string (full QSS) and all color/typography tokens
+(C_* and FONT_* constants) used by the rest of the UI.  Tokens follow the
+UX design spec sections referenced in the inline comments below.
+"""
+
 # ── COLOR TOKENS (UX §1.7) ──────────────────────────────────────────────────
 # Depth layers
 C_L0 = "#121214"       # window base / absolute floor

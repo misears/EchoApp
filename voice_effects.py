@@ -1,3 +1,9 @@
+"""Voice conversion helper for Echo Pro.
+
+apply_voice_conversion() is the single call-site used by the UI to convert a
+recorded WAV through an RVC voice profile.  It resolves the backend config
+from voice_interface and normalises metadata fields on the result.
+"""
 
 from pathlib import Path
 

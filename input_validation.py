@@ -1,3 +1,10 @@
+"""Input parsing and validation helpers.
+
+Provides lightweight parse_* functions used across the UI layer to safely
+convert raw string inputs to typed values without raising exceptions.
+run_common_validation_checks() doubles as a smoke-test assertion suite.
+"""
+
 import re
 from typing import Optional, Tuple
 

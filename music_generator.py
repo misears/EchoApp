@@ -1,3 +1,9 @@
+"""Music generation facade for Echo Pro.
+
+Wraps the T2M (text-to-music) backend interface so the UI only needs to call
+generate_music_clip() with high-level parameters (style, genre, mood, lyrics).
+Backend readiness is checked via get_music_backend_capability().
+"""
 
 import os
 from pathlib import Path
