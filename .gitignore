@@ -1,2 +1,12 @@
 EchoApp DAW — UX Layer Companion Document.docx
 # AI Context — EchoApp.md
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
