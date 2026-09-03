@@ -51,11 +51,22 @@ Echo Pro uses tabbed navigation:
   - Hover-labeled icon actions for recording arm/setup, take review, comping, recovery, and transport.
 - **Voice FX**
   - Apply voice conversion to a selected clip with a selected profile.
-- **Music**
-  - Generate single clips or multi-section songs.
+- **Stem Separation**
+  - Run Demucs stem separation with model/device/output controls.
+  - Preview separated stems and transfer to tracks or AI generation.
+- **AI Generation**
+  - Generate single clips or multi-section songs (ACE-Step workflow).
   - Alter/regenerate individual song sections.
+- **Mastering**
+  - Access mastering chain controls and final-output polish actions.
+- **MIDI Mapping**
+  - Configure MIDI device mappings and learn-mode assignments.
+- **Settings**
+  - Manage audio engine, models, appearance, shortcuts, and project defaults.
 - **Tools**
-  - Utility actions (stems and regression checks).
+  - Utility actions and quick navigation helpers for advanced workflows.
+- **Help**
+  - Built-in guidance and searchable help content.
 
 ## 4) Typical workflow
 
@@ -64,7 +75,7 @@ Echo Pro uses tabbed navigation:
 3. Use the **Home** transport icon buttons to play, stop, or jump to the current selection or selected clip boundaries during project editing.
 4. Record takes on **Recording** using the hover-labeled arm/setup icons, transport controls, and take-review actions.
 5. Refine gain/mute/solo and open per-track **FX** settings in **Home** studio mixer.
-6. Use **Voice FX** and **Music** tabs as needed.
+6. Use **Voice FX**, **Stem Separation**, and **AI Generation** as needed; then review **Mastering**, **MIDI Mapping**, and **Settings** for final polish and configuration.
 7. Save project frequently.
 
 ## 5) Troubleshooting
