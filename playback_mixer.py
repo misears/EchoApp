@@ -108,6 +108,71 @@ def _apply_clip_fades(audio: np.ndarray, fade_in_ms: int, fade_out_ms: int) -> n
     return output
 
 
+def _clip_gain_envelopes(clip) -> list[dict]:
+    metadata = getattr(clip, "metadata", {}) or {}
+    raw = metadata.get("gain_envelopes", [])
+    if not isinstance(raw, list):
+        return []
+    cleaned: list[dict] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        try:
+            start_ms = int(item.get("start_ms", 0))
+            end_ms = int(item.get("end_ms", 0))
+            start_gain_db = float(item.get("start_gain_db", 0.0))
+            end_gain_db = float(item.get("end_gain_db", 0.0))
+        except (TypeError, ValueError):
+            continue
+        if end_ms <= start_ms:
+            continue
+        cleaned.append(
+            {
+                "start_ms": int(start_ms),
+                "end_ms": int(end_ms),
+                "start_gain_db": float(start_gain_db),
+                "end_gain_db": float(end_gain_db),
+            }
+        )
+    cleaned.sort(key=lambda entry: (int(entry["start_ms"]), int(entry["end_ms"])))
+    return cleaned
+
+
+def _apply_clip_gain_envelopes(audio: np.ndarray, clip) -> np.ndarray:
+    if audio.shape[0] == 0:
+        return audio
+    envelopes = _clip_gain_envelopes(clip)
+    if not envelopes:
+        return audio
+
+    output = np.array(audio, copy=True)
+    clip_start_ms = int(getattr(clip, "start_ms", 0))
+    clip_end_ms = clip_start_ms + int(getattr(clip, "length_ms", 0))
+
+    for envelope in envelopes:
+        env_start = max(clip_start_ms, int(envelope["start_ms"]))
+        env_end = min(clip_end_ms, int(envelope["end_ms"]))
+        if env_end <= env_start:
+            continue
+        rel_start_ms = max(0, env_start - clip_start_ms)
+        rel_end_ms = max(rel_start_ms + 1, env_end - clip_start_ms)
+        frame_start = min(output.shape[0], _ms_to_frames(int(rel_start_ms)))
+        frame_end = min(output.shape[0], _ms_to_frames(int(rel_end_ms)))
+        if frame_end <= frame_start:
+            continue
+
+        start_gain = _db_to_linear(float(envelope["start_gain_db"]))
+        end_gain = _db_to_linear(float(envelope["end_gain_db"]))
+        frame_count = frame_end - frame_start
+        if frame_count <= 1:
+            output[frame_start:frame_end, :] *= float(start_gain)
+            continue
+        ramp = np.linspace(start_gain, end_gain, frame_count, endpoint=True, dtype=np.float32)[:, None]
+        output[frame_start:frame_end, :] *= ramp
+
+    return output
+
+
 def _group_clips_by_track(project: Project) -> dict[int, list]:
     grouped: dict[int, list] = {}
     for clip in project.clips:
@@ -131,6 +196,7 @@ def _render_track_segment(track_clips: list, total_frames: int) -> np.ndarray:
             fade_in_ms, fade_out_ms = _clip_fade_values_ms(clip)
             if fade_in_ms > 0 or fade_out_ms > 0:
                 seg = _apply_clip_fades(seg, int(fade_in_ms), int(fade_out_ms))
+            seg = _apply_clip_gain_envelopes(seg, clip)
 
             start = int(max(0, round((clip.start_ms / 1000.0) * TARGET_SAMPLE_RATE)))
             if start >= track_buffer.shape[0]:

@@ -1,6 +1,8 @@
 # ECHO PRO BUILD STATUS — Code vs. Outline Comparison
 
-> Status note: this document is a build/status snapshot. The actively maintained task backlog and current problems list live in [TASK_HUB.md](../../TASK_HUB.md).
+> Historical snapshot: this document is retained for reference and is not the active project-status source.
+> Authoritative source: use [TASK_HUB.md](../../TASK_HUB.md) for current backlog, priorities, problems, and completion state.
+> Snapshot date: 2026-07-24.
 
 **Last Updated:** 2026-07-24 (Phase 6 started)  
 **Overall Completion:** 98% (Phases 1-5B Complete and Verified, Phase 6 In Progress)

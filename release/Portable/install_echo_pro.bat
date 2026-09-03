@@ -17,7 +17,7 @@ if "%APP_ROOT:~-1%"=="\" set "APP_ROOT=%APP_ROOT:~0,-1%"
 
 set "ECHO_HOME=%ECHO_PRO_HOME%"
 if not defined ECHO_HOME if exist "%APP_ROOT%\echo_home.txt" set /p ECHO_HOME=<"%APP_ROOT%\echo_home.txt"
-if not defined ECHO_HOME set "ECHO_HOME=%LOCALAPPDATA%\EchoProData"
+if not defined ECHO_HOME set "ECHO_HOME=%APP_ROOT%\EchoProData"
 
 set "TOOLS=%ECHO_HOME%\tools"
 set "VENV_DIR=%ECHO_HOME%\runtime\venv"

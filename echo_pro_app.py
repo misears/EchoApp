@@ -606,8 +606,13 @@ class EchoProWindow(QMainWindow):
         self._saved_project_fingerprint: Optional[str] = None
         self._timeline_zoom_step_ratio = 1.25
         self._automation_parameter_by_track: Dict[int, str] = {}
+        self._timeline_interaction_mode = "multitrack"
+        self._timeline_tool_mode = "pointer"
+        self._loop_selection_enabled = False
+        self._loop_selection_range: Optional[Tuple[int, int, str]] = None
         self._clip_fade_popover: Optional[ClipFadeSettingsPopover] = None
         self._clip_fade_edit_state: Optional[dict] = None
+        self._clip_gain_edit_state: Optional[dict] = None
         self._single_track_editor_tab: Optional[QWidget] = None
         self._single_track_editor_track_index: Optional[int] = None
         self._project_save_directory: Optional[Path] = None
@@ -748,6 +753,10 @@ class EchoProWindow(QMainWindow):
             badges.append("MIDI Learn")
         if is_processing and base_state != "AI Processing":
             badges.append("AI")
+        if str(self._timeline_interaction_mode) == "edit":
+            badges.append("Edit View")
+        if str(self._timeline_tool_mode) != "pointer":
+            badges.append(str(self._timeline_tool_mode).title())
         if is_dirty:
             badges.append("Unsaved")
 
@@ -1304,6 +1313,7 @@ class EchoProWindow(QMainWindow):
         self.timeline.on_track_double_click = self._on_timeline_track_double_click
         self.timeline.on_automation_points_changed = self._on_timeline_automation_points_changed
         self.timeline.on_clip_fade_changed = self._on_timeline_clip_fade_changed
+        self.timeline.on_gain_envelope_changed = self._on_timeline_gain_envelope_changed
         layout.addWidget(self.timeline)
 
         container = QWidget()
@@ -2260,6 +2270,7 @@ class EchoProWindow(QMainWindow):
     def _on_timeline_track_double_click(self, track_index: int) -> None:
         if not (0 <= int(track_index) < len(self.current_project.tracks)):
             return
+        self._set_timeline_interaction_mode("edit", persist=True)
         self.selected_track_index = int(track_index)
         if hasattr(self, "track_list") and self.track_list.currentRow() != int(track_index):
             self.track_list.setCurrentRow(int(track_index))
@@ -2356,6 +2367,75 @@ class EchoProWindow(QMainWindow):
             self._refresh_active_project_playback_mix(f"clip {clip_id} fades")
             self.update_status(
                 f"Clip {clip_id} fades: in {int(fade_in_ms)}ms, out {int(fade_out_ms)}ms"
+            )
+
+    def _clip_gain_envelope_signature(self, clip: Clip) -> tuple:
+        metadata = dict(getattr(clip, "metadata", {}) or {})
+        envelopes = metadata.get("gain_envelopes", [])
+        if not isinstance(envelopes, list):
+            return tuple()
+        signature = []
+        for item in envelopes:
+            if not isinstance(item, dict):
+                continue
+            try:
+                signature.append(
+                    (
+                        int(item.get("start_ms", 0)),
+                        int(item.get("end_ms", 0)),
+                        round(float(item.get("start_gain_db", 0.0)), 4),
+                        round(float(item.get("end_gain_db", 0.0)), 4),
+                    )
+                )
+            except (TypeError, ValueError):
+                continue
+        signature.sort(key=lambda value: (value[0], value[1], value[2], value[3]))
+        return tuple(signature)
+
+    def _begin_clip_gain_edit(self, clip_id: int) -> None:
+        clip = self._find_clip_by_id(int(clip_id))
+        if clip is None:
+            return
+        active = self._clip_gain_edit_state
+        if isinstance(active, dict) and int(active.get("clip_id", -1)) == int(clip_id):
+            return
+        self._clip_gain_edit_state = {
+            "clip_id": int(clip_id),
+            "snapshot": self._snapshot_project_edit_state(),
+            "signature": self._clip_gain_envelope_signature(clip),
+        }
+
+    def _commit_clip_gain_edit(self, clip_id: int, description: str) -> None:
+        active = self._clip_gain_edit_state
+        clip = self._find_clip_by_id(int(clip_id))
+        if clip is None or not isinstance(active, dict):
+            return
+        if int(active.get("clip_id", -1)) != int(clip_id):
+            return
+        previous = tuple(active.get("signature", tuple()))
+        current = self._clip_gain_envelope_signature(clip)
+        if previous != current:
+            self._push_project_snapshot(str(description), active["snapshot"])
+        self._clip_gain_edit_state = None
+
+    def _on_timeline_gain_envelope_changed(
+        self,
+        clip_id: int,
+        start_ms: int,
+        end_ms: int,
+        start_db: float,
+        end_db: float,
+        commit: bool,
+    ) -> None:
+        clip = self._find_clip_by_id(int(clip_id))
+        if clip is None:
+            return
+        self._begin_clip_gain_edit(int(clip_id))
+        if commit:
+            self._commit_clip_gain_edit(int(clip_id), f"Clip {clip_id} region gain envelope")
+            self._refresh_active_project_playback_mix(f"clip {clip_id} gain envelope")
+            self.update_status(
+                f"Clip {clip_id} gain region {int(start_ms) / 1000.0:.2f}s-{int(end_ms) / 1000.0:.2f}s: {float(start_db):+.1f}dB -> {float(end_db):+.1f}dB"
             )
 
     def _on_fade_popover_changed(
@@ -4002,11 +4082,15 @@ class EchoProWindow(QMainWindow):
             self.update_status("Select a timeline clip before splitting")
             return False
 
+        return self._split_clip_at_ms(clip, int(self.project_playhead_ms))
+
+    def _split_clip_at_ms(self, clip: Clip, split_ms: int) -> bool:
+        clip_id = int(getattr(clip, "id", -1))
         clip_start_ms = int(clip.start_ms)
         clip_end_ms = int(clip.start_ms) + int(clip.length_ms)
-        split_ms = int(self.project_playhead_ms)
+        split_ms = int(split_ms)
         if split_ms <= clip_start_ms or split_ms >= clip_end_ms:
-            self.update_status("Move the playhead inside the selected clip to split")
+            self.update_status("Move the split point inside the selected clip")
             return False
 
         left_length_ms = int(split_ms - clip_start_ms)
@@ -4033,14 +4117,14 @@ class EchoProWindow(QMainWindow):
 
             split_dir = (self._project_save_directory or PROJECTS_DIR) / "split_clips"
             split_dir.mkdir(parents=True, exist_ok=True)
-            output_name = f"{source_path.stem}_clip{int(clip.id)}_partB_{int(time.time())}.wav"
+            output_name = f"{source_path.stem}_clip{clip_id}_partB_{int(time.time())}.wav"
             right_path = split_dir / output_name
             sf.write(str(right_path), right_segment, int(sample_rate))
         except Exception as exc:
             QMessageBox.critical(self, "Split Clip", f"Could not split clip:\n{exc}")
             return False
 
-        self._mark_project_edit(f"Split clip {int(clip.id)} at {split_ms / 1000.0:.2f}s")
+        self._mark_project_edit(f"Split clip {clip_id} at {split_ms / 1000.0:.2f}s")
         clip.length_ms = int(left_length_ms)
         right_metadata = dict(getattr(clip, "metadata", {}) or {})
         base_name = str(right_metadata.get("display_name", "")).strip() or source_path.stem
@@ -4058,8 +4142,16 @@ class EchoProWindow(QMainWindow):
         if hasattr(self.timeline, "selected_clip_id"):
             self.timeline.selected_clip_id = int(right_clip.id)
         self.refresh_timeline()
-        self.update_status(f"Split clip {int(clip.id)} at {split_ms / 1000.0:.2f}s")
+        self.update_status(f"Split clip {clip_id} at {split_ms / 1000.0:.2f}s")
         return True
+
+    def _on_timeline_split_clip_requested(self, clip_id: int, split_ms: int) -> None:
+        clip = self._find_clip_by_id(int(clip_id))
+        if clip is None:
+            self.update_status("Razor split ignored: clip no longer exists")
+            return
+        self._set_project_playhead_ms(int(split_ms))
+        self._split_clip_at_ms(clip, int(split_ms))
 
     def undo_project_edit(self) -> bool:
         if not self._project_undo_stack:
@@ -4385,6 +4477,301 @@ class EchoProWindow(QMainWindow):
         self.comp_start_sec_input.setText(f"{max(0, int(start_ms)) / 1000.0:.3f}")
         self.comp_end_sec_input.setText(f"{max(0, int(end_ms)) / 1000.0:.3f}")
 
+    def _normalize_timeline_mode(self, mode: str) -> str:
+        return "edit" if str(mode or "").strip().lower() == "edit" else "multitrack"
+
+    def _normalize_timeline_tool(self, tool: str) -> str:
+        normalized = str(tool or "").strip().lower()
+        if normalized not in {"pointer", "razor", "envelope"}:
+            return "pointer"
+        return normalized
+
+    def _timeline_workflow_state(self) -> dict:
+        self._initialize_settings_state()
+        if self._settings_state is None:
+            return {
+                "mode": "multitrack",
+                "tool": "pointer",
+                "shortcut_profile": "Cool Edit",
+                "loop_selection": False,
+            }
+        workflow = self._settings_state.get("workflow")
+        if not isinstance(workflow, dict):
+            workflow = {
+                "mode": "multitrack",
+                "tool": "pointer",
+                "shortcut_profile": "Cool Edit",
+                "loop_selection": False,
+            }
+            self._settings_state["workflow"] = workflow
+        workflow["mode"] = self._normalize_timeline_mode(str(workflow.get("mode", "multitrack")))
+        workflow["tool"] = self._normalize_timeline_tool(str(workflow.get("tool", "pointer")))
+        workflow["shortcut_profile"] = str(workflow.get("shortcut_profile", "Cool Edit") or "Cool Edit")
+        workflow["loop_selection"] = bool(workflow.get("loop_selection", False))
+        return workflow
+
+    def _persist_timeline_workflow_state(self) -> None:
+        self._persist_settings_state()
+
+    def _apply_timeline_workflow_state(self) -> None:
+        workflow = self._timeline_workflow_state()
+        self._timeline_interaction_mode = str(workflow.get("mode", "multitrack"))
+        self._timeline_tool_mode = str(workflow.get("tool", "pointer"))
+        self._loop_selection_enabled = bool(workflow.get("loop_selection", False))
+
+        if hasattr(self, "timeline"):
+            self.timeline.set_interaction_mode(self._timeline_interaction_mode)
+            self.timeline.set_tool_mode(self._timeline_tool_mode)
+
+        if hasattr(self, "timeline_mode_combo"):
+            idx = self.timeline_mode_combo.findData(self._timeline_interaction_mode)
+            if idx >= 0 and self.timeline_mode_combo.currentIndex() != idx:
+                self.timeline_mode_combo.setCurrentIndex(idx)
+
+        if hasattr(self, "timeline_tool_combo"):
+            idx = self.timeline_tool_combo.findData(self._timeline_tool_mode)
+            if idx >= 0 and self.timeline_tool_combo.currentIndex() != idx:
+                self.timeline_tool_combo.setCurrentIndex(idx)
+
+        if hasattr(self, "loop_selection_btn"):
+            self.loop_selection_btn.blockSignals(True)
+            self.loop_selection_btn.setChecked(bool(self._loop_selection_enabled))
+            self.loop_selection_btn.blockSignals(False)
+            self.loop_selection_btn.setText("Loop On" if self._loop_selection_enabled else "Loop Sel")
+
+    def _set_timeline_interaction_mode(self, mode: str, *, persist: bool = True) -> None:
+        normalized = self._normalize_timeline_mode(mode)
+        self._timeline_interaction_mode = normalized
+        if hasattr(self, "timeline"):
+            self.timeline.set_interaction_mode(normalized)
+        if hasattr(self, "timeline_mode_combo"):
+            idx = self.timeline_mode_combo.findData(normalized)
+            if idx >= 0 and self.timeline_mode_combo.currentIndex() != idx:
+                self.timeline_mode_combo.setCurrentIndex(idx)
+        workflow = self._timeline_workflow_state()
+        workflow["mode"] = normalized
+        if persist:
+            self._persist_timeline_workflow_state()
+        self._refresh_status_bar_telemetry()
+
+    def _set_timeline_tool_mode(self, tool: str, *, persist: bool = True) -> None:
+        normalized = self._normalize_timeline_tool(tool)
+        self._timeline_tool_mode = normalized
+        if hasattr(self, "timeline"):
+            self.timeline.set_tool_mode(normalized)
+        if hasattr(self, "timeline_tool_combo"):
+            idx = self.timeline_tool_combo.findData(normalized)
+            if idx >= 0 and self.timeline_tool_combo.currentIndex() != idx:
+                self.timeline_tool_combo.setCurrentIndex(idx)
+        workflow = self._timeline_workflow_state()
+        workflow["tool"] = normalized
+        if persist:
+            self._persist_timeline_workflow_state()
+        self.update_status(f"Timeline tool: {normalized.title()}")
+        self._refresh_status_bar_telemetry()
+
+    def _on_timeline_mode_combo_changed(self) -> None:
+        if not hasattr(self, "timeline_mode_combo"):
+            return
+        mode = self.timeline_mode_combo.currentData()
+        self._set_timeline_interaction_mode(str(mode or "multitrack"), persist=True)
+        self.update_status(f"Timeline mode: {self._timeline_interaction_mode.title()}")
+
+    def _on_timeline_tool_combo_changed(self) -> None:
+        if not hasattr(self, "timeline_tool_combo"):
+            return
+        tool = self.timeline_tool_combo.currentData()
+        self._set_timeline_tool_mode(str(tool or "pointer"), persist=True)
+
+    def _on_timeline_playhead_scrubbed(self, playhead_ms: int) -> None:
+        self._set_project_playhead_ms(int(playhead_ms))
+
+    def _timeline_markers(self) -> list[dict]:
+        metadata = dict(getattr(self.current_project, "metadata", {}) or {})
+        raw = metadata.get("timeline_markers")
+        if not isinstance(raw, list):
+            return []
+        markers: list[dict] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            try:
+                marker_id = int(item.get("id", 0))
+                time_ms = max(0, int(item.get("time_ms", 0)))
+            except (TypeError, ValueError):
+                continue
+            marker_name = str(item.get("name", f"Marker {marker_id}"))
+            markers.append({"id": marker_id, "time_ms": time_ms, "name": marker_name})
+        markers.sort(key=lambda entry: int(entry["time_ms"]))
+        return markers
+
+    def _set_timeline_markers(self, markers: list[dict], *, push_history_description: Optional[str] = None) -> None:
+        sanitized: list[dict] = []
+        for marker in markers:
+            if not isinstance(marker, dict):
+                continue
+            try:
+                marker_id = int(marker.get("id", 0))
+                time_ms = max(0, int(marker.get("time_ms", 0)))
+            except (TypeError, ValueError):
+                continue
+            marker_name = str(marker.get("name", f"Marker {marker_id}"))
+            sanitized.append({"id": marker_id, "time_ms": time_ms, "name": marker_name})
+        sanitized.sort(key=lambda entry: int(entry["time_ms"]))
+
+        previous = self._timeline_markers()
+        if previous == sanitized:
+            return
+
+        if push_history_description:
+            self._mark_project_edit(push_history_description)
+        self.current_project.metadata["timeline_markers"] = sanitized
+        if hasattr(self, "timeline"):
+            self.timeline.set_markers(sanitized)
+        self._refresh_status_bar_telemetry()
+
+    def add_timeline_marker_at_playhead(self) -> None:
+        markers = self._timeline_markers()
+        next_id = max([int(item.get("id", 0)) for item in markers] + [0]) + 1
+        marker_ms = int(self.project_playhead_ms)
+        marker_name = f"M{next_id}"
+        markers.append({"id": int(next_id), "time_ms": marker_ms, "name": marker_name})
+        self._set_timeline_markers(markers, push_history_description=f"Add marker {marker_name}")
+        self.update_status(f"Added marker {marker_name} at {marker_ms / 1000.0:.3f}s")
+
+    def jump_to_next_marker(self) -> None:
+        markers = self._timeline_markers()
+        for marker in markers:
+            if int(marker.get("time_ms", 0)) > int(self.project_playhead_ms):
+                self._set_project_playhead_ms(int(marker.get("time_ms", 0)))
+                self.update_status(f"Jumped to marker {marker.get('name', 'Marker')}")
+                return
+        self.update_status("No later marker found")
+
+    def jump_to_previous_marker(self) -> None:
+        markers = list(reversed(self._timeline_markers()))
+        for marker in markers:
+            if int(marker.get("time_ms", 0)) < int(self.project_playhead_ms):
+                self._set_project_playhead_ms(int(marker.get("time_ms", 0)))
+                self.update_status(f"Jumped to marker {marker.get('name', 'Marker')}")
+                return
+        self.update_status("No earlier marker found")
+
+    def _on_timeline_marker_action(self, action: str, time_ms: int, marker_id: Optional[int]) -> None:
+        markers = self._timeline_markers()
+        normalized = str(action or "").strip().lower()
+        if normalized == "add":
+            next_id = max([int(item.get("id", 0)) for item in markers] + [0]) + 1
+            markers.append({"id": int(next_id), "time_ms": max(0, int(time_ms)), "name": f"M{next_id}"})
+            self._set_timeline_markers(markers, push_history_description="Add timeline marker")
+            self.update_status(f"Marker added at {max(0, int(time_ms)) / 1000.0:.3f}s")
+            return
+
+        if normalized == "jump":
+            self._set_project_playhead_ms(max(0, int(time_ms)))
+            self.update_status(f"Moved playhead to marker at {max(0, int(time_ms)) / 1000.0:.3f}s")
+            return
+
+        if marker_id is None:
+            return
+
+        marker_index = next((idx for idx, marker in enumerate(markers) if int(marker.get("id", -1)) == int(marker_id)), -1)
+        if marker_index < 0:
+            return
+
+        if normalized == "delete":
+            marker_name = str(markers[marker_index].get("name", f"M{marker_id}"))
+            markers.pop(marker_index)
+            self._set_timeline_markers(markers, push_history_description=f"Delete marker {marker_name}")
+            self.update_status(f"Deleted marker {marker_name}")
+            return
+
+        if normalized == "rename":
+            current_name = str(markers[marker_index].get("name", f"M{marker_id}"))
+            new_name, accepted = QInputDialog.getText(self, "Rename Marker", "Marker name", text=current_name)
+            if not accepted:
+                return
+            cleaned = str(new_name).strip()
+            if not cleaned:
+                QMessageBox.warning(self, "Rename Marker", "Marker name cannot be empty.")
+                return
+            markers[marker_index]["name"] = cleaned
+            self._set_timeline_markers(markers, push_history_description=f"Rename marker {current_name}")
+            self.update_status(f"Renamed marker to {cleaned}")
+
+    def _start_project_playback_range(self, start_ms: int, end_ms: Optional[int], source_label: str) -> bool:
+        safe_start = max(0, int(start_ms))
+        safe_end = None if end_ms is None else max(safe_start + 1, int(end_ms))
+        if safe_end is not None and safe_end <= safe_start:
+            self.update_status("Playback range is invalid")
+            return False
+
+        if self._project_playback_started_at is not None or is_playback_active():
+            self.stop_current_project_playback()
+
+        self._set_project_playhead_ms(int(safe_start))
+        self.update_status(f"Mixing and playing {source_label} from {safe_start / 1000.0:.2f}s...")
+        QApplication.processEvents()
+        try:
+            played_duration_ms = play_project(self.current_project, start_ms=int(safe_start), blocking=False)
+        except Exception as e:
+            QMessageBox.critical(self, "Playback error", f"Could not play project:\n{e}")
+            self.update_status("Playback error")
+            return False
+
+        if played_duration_ms <= 0:
+            self.update_status("Nothing to play from the selected range")
+            return False
+
+        max_end_ms = int(safe_start) + int(played_duration_ms)
+        if safe_end is not None:
+            max_end_ms = min(max_end_ms, int(safe_end))
+
+        self._project_playback_segment = self._render_project_playback_segment(start_ms=int(safe_start), end_ms=max_end_ms)
+        self._project_playback_lufs_integrated_db = -70.0
+        self._project_playback_start_ms = int(safe_start)
+        self._project_playback_end_ms = int(max_end_ms)
+        self._project_playback_manual_stop = False
+        self._project_playback_started_at = time.monotonic()
+        self._update_project_playback_controls(True)
+        self.project_playback_timer.start()
+        self._update_master_playback_visuals()
+        return True
+
+    def play_selection(self) -> None:
+        start_ms, end_ms, source = self._current_transport_target_range()
+        if source == "project":
+            self.update_status("Select a range or clip first to play selection")
+            return
+        self._start_project_playback_range(int(start_ms), int(end_ms), source)
+
+    def toggle_loop_selection(self, checked: bool) -> None:
+        self._loop_selection_enabled = bool(checked)
+        workflow = self._timeline_workflow_state()
+        workflow["loop_selection"] = bool(checked)
+        self._persist_timeline_workflow_state()
+        if hasattr(self, "loop_selection_btn"):
+            self.loop_selection_btn.setText("Loop On" if bool(checked) else "Loop Sel")
+        if checked:
+            start_ms, end_ms, source = self._current_transport_target_range()
+            if source == "project":
+                self._loop_selection_enabled = False
+                workflow["loop_selection"] = False
+                self._persist_timeline_workflow_state()
+                if hasattr(self, "loop_selection_btn"):
+                    self.loop_selection_btn.blockSignals(True)
+                    self.loop_selection_btn.setChecked(False)
+                    self.loop_selection_btn.setText("Loop Sel")
+                    self.loop_selection_btn.blockSignals(False)
+                self._loop_selection_range = None
+                self.update_status("Loop selection needs an active selection or selected clip")
+                return
+            self._loop_selection_range = (int(start_ms), int(end_ms), str(source))
+            self.update_status(f"Loop enabled for {source} range")
+            return
+        self._loop_selection_range = None
+        self.update_status("Loop selection disabled")
+
     def _current_transport_target_range(self) -> Tuple[int, int, str]:
         selected_range = self.timeline.get_selected_time_range_ms()
         if selected_range is not None:
@@ -4466,6 +4853,15 @@ class EchoProWindow(QMainWindow):
             elapsed_ms = int(max(0.0, (time.monotonic() - self._project_playback_started_at) * 1000.0))
             current_ms = min(self._project_playback_end_ms, self._project_playback_start_ms + elapsed_ms)
             self._set_project_playhead_ms(current_ms)
+
+        if not stopped_manually and self._loop_selection_enabled and self._loop_selection_range is not None:
+            loop_start_ms, loop_end_ms, loop_source = self._loop_selection_range
+            self._project_playback_started_at = None
+            self._project_playback_manual_stop = False
+            self._project_playback_segment = None
+            self._start_project_playback_range(int(loop_start_ms), int(loop_end_ms), str(loop_source))
+            return
+
         if not stopped_manually:
             self._set_project_playhead_ms(self._project_playback_end_ms)
             self.update_status("Playback finished")
@@ -4583,6 +4979,8 @@ class EchoProWindow(QMainWindow):
     def refresh_timeline(self):
         self.timeline.set_project(self.current_project)
         self.timeline.set_selected_track(self.selected_track_index)
+        self._apply_timeline_workflow_state()
+        self.timeline.set_markers(self._timeline_markers())
         self._set_project_playhead_ms(self.project_playhead_ms)
         self.timeline.clear_automation_points()
         self.timeline.clear_comp_regions()
@@ -5123,29 +5521,18 @@ class EchoProWindow(QMainWindow):
         self.update_status(f"Track {track_index} volume set to {db} dB")
 
     def play_current_project(self):
-        if self._project_playback_started_at is not None or is_playback_active():
-            self.stop_current_project_playback()
+        workflow = self._timeline_workflow_state()
+        profile_name = str(workflow.get("shortcut_profile", "Cool Edit Classic")).strip().lower()
+        use_selection_first = profile_name.startswith("cool edit")
+
+        if use_selection_first:
+            start_ms, end_ms, source = self._current_transport_target_range()
+            if source != "project":
+                self._start_project_playback_range(int(start_ms), int(end_ms), str(source))
+                return
 
         start_ms = int(self.project_playhead_ms)
-        self.update_status(f"Mixing and playing project from {start_ms / 1000.0:.2f}s...")
-        QApplication.processEvents()
-        try:
-            played_duration_ms = play_project(self.current_project, start_ms=start_ms, blocking=False)
-            if played_duration_ms <= 0:
-                self.update_status("Nothing to play from the current playhead position")
-                return
-            self._project_playback_segment = self._render_project_playback_segment(start_ms=int(start_ms), end_ms=None)
-            self._project_playback_lufs_integrated_db = -70.0
-            self._project_playback_start_ms = start_ms
-            self._project_playback_end_ms = start_ms + int(played_duration_ms)
-            self._project_playback_manual_stop = False
-            self._project_playback_started_at = time.monotonic()
-            self._update_project_playback_controls(True)
-            self.project_playback_timer.start()
-            self._update_master_playback_visuals()
-        except Exception as e:
-            QMessageBox.critical(self, "Playback error", f"Could not play project:\n{e}")
-            self.update_status("Playback error")
+        self._start_project_playback_range(start_ms, None, "project")
 
     def _run_dependency_update_dialog(self, action: str = "update") -> bool:
         script_path = Path(__file__).resolve().parent / "install_echo_pro.bat"
@@ -5772,9 +6159,11 @@ class TabbedEchoProWindow(EchoProWindow):
         self.refresh_take_review_list()
         self.refresh_alter_section_selector()
         self.update_recording_status_label()
+        self._refresh_settings_page()
         self._prompt_recovery_for_current_session()
         self.refresh_recovery_history()
         self.refresh_timeline()
+        self._apply_timeline_workflow_state()
         self._update_timeline_zoom_readout()
         self._refresh_status_bar_telemetry()
         self._refresh_application_state_machine()
@@ -5872,6 +6261,7 @@ class TabbedEchoProWindow(EchoProWindow):
         if tab_index >= 0:
             self.tabs.removeTab(tab_index)
         self._single_track_editor_track_index = None
+        self._set_timeline_interaction_mode("multitrack", persist=True)
 
     def _single_track_editor_open_playback_settings(self) -> None:
         track_index = self._single_track_editor_track_index
@@ -6130,6 +6520,22 @@ class TabbedEchoProWindow(EchoProWindow):
                 self.play_current_project()
             return
 
+        if action_name == "Play Selection":
+            if self._should_ignore_shortcut_while_typing():
+                return
+            self.play_selection()
+            return
+
+        if action_name == "Loop Selection":
+            if self._should_ignore_shortcut_while_typing():
+                return
+            next_state = not bool(self._loop_selection_enabled)
+            if hasattr(self, "loop_selection_btn"):
+                self.loop_selection_btn.setChecked(next_state)
+            else:
+                self.toggle_loop_selection(next_state)
+            return
+
         if action_name == "Record":
             if self._should_ignore_shortcut_while_typing():
                 return
@@ -6144,6 +6550,15 @@ class TabbedEchoProWindow(EchoProWindow):
             return
         if action_name == "Jump To End":
             self.jump_to_transport_end()
+            return
+        if action_name == "Previous Marker":
+            self.jump_to_previous_marker()
+            return
+        if action_name == "Next Marker":
+            self.jump_to_next_marker()
+            return
+        if action_name == "Add Marker":
+            self.add_timeline_marker_at_playhead()
             return
         if action_name == "Undo":
             if not self.undo_project_edit():
@@ -6165,6 +6580,20 @@ class TabbedEchoProWindow(EchoProWindow):
             if self._should_ignore_shortcut_while_typing():
                 return
             self.split_selected_clip_at_playhead()
+            return
+        if action_name == "Pointer Tool":
+            self._set_timeline_tool_mode("pointer", persist=True)
+            return
+        if action_name == "Razor Tool":
+            self._set_timeline_tool_mode("razor", persist=True)
+            return
+        if action_name == "Envelope Tool":
+            self._set_timeline_tool_mode("envelope", persist=True)
+            return
+        if action_name == "Toggle Edit Mode":
+            next_mode = "edit" if str(self._timeline_interaction_mode) != "edit" else "multitrack"
+            self._set_timeline_interaction_mode(next_mode, persist=True)
+            self.update_status(f"Timeline mode: {next_mode.title()}")
             return
         if action_name == "New Track":
             self.add_track()
@@ -6222,14 +6651,23 @@ class TabbedEchoProWindow(EchoProWindow):
 
         action_order = [
             "Play/Stop",
+            "Play Selection",
+            "Loop Selection",
             "Record",
             "Jump To Start",
             "Jump To End",
+            "Previous Marker",
+            "Next Marker",
+            "Add Marker",
             "Undo",
             "Redo",
             "Save Project",
             "Delete Clip",
             "Split At Playhead",
+            "Pointer Tool",
+            "Razor Tool",
+            "Envelope Tool",
+            "Toggle Edit Mode",
             "New Track",
             "Mute Track",
             "Solo Track",
@@ -6908,17 +7346,26 @@ class TabbedEchoProWindow(EchoProWindow):
     def _build_help_tab(self) -> QWidget:
         return build_help_tab(self)
 
-    def _default_settings_shortcuts(self) -> dict[str, str]:
+    def _cool_edit_classic_shortcuts(self) -> dict[str, str]:
         return {
             "Play/Stop": "Space",
+            "Play Selection": "Shift+Space",
+            "Loop Selection": "L",
             "Record": "R",
             "Jump To Start": "Home",
             "Jump To End": "End",
+            "Previous Marker": "Comma",
+            "Next Marker": "Period",
+            "Add Marker": "F8",
             "Undo": "Ctrl+Z",
             "Redo": "Ctrl+Y",
             "Save Project": "Ctrl+S",
             "Delete Clip": "Delete",
             "Split At Playhead": "S",
+            "Pointer Tool": "V",
+            "Razor Tool": "X",
+            "Envelope Tool": "E",
+            "Toggle Edit Mode": "Tab",
             "New Track": "Ctrl+T",
             "Mute Track": "M",
             "Solo Track": "Alt+S",
@@ -6931,6 +7378,48 @@ class TabbedEchoProWindow(EchoProWindow):
             "Open Project": "Ctrl+O",
             "Export": "Ctrl+Shift+E",
         }
+
+    def _modern_echo_shortcuts(self) -> dict[str, str]:
+        return {
+            "Play/Stop": "Space",
+            "Play Selection": "Shift+Space",
+            "Loop Selection": "Ctrl+L",
+            "Record": "R",
+            "Jump To Start": "Home",
+            "Jump To End": "End",
+            "Previous Marker": "Ctrl+Left",
+            "Next Marker": "Ctrl+Right",
+            "Add Marker": "Ctrl+K",
+            "Undo": "Ctrl+Z",
+            "Redo": "Ctrl+Y",
+            "Save Project": "Ctrl+S",
+            "Delete Clip": "Delete",
+            "Split At Playhead": "S",
+            "Pointer Tool": "V",
+            "Razor Tool": "X",
+            "Envelope Tool": "E",
+            "Toggle Edit Mode": "Tab",
+            "New Track": "Ctrl+T",
+            "Mute Track": "M",
+            "Solo Track": "Alt+S",
+            "Zoom (Timeline)": "Ctrl+Scroll",
+            "Open Stem Separation": "Ctrl+D",
+            "Open ACE-Step": "Ctrl+E",
+            "Open Mastering": "Ctrl+M",
+            "MIDI Learn Mode": "Ctrl+Shift+L",
+            "New Project": "Ctrl+N",
+            "Open Project": "Ctrl+O",
+            "Export": "Ctrl+Shift+E",
+        }
+
+    def _shortcut_preset_map(self) -> dict[str, dict[str, str]]:
+        return {
+            "Cool Edit Classic": self._cool_edit_classic_shortcuts(),
+            "Modern Echo": self._modern_echo_shortcuts(),
+        }
+
+    def _default_settings_shortcuts(self) -> dict[str, str]:
+        return self._cool_edit_classic_shortcuts()
 
     def _initialize_settings_state(self) -> None:
         if self._settings_state is not None:
@@ -6945,6 +7434,8 @@ class TabbedEchoProWindow(EchoProWindow):
         model_defaults = model_defaults_raw if isinstance(model_defaults_raw, dict) else {}
         shortcuts_raw = stored_dict.get("shortcuts")
         shortcuts = shortcuts_raw if isinstance(shortcuts_raw, dict) else {}
+        workflow_raw = stored_dict.get("workflow")
+        workflow = workflow_raw if isinstance(workflow_raw, dict) else {}
 
         merged_shortcuts = self._default_settings_shortcuts()
         merged_shortcuts.update({str(k): str(v) for k, v in shortcuts.items()})
@@ -6973,12 +7464,24 @@ class TabbedEchoProWindow(EchoProWindow):
                 "autosave_interval_minutes": int(project_defaults.get("autosave_interval_minutes", 5)),
                 "autosave_location": str(project_defaults.get("autosave_location", self._default_new_project_folder())),
             },
+            "workflow": {
+                "mode": self._normalize_timeline_mode(str(workflow.get("mode", stored_dict.get("timeline_mode", "multitrack")))),
+                "tool": self._normalize_timeline_tool(str(workflow.get("tool", stored_dict.get("timeline_tool", "pointer")))),
+                "shortcut_profile": str(workflow.get("shortcut_profile", stored_dict.get("shortcut_profile", "Cool Edit"))),
+                "loop_selection": bool(workflow.get("loop_selection", stored_dict.get("loop_selection", False))),
+            },
         }
 
     def _persist_settings_state(self) -> None:
         if self._settings_state is None:
             return
         self.current_project.metadata["settings_page"] = copy.deepcopy(self._settings_state)
+        workflow = self._settings_state.get("workflow") if isinstance(self._settings_state, dict) else None
+        if isinstance(workflow, dict):
+            self.current_project.metadata["timeline_mode"] = str(workflow.get("mode", "multitrack"))
+            self.current_project.metadata["timeline_tool"] = str(workflow.get("tool", "pointer"))
+            self.current_project.metadata["shortcut_profile"] = str(workflow.get("shortcut_profile", "Cool Edit"))
+            self.current_project.metadata["loop_selection"] = bool(workflow.get("loop_selection", False))
         self._refresh_status_bar_telemetry()
 
     def _refresh_settings_page(self) -> None:
@@ -7033,6 +7536,15 @@ class TabbedEchoProWindow(EchoProWindow):
         self._settings_refresh_audio_devices()
         self._settings_refresh_model_tables()
         self._settings_refresh_shortcuts_table()
+        if hasattr(self, "settings_shortcut_profile_combo"):
+            workflow = self._timeline_workflow_state()
+            profile = str(workflow.get("shortcut_profile", "Cool Edit Classic"))
+            idx = self.settings_shortcut_profile_combo.findData(profile)
+            if idx < 0:
+                idx = self.settings_shortcut_profile_combo.findText(profile)
+            if idx >= 0:
+                self.settings_shortcut_profile_combo.setCurrentIndex(idx)
+        self._apply_timeline_workflow_state()
 
     def _settings_refresh_audio_devices(self) -> None:
         if not hasattr(self, "settings_audio_input_combo") or not hasattr(self, "settings_audio_output_combo"):
@@ -7468,6 +7980,14 @@ class TabbedEchoProWindow(EchoProWindow):
         if search_term:
             entries = [(action, key) for action, key in entries if search_term in action.lower()]
 
+        by_key: dict[str, int] = {}
+        for _action, raw_keybind in self._settings_state["shortcuts"].items():
+            normalized = "".join(str(raw_keybind or "").strip().lower().split())
+            if not normalized:
+                continue
+            by_key[normalized] = int(by_key.get(normalized, 0)) + 1
+        conflicting_keys = {key for key, count in by_key.items() if int(count) > 1}
+
         table = self.settings_shortcuts_table
         self._settings_shortcut_table_syncing = True
         table.setRowCount(0)
@@ -7476,8 +7996,20 @@ class TabbedEchoProWindow(EchoProWindow):
             action_item = QTableWidgetItem(str(action))
             action_item.setFlags(action_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             action_item.setData(Qt.ItemDataRole.UserRole, str(action))
+            key_item = QTableWidgetItem(str(keybind))
+
+            normalized_row_key = "".join(str(keybind or "").strip().lower().split())
+            if normalized_row_key in conflicting_keys:
+                warning_bg = QColor(90, 48, 28)
+                warning_fg = QColor(255, 224, 170)
+                action_item.setBackground(warning_bg)
+                action_item.setForeground(warning_fg)
+                key_item.setBackground(warning_bg)
+                key_item.setForeground(warning_fg)
+                key_item.setToolTip("Duplicate shortcut binding detected. Reassign to avoid ambiguous key behavior.")
+
             table.setItem(row_idx, 0, action_item)
-            table.setItem(row_idx, 1, QTableWidgetItem(str(keybind)))
+            table.setItem(row_idx, 1, key_item)
         self._settings_shortcut_table_syncing = False
 
     def _settings_on_shortcut_item_changed(self, item: QTableWidgetItem) -> None:
@@ -7496,13 +8028,48 @@ class TabbedEchoProWindow(EchoProWindow):
         self._persist_settings_state()
         if hasattr(self, "_register_global_shortcuts"):
             self._register_global_shortcuts()
+        self._settings_refresh_shortcuts_table()
+
+        normalized = "".join(str(keybind or "").strip().lower().split())
+        duplicate_count = 0
+        if normalized:
+            for _action, existing in self._settings_state["shortcuts"].items():
+                existing_normalized = "".join(str(existing or "").strip().lower().split())
+                if existing_normalized == normalized:
+                    duplicate_count += 1
+        if duplicate_count > 1:
+            self.update_status(
+                f"Shortcut updated: {action} -> {keybind} (warning: duplicate key binding)"
+            )
+            return
         self.update_status(f"Shortcut updated: {action} -> {keybind}")
+
+    def _settings_apply_shortcut_profile(self) -> None:
+        self._initialize_settings_state()
+        if self._settings_state is None or not hasattr(self, "settings_shortcut_profile_combo"):
+            return
+        profile_name = str(self.settings_shortcut_profile_combo.currentData() or self.settings_shortcut_profile_combo.currentText() or "Cool Edit Classic")
+        presets = self._shortcut_preset_map()
+        selected = presets.get(profile_name)
+        if selected is None:
+            selected = presets.get("Cool Edit Classic", self._default_settings_shortcuts())
+            profile_name = "Cool Edit Classic"
+        self._settings_state["shortcuts"] = dict(selected)
+        workflow = self._timeline_workflow_state()
+        workflow["shortcut_profile"] = str(profile_name)
+        self._persist_settings_state()
+        self._settings_refresh_shortcuts_table()
+        if hasattr(self, "_register_global_shortcuts"):
+            self._register_global_shortcuts()
+        self.update_status(f"Shortcut preset applied: {profile_name}")
 
     def _settings_reset_shortcuts_to_defaults(self) -> None:
         self._initialize_settings_state()
         if self._settings_state is None:
             return
         self._settings_state["shortcuts"] = self._default_settings_shortcuts()
+        workflow = self._timeline_workflow_state()
+        workflow["shortcut_profile"] = "Cool Edit Classic"
         self._persist_settings_state()
         self._settings_refresh_shortcuts_table()
         if hasattr(self, "_register_global_shortcuts"):

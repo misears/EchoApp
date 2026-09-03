@@ -313,7 +313,11 @@ Fix and complete the in-lane editing behaviors that the arrangement view depends
 
 ### Group 15 — Documentation Alignment
 
-- [ ] **15.1** Mark or update stale internal status docs (`docs/internal/`) so contributors can quickly identify which documents are authoritative vs historical; link to TASK_HUB.md as the active source. *(ref: existing P4 brief)*
+- [x] **15.1** Mark or update stale internal status docs (`docs/internal/`) so contributors can quickly identify which documents are authoritative vs historical; link to TASK_HUB.md as the active source. *(ref: existing P4 brief)*
+
+  - **Status:** Complete
+  - **What landed (2026-09-03):** Updated `docs/internal/BUILD_STATUS.md`, `docs/internal/BUILD_STATUS-BlackDragon.md`, `docs/internal/PHASE_1_TO_5_KNOWN_ISSUES_TODO.md`, and `docs/internal/PHASE_1_TO_5_KNOWN_ISSUES_TODO-BlackDragon.md` with explicit historical-snapshot banners and authoritative guidance to use `TASK_HUB.md` for current status.
+  - **Validation:** Confirmed each updated internal status document now clearly identifies itself as historical and points contributors to `TASK_HUB.md` as the active source of truth.
 
 ---
 
@@ -396,6 +400,16 @@ Fix and complete the in-lane editing behaviors that the arrangement view depends
 
 ## Recently Completed
 
+- Completed Group 15.1 documentation alignment by marking internal phase/build/plan snapshots as historical and adding explicit authoritative-source pointers to `TASK_HUB.md` across `docs/internal/BUILD_STATUS*.md`, `docs/internal/PHASE_1_TO_5_KNOWN_ISSUES_TODO*.md`, `docs/internal/BUILD_OUTLINE.md`, `docs/internal/PHASE_0_COMPLETE.md`, `docs/internal/PHASE_5A_RECORDING_PLAN.md`, `docs/internal/PHASE_5B_RECORDING_PLAN.md`, `docs/internal/PHASE_5B_TASK_CHECKLIST.md`, `docs/internal/AUTONOMOUS_IMPLEMENTATION_REPORT.md`, and `docs/internal/echo-v0.1.md`.
+- Expanded UI runtime smoke coverage to the live `TabbedEchoProWindow` path and added explicit clickable-flow verification for Home transport actions, Stem Separation (Demucs) tab actions, Voice FX (RVC path safety), Tools tab jump actions, and Settings shortcut preset apply/reset actions.
+- Added clickable-control audit instrumentation to `tools/dev/ui_runtime_smoke.py` so button coverage/uncovered lists are reported every run, and made exhaustive click-all mode opt-in via `ECHO_UI_SMOKE_CLICK_ALL=1` to avoid default smoke hangs from blocking/long-running dialogs.
+- Increased measurable GUI click validation by routing smoke flows through real button clicks (Home/Recording/Demucs/ACE/Voice FX/Tools/Settings actions) instead of direct handler-only invocations where practical; baseline click coverage improved from 3.8% to 14.1% with no click-audit failures.
+- Further hardened clickable smoke coverage by exposing high-value GUI buttons as explicit window references in `app/ui/tabbed_window_layout.py`, using those direct references in `tools/dev/ui_runtime_smoke.py`, and stubbing Demucs worker startup in smoke mode so Demucs click wiring is exercised without long-running background hangs; latest baseline coverage is 15.6% with no click-audit failures.
+- Added another stable coverage pass using deterministic button-reference clicks for additional safe controls (transport/metronome toggles, waveform zoom controls, take-review refresh/toggle actions, Demucs source chooser, and settings preset actions), bringing baseline click coverage to 17.0% with all smoke flows passing and no click-audit failures.
+- Expanded the baseline (non-opt-in) smoke flow to include recording and settings clickable coverage plus safe track/clip control clicks (add track, set volume, add clip), raising measurable baseline click coverage to 23.9% with all flows passing and no click-audit failures.
+- Completed the requested "do both" Cool Edit follow-up: added Edit-strip region gain-envelope handles in the timeline, wired undo-safe gain-envelope commit callbacks in the live app path, applied region gain envelopes in playback rendering for audible effect, added one-click keyboard shortcut presets (Cool Edit Classic / Modern Echo) in Settings, and refined UX with edit-strip dB guide/curve overlays plus shortcut conflict highlighting.
+- Added a full Cool Edit-style timeline workflow pass across the live tabbed UI path: mode toggle (Multitrack/Edit), tool modes (Pointer/Razor/Envelope), selection-first playback and loop-selection controls, marker add/jump/rename/delete flow, top-header playhead scrubbing, and keyboard mappings for fast tool/mode switching.
+- Fixed the release/Portable launcher and installer defaults so the packaged portable bundle keeps its runtime state inside the bundle by default, while still honoring `ECHO_PRO_HOME` and `echo_home.txt` overrides.
 - Implemented Group 14 developer infrastructure and launch reliability updates: added non-debug source launch task, runtime health/repair/reset script + tasks, packaged launcher validation script + task, and contributor docs for launch/recovery/packaged validation workflows.
 - Implemented Group 13 control polish in the live tabbed app path: normalized icon button helper sizing to fixed 36×36 defaults, updated shared recording transport buttons to 36×36 with 8px spacing, and aligned Home/Recording control-cluster spacing to 8px in core action rows.
 - Implemented Group 12 keyboard and state-machine pass in the live tabbed app path: added settings-backed global shortcut binding registration, tab-cycle shortcuts, timeline delete/split keyboard actions, and centralized title/status state indicators (Idle/Open/Playing/Recording/AI/MIDI Learn/Unsaved).

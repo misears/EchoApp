@@ -5,10 +5,11 @@ set "APP_ROOT=%~dp0"
 if "%APP_ROOT:~-1%"=="\" set "APP_ROOT=%APP_ROOT:~0,-1%"
 
 set "ECHO_PRO_HOME="
+if defined ECHO_PRO_HOME set "ECHO_PRO_HOME=%ECHO_PRO_HOME%"
 if exist "%APP_ROOT%\echo_home.txt" (
     set /p ECHO_PRO_HOME=<"%APP_ROOT%\echo_home.txt"
 )
-if not defined ECHO_PRO_HOME set "ECHO_PRO_HOME=%LOCALAPPDATA%\EchoProData"
+if not defined ECHO_PRO_HOME set "ECHO_PRO_HOME=%APP_ROOT%\EchoProData"
 
 set "PATH=%ECHO_PRO_HOME%\tools\ffmpeg\current\bin;%ECHO_PRO_HOME%\runtime\venv\Scripts;%PATH%"
 set "HF_HOME=%ECHO_PRO_HOME%\runtime\hf_cache"

@@ -23,6 +23,9 @@ CLIP_COLOR = QColor(100, 180, 255)
 CLIP_BORDER = QColor(30, 60, 120)
 
 PIXELS_PER_SECOND = 50  # how many pixels represent one second
+MARKER_HIT_TOLERANCE_PX = 8
+MARKER_HEADER_HEIGHT = 18
+EDIT_STRIP_HEIGHT = 84
 
 class TimelineWidget(QWidget):
     
@@ -42,6 +45,10 @@ class TimelineWidget(QWidget):
         self.on_automation_points_changed: Optional[Callable[[int, str, List[dict]], None]] = None
         self.on_clip_fade_changed: Optional[Callable[[int, int, int, bool], None]] = None
         self.on_track_double_click: Optional[Callable[[int], None]] = None
+        self.on_split_clip_requested: Optional[Callable[[int, int], None]] = None
+        self.on_marker_action: Optional[Callable[[str, int, Optional[int]], None]] = None
+        self.on_playhead_scrubbed: Optional[Callable[[int], None]] = None
+        self.on_gain_envelope_changed: Optional[Callable[[int, int, int, float, float, bool], None]] = None
         self._clip_rects = []
         self._fade_handle_rects: List[Tuple[int, str, QRect]] = []
         self._dragging_clip_id = None
@@ -62,6 +69,11 @@ class TimelineWidget(QWidget):
         self._hovered_clip_id: Optional[int] = None
         self._zoom_factor = 1.0
         self.playhead_ms = 0
+        self._interaction_mode = "multitrack"
+        self._tool_mode = "pointer"
+        self._markers: List[dict] = []
+        self._scrubbing_playhead = False
+        self._dragging_gain_handle: Optional[dict] = None
         self.setMinimumHeight(300)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
@@ -96,6 +108,319 @@ class TimelineWidget(QWidget):
 
     def get_playhead_ms(self) -> int:
         return max(0, int(self.playhead_ms))
+
+    def set_interaction_mode(self, mode: str) -> None:
+        normalized = str(mode or "multitrack").strip().lower()
+        self._interaction_mode = "edit" if normalized == "edit" else "multitrack"
+        self._sync_view_size()
+        self.update()
+
+    def interaction_mode(self) -> str:
+        return str(self._interaction_mode)
+
+    def set_tool_mode(self, mode: str) -> None:
+        normalized = str(mode or "pointer").strip().lower()
+        if normalized not in {"pointer", "razor", "envelope"}:
+            normalized = "pointer"
+        self._tool_mode = normalized
+        self.update()
+
+    def tool_mode(self) -> str:
+        return str(self._tool_mode)
+
+    def set_markers(self, markers: List[dict]) -> None:
+        normalized: List[dict] = []
+        for marker in markers:
+            if not isinstance(marker, dict):
+                continue
+            try:
+                marker_id = int(marker.get("id", 0))
+                time_ms = max(0, int(marker.get("time_ms", 0)))
+            except (TypeError, ValueError):
+                continue
+            name = str(marker.get("name", f"Marker {marker_id}"))
+            normalized.append({"id": marker_id, "time_ms": time_ms, "name": name})
+        normalized.sort(key=lambda item: int(item["time_ms"]))
+        self._markers = normalized
+        self.update()
+
+    def markers(self) -> List[dict]:
+        return [dict(marker) for marker in self._markers]
+
+    def _find_marker_near_x(self, x: int) -> Optional[dict]:
+        nearest: Optional[dict] = None
+        nearest_delta = MARKER_HIT_TOLERANCE_PX + 1
+        for marker in self._markers:
+            marker_x = self.time_to_x(int(marker.get("time_ms", 0)))
+            delta = abs(int(x) - int(marker_x))
+            if delta <= MARKER_HIT_TOLERANCE_PX and delta < nearest_delta:
+                nearest = marker
+                nearest_delta = delta
+        return dict(nearest) if nearest is not None else None
+
+    def _emit_marker_action(self, action: str, time_ms: int, marker_id: Optional[int]) -> None:
+        if self.on_marker_action is None:
+            return
+        self.on_marker_action(str(action), int(time_ms), None if marker_id is None else int(marker_id))
+
+    def _draw_markers(self, painter: QPainter) -> None:
+        if not self._markers:
+            return
+        label_bg = QColor(26, 34, 49, 220)
+        label_pen = QColor(255, 220, 120)
+        line_pen = QPen(QColor(255, 190, 80, 180), 1)
+        triangle_brush = QColor(255, 190, 80)
+        for marker in self._markers:
+            marker_ms = int(marker.get("time_ms", 0))
+            marker_name = str(marker.get("name", "Marker"))
+            marker_x = self.time_to_x(marker_ms)
+
+            painter.setPen(line_pen)
+            painter.drawLine(marker_x, 0, marker_x, self.height())
+
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(triangle_brush)
+            painter.drawRect(QRect(marker_x - 4, 1, 8, 8))
+
+            text_rect = QRect(marker_x + 6, 1, 120, MARKER_HEADER_HEIGHT - 2)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(label_bg)
+            painter.drawRect(text_rect)
+            painter.setPen(label_pen)
+            painter.drawText(text_rect.adjusted(4, 0, -4, 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, marker_name)
+
+    def _edit_strip_rect(self) -> Optional[QRect]:
+        if self._interaction_mode != "edit":
+            return None
+        top = max(MARKER_HEADER_HEIGHT + 24, self.height() - EDIT_STRIP_HEIGHT)
+        return QRect(0, top, self.width(), max(40, EDIT_STRIP_HEIGHT))
+
+    def _selected_edit_clip(self):
+        clip = self._find_clip_by_id(int(self.selected_clip_id)) if self.selected_clip_id is not None else None
+        if clip is None:
+            return None
+        if self.selected_track_index is not None and int(clip.track_index) != int(self.selected_track_index):
+            return None
+        return clip
+
+    def _db_to_strip_y(self, strip: QRect, gain_db: float) -> int:
+        clamped = max(-18.0, min(12.0, float(gain_db)))
+        normalized = (clamped + 18.0) / 30.0
+        top = strip.top() + 20
+        bottom = strip.bottom() - 8
+        span = max(1, bottom - top)
+        return int(round(bottom - (normalized * span)))
+
+    def _strip_y_to_db(self, strip: QRect, y: int) -> float:
+        top = strip.top() + 20
+        bottom = strip.bottom() - 8
+        clamped_y = max(top, min(bottom, int(y)))
+        span = max(1, bottom - top)
+        normalized = float(bottom - clamped_y) / float(span)
+        return max(-18.0, min(12.0, (normalized * 30.0) - 18.0))
+
+    def _clip_gain_envelopes(self, clip) -> List[dict]:
+        metadata = getattr(clip, "metadata", {}) or {}
+        raw = metadata.get("gain_envelopes", [])
+        if not isinstance(raw, list):
+            return []
+        cleaned: List[dict] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            try:
+                start_ms = int(item.get("start_ms", 0))
+                end_ms = int(item.get("end_ms", 0))
+                start_db = float(item.get("start_gain_db", 0.0))
+                end_db = float(item.get("end_gain_db", 0.0))
+            except (TypeError, ValueError):
+                continue
+            if end_ms <= start_ms:
+                continue
+            cleaned.append(
+                {
+                    "start_ms": int(start_ms),
+                    "end_ms": int(end_ms),
+                    "start_gain_db": float(max(-18.0, min(12.0, start_db))),
+                    "end_gain_db": float(max(-18.0, min(12.0, end_db))),
+                }
+            )
+        return cleaned
+
+    def _set_clip_gain_envelopes(self, clip, envelopes: List[dict]) -> None:
+        metadata = dict(getattr(clip, "metadata", {}) or {})
+        metadata["gain_envelopes"] = list(envelopes)
+        clip.metadata = metadata
+
+    def _active_gain_envelope_context(self) -> Optional[dict]:
+        clip = self._selected_edit_clip()
+        if clip is None:
+            return None
+        selected_range = self.get_selected_time_range_ms()
+        clip_start = int(getattr(clip, "start_ms", 0))
+        clip_end = clip_start + int(getattr(clip, "length_ms", 0))
+        if selected_range is None:
+            range_start, range_end = clip_start, clip_end
+        else:
+            range_start, range_end = int(selected_range[0]), int(selected_range[1])
+            range_start = max(range_start, clip_start)
+            range_end = min(range_end, clip_end)
+            if range_end <= range_start:
+                range_start, range_end = clip_start, clip_end
+
+        envelopes = self._clip_gain_envelopes(clip)
+        envelope_index = -1
+        start_db = 0.0
+        end_db = 0.0
+        for idx, envelope in enumerate(envelopes):
+            if int(envelope["start_ms"]) == int(range_start) and int(envelope["end_ms"]) == int(range_end):
+                envelope_index = idx
+                start_db = float(envelope.get("start_gain_db", 0.0))
+                end_db = float(envelope.get("end_gain_db", 0.0))
+                break
+
+        return {
+            "clip": clip,
+            "clip_id": int(getattr(clip, "id", -1)),
+            "track_index": int(getattr(clip, "track_index", -1)),
+            "start_ms": int(range_start),
+            "end_ms": int(range_end),
+            "start_db": float(start_db),
+            "end_db": float(end_db),
+            "envelope_index": int(envelope_index),
+            "envelopes": envelopes,
+        }
+
+    def _apply_active_gain_envelope(self, context: dict, start_db: float, end_db: float) -> None:
+        clip = context.get("clip")
+        if clip is None:
+            return
+        envelopes = list(context.get("envelopes", []))
+        payload = {
+            "start_ms": int(context["start_ms"]),
+            "end_ms": int(context["end_ms"]),
+            "start_gain_db": float(max(-18.0, min(12.0, float(start_db)))),
+            "end_gain_db": float(max(-18.0, min(12.0, float(end_db)))),
+        }
+        envelope_index = int(context.get("envelope_index", -1))
+        if envelope_index >= 0 and envelope_index < len(envelopes):
+            envelopes[envelope_index] = payload
+        else:
+            envelopes.append(payload)
+            envelopes.sort(key=lambda item: (int(item["start_ms"]), int(item["end_ms"])))
+            envelope_index = next(
+                (
+                    idx
+                    for idx, envelope in enumerate(envelopes)
+                    if int(envelope["start_ms"]) == int(payload["start_ms"])
+                    and int(envelope["end_ms"]) == int(payload["end_ms"])
+                ),
+                -1,
+            )
+        context["envelopes"] = envelopes
+        context["envelope_index"] = int(envelope_index)
+        context["start_db"] = float(payload["start_gain_db"])
+        context["end_db"] = float(payload["end_gain_db"])
+        self._set_clip_gain_envelopes(clip, envelopes)
+
+    def _draw_edit_strip(self, painter: QPainter) -> None:
+        strip = self._edit_strip_rect()
+        if strip is None:
+            return
+
+        painter.setPen(QPen(QColor(48, 64, 84), 1))
+        painter.setBrush(QColor(16, 24, 34, 230))
+        painter.drawRect(strip)
+
+        clip = self._selected_edit_clip()
+        painter.setPen(QColor(158, 178, 198))
+        if clip is None:
+            painter.drawText(strip.adjusted(10, 8, -10, -8), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, "Edit Strip: select a clip in Edit mode to view spectral detail and gain envelope handles.")
+            return
+
+        peaks = self._read_waveform_peaks(str(getattr(clip, "file_path", "")), target_points=max(64, strip.width() // 3))
+        graph_left = strip.left() + 10
+        graph_right = strip.right() - 10
+        graph_top = strip.top() + 22
+        graph_bottom = strip.bottom() - 10
+        center_y = int((graph_top + graph_bottom) / 2)
+
+        # Draw quick dB guides so envelope ramps are easier to judge by eye.
+        for guide_db in (12.0, 0.0, -12.0):
+            guide_y = self._db_to_strip_y(strip, guide_db)
+            pen = QPen(QColor(84, 108, 132, 150), 1)
+            if abs(guide_db) < 0.01:
+                pen = QPen(QColor(110, 146, 180, 190), 1)
+            painter.setPen(pen)
+            painter.drawLine(graph_left, guide_y, graph_right, guide_y)
+            painter.setPen(QColor(128, 150, 174))
+            painter.drawText(graph_left + 2, guide_y - 2, f"{guide_db:+.0f} dB")
+
+        painter.setPen(QPen(QColor(44, 96, 140), 1))
+        painter.drawLine(graph_left, center_y, graph_right, center_y)
+
+        if peaks is not None and peaks.size > 0:
+            columns = max(8, graph_right - graph_left)
+            positions = np.linspace(0, peaks.size - 1, columns, dtype=np.int32)
+            sampled = peaks[positions]
+            painter.setPen(QPen(QColor(80, 170, 255, 180), 1))
+            for idx, peak in enumerate(sampled):
+                amplitude = max(1, int(round(float(peak) * max(1, (graph_bottom - graph_top) // 2))))
+                x = graph_left + idx
+                painter.drawLine(x, center_y - amplitude, x, center_y + amplitude)
+
+        context = self._active_gain_envelope_context()
+        if context is None:
+            painter.setPen(QColor(170, 170, 170))
+            painter.drawText(strip.adjusted(10, 6, -10, -8), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, f"Edit Strip: {Path(str(getattr(clip, 'file_path', ''))).name}")
+            return
+
+        envelopes = self._clip_gain_envelopes(clip)
+        for envelope in envelopes:
+            env_start_x = self.time_to_x(int(envelope.get("start_ms", 0)))
+            env_end_x = self.time_to_x(int(envelope.get("end_ms", 0)))
+            if env_end_x <= env_start_x:
+                continue
+            if env_end_x < strip.left() or env_start_x > strip.right():
+                continue
+            env_start_x = max(strip.left() + 8, env_start_x)
+            env_end_x = min(strip.right() - 8, env_end_x)
+            env_start_y = self._db_to_strip_y(strip, float(envelope.get("start_gain_db", 0.0)))
+            env_end_y = self._db_to_strip_y(strip, float(envelope.get("end_gain_db", 0.0)))
+            painter.setPen(QPen(QColor(118, 152, 186, 150), 1))
+            painter.drawLine(env_start_x, env_start_y, env_end_x, env_end_y)
+
+        start_x = self.time_to_x(int(context["start_ms"]))
+        end_x = self.time_to_x(int(context["end_ms"]))
+        if end_x <= start_x:
+            return
+        if end_x < strip.left() or start_x > strip.right():
+            return
+
+        start_x = max(strip.left() + 8, start_x)
+        end_x = min(strip.right() - 8, end_x)
+        start_db = float(context["start_db"])
+        end_db = float(context["end_db"])
+        start_y = self._db_to_strip_y(strip, start_db)
+        end_y = self._db_to_strip_y(strip, end_db)
+
+        painter.setPen(QPen(QColor(255, 210, 110, 90), 1, Qt.PenStyle.DashLine))
+        painter.drawLine(start_x, graph_bottom, start_x, graph_top)
+        painter.drawLine(end_x, graph_bottom, end_x, graph_top)
+
+        painter.setPen(QPen(QColor(255, 210, 110), 2))
+        painter.drawLine(start_x, start_y, end_x, end_y)
+        painter.setBrush(QColor(255, 180, 90, 220))
+        painter.setPen(QPen(QColor(255, 235, 170), 1))
+        painter.drawEllipse(QPoint(start_x, start_y), 5, 5)
+        painter.drawEllipse(QPoint(end_x, end_y), 5, 5)
+
+        painter.setPen(QColor(198, 212, 227))
+        painter.drawText(
+            strip.adjusted(10, 4, -10, -6),
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+            f"Edit Strip: {Path(str(getattr(clip, 'file_path', ''))).name} | Region Gain {start_db:+.1f} dB → {end_db:+.1f} dB",
+        )
 
     def get_selected_clip_range_ms(self) -> Optional[Tuple[int, int]]:
         if self.selected_clip_id is None:
@@ -157,7 +482,8 @@ class TimelineWidget(QWidget):
 
     def _content_height(self) -> int:
         row_height = TRACK_HEIGHT + TRACK_GAP
-        return max(320, len(self.project.tracks) * row_height + 40)
+        extra = EDIT_STRIP_HEIGHT if self._interaction_mode == "edit" else 0
+        return max(320, len(self.project.tracks) * row_height + 40 + extra)
 
     def _sync_view_size(self) -> None:
         width = self._content_width()
@@ -578,6 +904,9 @@ class TimelineWidget(QWidget):
         self._clip_rects = []
         self._fade_handle_rects = []
 
+        painter.setPen(QPen(QColor(53, 64, 82), 1))
+        painter.drawLine(0, MARKER_HEADER_HEIGHT, self.width(), MARKER_HEADER_HEIGHT)
+
         # Draw tracks and clips
         for track_index, track in enumerate(self.project.tracks):
             top = track_index * (TRACK_HEIGHT + TRACK_GAP)
@@ -699,6 +1028,8 @@ class TimelineWidget(QWidget):
         playhead_x = self.time_to_x(self.playhead_ms)
         painter.setPen(QPen(QColor(255, 92, 92), 2))
         painter.drawLine(playhead_x, 0, playhead_x, self.height())
+        self._draw_markers(painter)
+        self._draw_edit_strip(painter)
 
         painter.end()
 
@@ -760,8 +1091,33 @@ class TimelineWidget(QWidget):
         return track_index
 
     def mousePressEvent(self, event):
-        if event.button() != Qt.LeftButton:
+        if event.button() != Qt.MouseButton.LeftButton:
             return super().mousePressEvent(event)
+
+        if self._interaction_mode == "edit":
+            strip = self._edit_strip_rect()
+            context = self._active_gain_envelope_context()
+            if strip is not None and context is not None and strip.contains(event.position().toPoint()):
+                start_x = self.time_to_x(int(context["start_ms"]))
+                end_x = self.time_to_x(int(context["end_ms"]))
+                start_y = self._db_to_strip_y(strip, float(context["start_db"]))
+                end_y = self._db_to_strip_y(strip, float(context["end_db"]))
+                point = event.position().toPoint()
+                if abs(int(point.x()) - int(start_x)) <= 8 and abs(int(point.y()) - int(start_y)) <= 8:
+                    self._dragging_gain_handle = {"edge": "start", "context": context}
+                    return
+                if abs(int(point.x()) - int(end_x)) <= 8 and abs(int(point.y()) - int(end_y)) <= 8:
+                    self._dragging_gain_handle = {"edge": "end", "context": context}
+                    return
+
+        if int(event.position().toPoint().y()) <= MARKER_HEADER_HEIGHT:
+            self._scrubbing_playhead = True
+            scrub_ms = self._x_to_ms(event.position().toPoint().x())
+            self.playhead_ms = int(scrub_ms)
+            if self.on_playhead_scrubbed is not None:
+                self.on_playhead_scrubbed(int(scrub_ms))
+            self.update()
+            return
 
         fade_hit = self._find_fade_handle_at_point(event.position().toPoint())
         if fade_hit is not None:
@@ -791,6 +1147,32 @@ class TimelineWidget(QWidget):
             return
 
         clip_id = self._find_clip_at_point(event.position().toPoint())
+
+        if self._tool_mode == "razor" and clip_id is not None:
+            clip = self._find_clip_by_id(int(clip_id))
+            if clip is not None and self.on_split_clip_requested is not None:
+                split_ms = self._x_to_ms(event.position().toPoint().x())
+                clip_start = int(getattr(clip, "start_ms", 0))
+                clip_end = clip_start + int(getattr(clip, "length_ms", 0))
+                if clip_start < split_ms < clip_end:
+                    self.on_split_clip_requested(int(clip_id), int(split_ms))
+                    self.selected_clip_id = int(clip_id)
+                    self.update()
+                    return
+
+        if self._tool_mode == "envelope" and clip_id is None:
+            track_index = self._track_index_for_y(event.position().toPoint().y())
+            if track_index is not None:
+                self._set_selected_track_from_timeline(int(track_index))
+                parameter = self._track_automation_parameter(int(track_index))
+                clicked_ms = self._x_to_ms(event.position().toPoint().x())
+                lane_top, lane_bottom = self._lane_top_bottom(int(track_index) * (TRACK_HEIGHT + TRACK_GAP))
+                value = self._y_to_lane_value(lane_top, lane_bottom, int(event.position().toPoint().y()))
+                self._insert_automation_node(int(track_index), parameter, int(clicked_ms), float(value))
+                self._emit_automation_points_changed(int(track_index), parameter)
+                self.update()
+                return
+
         self.selected_clip_id = clip_id
         if clip_id is None:
             track_index = self._track_index_for_y(event.position().toPoint().y())
@@ -822,7 +1204,12 @@ class TimelineWidget(QWidget):
         selected_clip = self._find_clip_by_id(clip_id)
         if selected_clip is not None:
             self._set_selected_track_from_timeline(int(selected_clip.track_index))
-            self._selected_time_range = None
+            if self._interaction_mode == "edit":
+                clip_start_ms = int(getattr(selected_clip, "start_ms", 0))
+                clip_end_ms = clip_start_ms + int(getattr(selected_clip, "length_ms", 0))
+                self._set_selected_time_range(int(selected_clip.track_index), int(clip_start_ms), int(clip_end_ms))
+            else:
+                self._selected_time_range = None
             self._dragging_clip_id = clip_id
             self._drag_start_point = event.position().toPoint()
             self._drag_origin_start_ms = int(selected_clip.start_ms)
@@ -830,7 +1217,7 @@ class TimelineWidget(QWidget):
         self.update()
 
     def mouseDoubleClickEvent(self, event):
-        if event.button() != Qt.LeftButton:
+        if event.button() != Qt.MouseButton.LeftButton:
             return super().mouseDoubleClickEvent(event)
 
         clip_id = self._find_clip_at_point(event.position().toPoint())
@@ -864,11 +1251,57 @@ class TimelineWidget(QWidget):
         return
 
     def mouseMoveEvent(self, event):
+        if self._dragging_gain_handle is not None:
+            if not (event.buttons() & Qt.MouseButton.LeftButton):
+                return super().mouseMoveEvent(event)
+            drag_context = self._dragging_gain_handle.get("context")
+            if not isinstance(drag_context, dict):
+                return super().mouseMoveEvent(event)
+            strip = self._edit_strip_rect()
+            if strip is None:
+                return super().mouseMoveEvent(event)
+            next_db = self._strip_y_to_db(strip, int(event.position().toPoint().y()))
+            start_db = float(drag_context.get("start_db", 0.0))
+            end_db = float(drag_context.get("end_db", 0.0))
+            if str(self._dragging_gain_handle.get("edge")) == "start":
+                start_db = float(next_db)
+            else:
+                end_db = float(next_db)
+            self._apply_active_gain_envelope(drag_context, start_db, end_db)
+            clip_id = int(drag_context.get("clip_id", -1))
+            if self.on_gain_envelope_changed is not None and clip_id >= 0:
+                self.on_gain_envelope_changed(
+                    clip_id,
+                    int(drag_context.get("start_ms", 0)),
+                    int(drag_context.get("end_ms", 0)),
+                    float(drag_context.get("start_db", 0.0)),
+                    float(drag_context.get("end_db", 0.0)),
+                    False,
+                )
+            self.update()
+            return
+
+        if self._scrubbing_playhead and (event.buttons() & Qt.MouseButton.LeftButton):
+            scrub_ms = self._x_to_ms(event.position().toPoint().x())
+            self.playhead_ms = int(scrub_ms)
+            if self.on_playhead_scrubbed is not None:
+                self.on_playhead_scrubbed(int(scrub_ms))
+            self.update()
+            return
+
         clip_id = self._find_clip_at_point(event.position().toPoint())
         if clip_id != self._hovered_clip_id:
             self._hovered_clip_id = clip_id
             if clip_id is None:
-                QToolTip.hideText()
+                marker_hit = self._find_marker_near_x(int(event.position().toPoint().x()))
+                if marker_hit is not None and int(event.position().toPoint().y()) <= MARKER_HEADER_HEIGHT + 4:
+                    QToolTip.showText(
+                        event.globalPosition().toPoint(),
+                        f"{marker_hit.get('name', 'Marker')}\n{int(marker_hit.get('time_ms', 0)) / 1000.0:.3f}s",
+                        self,
+                    )
+                else:
+                    QToolTip.hideText()
             else:
                 clip = self._find_clip_by_id(clip_id)
                 if clip is not None:
@@ -929,7 +1362,28 @@ class TimelineWidget(QWidget):
         self.update()
 
     def mouseReleaseEvent(self, event):
-        if event.button() == Qt.LeftButton and self._dragging_fade_handle is not None:
+        if event.button() == Qt.MouseButton.LeftButton and self._dragging_gain_handle is not None:
+            drag_context = self._dragging_gain_handle.get("context")
+            self._dragging_gain_handle = None
+            if isinstance(drag_context, dict):
+                clip_id = int(drag_context.get("clip_id", -1))
+                if self.on_gain_envelope_changed is not None and clip_id >= 0:
+                    self.on_gain_envelope_changed(
+                        clip_id,
+                        int(drag_context.get("start_ms", 0)),
+                        int(drag_context.get("end_ms", 0)),
+                        float(drag_context.get("start_db", 0.0)),
+                        float(drag_context.get("end_db", 0.0)),
+                        True,
+                    )
+            self.update()
+            return super().mouseReleaseEvent(event)
+
+        if event.button() == Qt.MouseButton.LeftButton and self._scrubbing_playhead:
+            self._scrubbing_playhead = False
+            return super().mouseReleaseEvent(event)
+
+        if event.button() == Qt.MouseButton.LeftButton and self._dragging_fade_handle is not None:
             clip_id, _edge = self._dragging_fade_handle
             self._dragging_fade_handle = None
             clip = self._find_clip_by_id(int(clip_id))
@@ -942,14 +1396,14 @@ class TimelineWidget(QWidget):
             self.update()
             return super().mouseReleaseEvent(event)
 
-        if event.button() == Qt.LeftButton and self._dragging_automation_node is not None:
+        if event.button() == Qt.MouseButton.LeftButton and self._dragging_automation_node is not None:
             track_index, parameter, _node_index = self._dragging_automation_node
             self._dragging_automation_node = None
             self._emit_automation_points_changed(int(track_index), str(parameter))
             self.update()
             return super().mouseReleaseEvent(event)
 
-        if event.button() == Qt.LeftButton and self._comp_selecting:
+        if event.button() == Qt.MouseButton.LeftButton and self._comp_selecting:
             start_ms = self._comp_select_start_ms
             end_ms = self._comp_select_end_ms
             track_index = self._comp_select_track_index
@@ -970,7 +1424,7 @@ class TimelineWidget(QWidget):
             self.update()
             return super().mouseReleaseEvent(event)
 
-        if event.button() == Qt.LeftButton and self._dragging_clip_id is not None and self.on_project_changed is not None:
+        if event.button() == Qt.MouseButton.LeftButton and self._dragging_clip_id is not None and self.on_project_changed is not None:
             self.on_project_changed()
         self._dragging_clip_id = None
         self._drag_start_point = None
@@ -994,8 +1448,23 @@ class TimelineWidget(QWidget):
         clip_id = self._find_clip_at_point(pos)
         track_index = self._track_index_for_y(pos.y())
         start_ms = self._x_to_ms(pos.x())
+        marker_hit = self._find_marker_near_x(int(pos.x())) if int(pos.y()) <= MARKER_HEADER_HEIGHT + 6 else None
 
         menu = QMenu(self)
+
+        if marker_hit is not None:
+            marker_id = int(marker_hit.get("id", 0))
+            marker_time = int(marker_hit.get("time_ms", 0))
+            jump_act = menu.addAction(f"Jump to Marker: {marker_hit.get('name', 'Marker')}")
+            jump_act.triggered.connect(lambda: self._emit_marker_action("jump", marker_time, marker_id))
+            rename_act = menu.addAction("Rename Marker")
+            rename_act.triggered.connect(lambda: self._emit_marker_action("rename", marker_time, marker_id))
+            delete_act = menu.addAction("Delete Marker")
+            delete_act.triggered.connect(lambda: self._emit_marker_action("delete", marker_time, marker_id))
+            menu.addSeparator()
+        add_marker_act = menu.addAction(f"Add Marker at {start_ms / 1000.0:.3f}s")
+        add_marker_act.triggered.connect(lambda: self._emit_marker_action("add", start_ms, None))
+        menu.addSeparator()
 
         if clip_id is not None:
             select_act = menu.addAction("Select clip")

@@ -1,5 +1,9 @@
 # Echo Pro Implementation Status - PHASE 0 COMPLETE ✅
 
+> Historical snapshot: this document is retained for reference and is not the active project-status source.
+> Authoritative source: use [TASK_HUB.md](../../TASK_HUB.md) for current backlog, priorities, problems, and completion state.
+> Snapshot date: 2026-07-24.
+
 **Date:** Implementation Session 1  
 **Status:** Phase 0 Audio Engine Foundation - COMPLETE  
 **Next Phase:** Week 2 - Phase 5A Recording Implementation

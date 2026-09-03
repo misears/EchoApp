@@ -1,5 +1,9 @@
 # Echo Pro - Autonomous Implementation Report
 
+> Historical snapshot: this document is retained for reference and is not the active project-status source.
+> Authoritative source: use [TASK_HUB.md](../../TASK_HUB.md) for current backlog, priorities, problems, and completion state.
+> Snapshot date: 2026-07-24.
+
 ## Session: Week 1 - Phase 0 Foundation
 
 **Date:** Today  

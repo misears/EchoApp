@@ -41,5 +41,5 @@ if defined NEEDS_BOOTSTRAP (
     )
 )
 
-start "" "%APP_ROOT%\EchoPro.exe"
+call "%APP_ROOT%\Start_Echo.bat"
 exit /b 0

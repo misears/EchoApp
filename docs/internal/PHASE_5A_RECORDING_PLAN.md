@@ -1,5 +1,9 @@
 # Phase 5A Recording Implementation Plan
 
+> Historical/planning snapshot: this document is retained for reference and is not the active project-status source.
+> Authoritative source: use [TASK_HUB.md](../../TASK_HUB.md) for current backlog, priorities, problems, and completion state.
+> Snapshot date: 2026-07-24.
+
 **Status:** Ready to build  
 **Scope:** Professional recording workflow, metering, metronome, and recording session controls  
 **Placement:** Phase 5A in the V1.0 roadmap

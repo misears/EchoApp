@@ -372,6 +372,7 @@ def build_overview_tab(window) -> QWidget:
     add_clip_btn = QPushButton("Add Clip from File")
     add_clip_btn.setToolTip("Browse for an audio file and add it as a clip")
     add_clip_btn.clicked.connect(window.add_clip_from_file)
+    window.add_clip_btn = add_clip_btn
     window._configure_symbol_button(add_clip_btn, "\U0001f4c2", "Add clip from file")
     clip_layout.addWidget(add_clip_btn, 0, 4)
 
@@ -390,6 +391,7 @@ def build_overview_tab(window) -> QWidget:
     set_vol_btn = QPushButton("Set Track Volume")
     set_vol_btn.setToolTip("Apply the specified volume to the selected track")
     set_vol_btn.clicked.connect(window.set_track_volume)
+    window.set_track_volume_btn = set_vol_btn
     window._configure_symbol_button(set_vol_btn, "\U0001f50a", "Set track volume")
     clip_layout.addWidget(set_vol_btn, 1, 4)
 
@@ -439,6 +441,7 @@ def build_overview_tab(window) -> QWidget:
     choose_stem_source_btn = QPushButton("Choose Source Audio")
     choose_stem_source_btn.setToolTip("Browse for the song or mix that should be split into stems")
     choose_stem_source_btn.clicked.connect(window.choose_stem_source_audio)
+    window.choose_stem_source_btn = choose_stem_source_btn
     stems_layout.addWidget(choose_stem_source_btn, 1, 3)
 
     stems_layout.addWidget(QLabel("Demucs Model"), 2, 0)
@@ -496,10 +499,14 @@ def build_overview_tab(window) -> QWidget:
     window.timeline.on_time_range_changed = window._on_timeline_time_range_changed
     window.timeline.on_automation_points_changed = window._on_timeline_automation_points_changed
     window.timeline.on_clip_fade_changed = window._on_timeline_clip_fade_changed
+    window.timeline.on_gain_envelope_changed = window._on_timeline_gain_envelope_changed
     window.timeline.on_track_double_click = window._on_timeline_track_double_click
     window.timeline.on_add_clip_at = window._on_timeline_add_clip_at
     window.timeline.on_clip_action = window._handle_timeline_clip_action
     window.timeline.on_track_selected = window._on_timeline_track_selected
+    window.timeline.on_split_clip_requested = window._on_timeline_split_clip_requested
+    window.timeline.on_marker_action = window._on_timeline_marker_action
+    window.timeline.on_playhead_scrubbed = window._on_timeline_playhead_scrubbed
     window.timeline_scroll = QScrollArea()
     window.timeline_scroll.setWidgetResizable(False)
     window.timeline_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
@@ -516,6 +523,7 @@ def build_overview_tab(window) -> QWidget:
     zoom_out_btn.setToolTip("Zoom out timeline (Ctrl+-)")
     zoom_out_btn.setShortcut("Ctrl+-")
     zoom_out_btn.clicked.connect(window.zoom_timeline_out)
+    window.zoom_out_btn = zoom_out_btn
     wave_controls.addWidget(zoom_out_btn)
 
     zoom_in_btn = QPushButton("+")
@@ -523,6 +531,7 @@ def build_overview_tab(window) -> QWidget:
     zoom_in_btn.setToolTip("Zoom in timeline (Ctrl+=)")
     zoom_in_btn.setShortcut("Ctrl+=")
     zoom_in_btn.clicked.connect(window.zoom_timeline_in)
+    window.zoom_in_btn = zoom_in_btn
     wave_controls.addWidget(zoom_in_btn)
 
     zoom_reset_btn = QPushButton("100%")
@@ -530,18 +539,62 @@ def build_overview_tab(window) -> QWidget:
     zoom_reset_btn.setToolTip("Reset timeline zoom (Ctrl+0)")
     zoom_reset_btn.setShortcut("Ctrl+0")
     zoom_reset_btn.clicked.connect(window.reset_timeline_zoom)
+    window.zoom_reset_btn = zoom_reset_btn
     wave_controls.addWidget(zoom_reset_btn)
 
     window.timeline_zoom_label = QLabel("Zoom 100%")
     window.timeline_zoom_label.setStyleSheet("color:#aab4be; font-size:10px;")
     wave_controls.addWidget(window.timeline_zoom_label)
+
+    wave_controls.addSpacing(8)
+    wave_controls.addWidget(QLabel("Mode"))
+    window.timeline_mode_combo = QComboBox()
+    window.timeline_mode_combo.addItem("Multitrack", "multitrack")
+    window.timeline_mode_combo.addItem("Edit", "edit")
+    window.timeline_mode_combo.currentIndexChanged.connect(lambda _idx: window._on_timeline_mode_combo_changed())
+    wave_controls.addWidget(window.timeline_mode_combo)
+
+    wave_controls.addWidget(QLabel("Tool"))
+    window.timeline_tool_combo = QComboBox()
+    window.timeline_tool_combo.addItem("Pointer", "pointer")
+    window.timeline_tool_combo.addItem("Razor", "razor")
+    window.timeline_tool_combo.addItem("Envelope", "envelope")
+    window.timeline_tool_combo.currentIndexChanged.connect(lambda _idx: window._on_timeline_tool_combo_changed())
+    wave_controls.addWidget(window.timeline_tool_combo)
+
+    window.play_selection_btn = QPushButton("Play Sel")
+    window.play_selection_btn.setToolTip("Play the active selection or selected clip range")
+    window.play_selection_btn.clicked.connect(window.play_selection)
+    wave_controls.addWidget(window.play_selection_btn)
+
+    window.loop_selection_btn = QPushButton("Loop Sel")
+    window.loop_selection_btn.setCheckable(True)
+    window.loop_selection_btn.setToolTip("Loop the active selection/clip range")
+    window.loop_selection_btn.toggled.connect(window.toggle_loop_selection)
+    wave_controls.addWidget(window.loop_selection_btn)
+
+    window.add_marker_btn = QPushButton("+ Marker")
+    window.add_marker_btn.setToolTip("Add marker at current playhead")
+    window.add_marker_btn.clicked.connect(window.add_timeline_marker_at_playhead)
+    wave_controls.addWidget(window.add_marker_btn)
+
+    window.prev_marker_btn = QPushButton("Prev Mk")
+    window.prev_marker_btn.setToolTip("Jump to previous marker")
+    window.prev_marker_btn.clicked.connect(window.jump_to_previous_marker)
+    wave_controls.addWidget(window.prev_marker_btn)
+
+    window.next_marker_btn = QPushButton("Next Mk")
+    window.next_marker_btn.setToolTip("Jump to next marker")
+    window.next_marker_btn.clicked.connect(window.jump_to_next_marker)
+    wave_controls.addWidget(window.next_marker_btn)
+
     wave_controls.addStretch()
     wave_layout.addLayout(wave_controls)
 
     wave_hint = QLabel(
-        "Right-click to add clips. Del/Backspace deletes clips. Ctrl+Scroll zooms around the cursor. "
-        "Alt+click edits selection start; Shift+click edits selection end. "
-        "Select a clip and drag edge fade handles or use right-click Fade Settings..."
+        "Cool Edit mode: use Mode + Tool controls, drag the top header to scrub playhead, and right-click header for markers. "
+        "Razor tool splits clips where you click; Envelope tool edits automation in-lane. "
+        "Ctrl+Scroll zooms around cursor, Alt/Shift click adjusts selection edges."
     )
     wave_hint.setStyleSheet("color:#aab4be; font-style:italic; font-size:10px;")
     wave_layout.addWidget(wave_hint)
@@ -766,6 +819,7 @@ def build_recording_tab(window) -> QWidget:
     refresh_takes_btn = QPushButton("\u21bb")
     window._configure_symbol_button(refresh_takes_btn, "\u21bb", "Refresh takes")
     refresh_takes_btn.clicked.connect(window.refresh_take_review_list)
+    window.refresh_takes_btn = refresh_takes_btn
     header.addWidget(refresh_takes_btn)
     header.addStretch()
     takes_layout.addLayout(header)
@@ -865,9 +919,11 @@ def build_voice_tab(window) -> QWidget:
     apply_btn = QPushButton("Apply Voice Effect")
     apply_btn.setToolTip("Apply the selected voice conversion to the specified clip")
     apply_btn.clicked.connect(window.apply_voice_effect_to_clip)
+    window.voice_apply_btn = apply_btn
     manage_btn = QPushButton("Manage Voices")
     manage_btn.setToolTip("Open the Voice Manager to record or import voice profiles")
     manage_btn.clicked.connect(window.open_voice_manager)
+    window.voice_manage_btn = manage_btn
     effect_layout.addWidget(apply_btn, 2, 2)
     effect_layout.addWidget(manage_btn, 2, 3)
     layout.addWidget(effect_group)
@@ -2448,12 +2504,15 @@ def build_settings_tab(window) -> QWidget:
     controls = QHBoxLayout()
     refresh_btn = QPushButton("Refresh Devices")
     refresh_btn.clicked.connect(window._settings_refresh_audio_devices)
+    window.settings_refresh_devices_btn = refresh_btn
     controls.addWidget(refresh_btn)
     test_btn = QPushButton("Test Tone")
     test_btn.clicked.connect(window._settings_play_test_tone)
+    window.settings_test_tone_btn = test_btn
     controls.addWidget(test_btn)
     apply_btn = QPushButton("Apply Audio Settings")
     apply_btn.clicked.connect(window._settings_apply_audio_engine)
+    window.settings_apply_audio_btn = apply_btn
     controls.addWidget(apply_btn)
     controls.addStretch()
     audio_form.addLayout(controls, 8, 0, 1, 2)
@@ -2505,6 +2564,7 @@ def build_settings_tab(window) -> QWidget:
     appearance_form.addWidget(window.settings_animation_speed_combo, 4, 1)
     appearance_apply_btn = QPushButton("Apply Appearance")
     appearance_apply_btn.clicked.connect(window._settings_apply_appearance)
+    window.settings_apply_appearance_btn = appearance_apply_btn
     appearance_form.addWidget(appearance_apply_btn, 5, 0, 1, 2)
     appearance_layout.addWidget(appearance_group)
     appearance_layout.addStretch()
@@ -2519,8 +2579,18 @@ def build_settings_tab(window) -> QWidget:
     window.settings_shortcut_search_input.setPlaceholderText("Filter actions...")
     window.settings_shortcut_search_input.textChanged.connect(window._settings_refresh_shortcuts_table)
     search_row.addWidget(window.settings_shortcut_search_input, stretch=1)
+    window.settings_shortcut_profile_combo = QComboBox()
+    window.settings_shortcut_profile_combo.addItem("Cool Edit Classic", "Cool Edit Classic")
+    window.settings_shortcut_profile_combo.addItem("Modern Echo", "Modern Echo")
+    search_row.addWidget(window.settings_shortcut_profile_combo)
+    apply_shortcut_profile_btn = QPushButton("Apply Preset")
+    apply_shortcut_profile_btn.setToolTip("Overwrite current shortcut mappings with the selected preset.")
+    apply_shortcut_profile_btn.clicked.connect(window._settings_apply_shortcut_profile)
+    window.settings_apply_shortcut_preset_btn = apply_shortcut_profile_btn
+    search_row.addWidget(apply_shortcut_profile_btn)
     reset_shortcuts_btn = QPushButton("Reset All to Defaults")
     reset_shortcuts_btn.clicked.connect(window._settings_reset_shortcuts_to_defaults)
+    window.settings_reset_shortcuts_btn = reset_shortcuts_btn
     search_row.addWidget(reset_shortcuts_btn)
     shortcut_layout.addLayout(search_row)
     window.settings_shortcuts_table = QTableWidget(0, 2)
@@ -2532,7 +2602,7 @@ def build_settings_tab(window) -> QWidget:
     window.settings_shortcuts_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
     window.settings_shortcuts_table.itemChanged.connect(window._settings_on_shortcut_item_changed)
     shortcut_layout.addWidget(window.settings_shortcuts_table, stretch=1)
-    shortcut_layout.addWidget(QLabel("Edit shortcut cells directly. Changes update settings mapping and can be wired globally in Group 12."))
+    shortcut_layout.addWidget(QLabel("Edit shortcut cells directly. Duplicate bindings are highlighted so conflicts are easy to resolve."))
     stack.addWidget(shortcut_page)
 
     # Project Defaults
@@ -2567,6 +2637,7 @@ def build_settings_tab(window) -> QWidget:
     defaults_form.addWidget(window.settings_default_autosave_location_input, 4, 1)
     save_defaults_btn = QPushButton("Save Project Defaults")
     save_defaults_btn.clicked.connect(window._settings_save_project_defaults)
+    window.settings_save_defaults_btn = save_defaults_btn
     defaults_form.addWidget(save_defaults_btn, 5, 0, 1, 2)
     defaults_layout.addWidget(defaults_group)
     defaults_layout.addStretch()

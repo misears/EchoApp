@@ -1,5 +1,9 @@
 # Phase 5B Task Checklist
 
+> Historical/planning snapshot: this document is retained for reference and is not the active project-status source.
+> Authoritative source: use [TASK_HUB.md](../../TASK_HUB.md) for current backlog, priorities, problems, and completion state.
+> Snapshot date: 2026-07-24.
+
 Status: In progress  
 Scope: Punch/loop workflows, take browser, comping v1, recovery, and safety checks
 
